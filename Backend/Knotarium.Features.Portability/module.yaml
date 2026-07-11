@@ -1,0 +1,37 @@
+version: 1
+module:
+  id: backend.features.portability
+  name: Knotarium.Features.Portability
+  level: application
+  path: Backend/Knotarium.Features.Portability
+  owner_role: use-case-and-orchestration
+  intention: >-
+    The shared workflow-portability core: the deterministic export serializer (canonical, secret-free
+    JSON + content checksum) with its export document/content/manifest records, the recursive
+    credential-slot + template-parameter module walked in every export/import direction, the archive
+    codec, and export naming. Pure domain logic with no persistence — the one place bundles, templates,
+    export, and AI generation agree on how a workflow serializes and how its credential slots resolve.
+    Depends only on Core.
+  allowed_project_dependencies:
+    - Knotarium.Core
+  forbidden_project_dependencies:
+    - Knotarium.Api
+    - Knotarium.Infrastructure
+    - Knotarium.NodeRuntime
+    - Knotarium.Features
+  component_map:
+    - path: Backend/Knotarium.Features.Portability
+      architecture_level: Application / Feature Slice
+      intention: Export serialization, credential-slot/parameter walk, archive codec, and naming.
+      viable_changes:
+        - Canonical serialization rules
+        - Credential-slot / template-parameter walk directions
+        - Archive (zip) codec conventions
+        - Export naming rules
+  place_here_when:
+    - The change serializes a workflow version to its canonical export form.
+    - The change walks node properties to portabilize or rebind credential slots or parameters.
+  do_not_place_here:
+    - Resolving a workflow's current published version against the database (host-side EF impl of
+      IPublishedWorkflowExportSource)
+    - Bundle/template/export orchestration (belongs in those slices)

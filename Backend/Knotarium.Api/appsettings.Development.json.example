@@ -1,0 +1,28 @@
+{
+  "//": "Template for local development. Copy to `appsettings.Development.json` (which is gitignored) and fill in your own keys. NEVER commit real keys.",
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.EntityFrameworkCore.Database.Command": "Warning",
+      "Microsoft.EntityFrameworkCore.Query": "Warning"
+    }
+  },
+  "Security": {
+    "PackageSigning": {
+      "//": "Dev bundle-signing keypair. Generate one for local dev; the private key must never be committed.",
+      "HostPrivateKeyBase64": "",
+      "TrustedPublicKeys": []
+    },
+    "Credentials": {
+      "//": "Encrypts stored credentials at rest. Generate a 32-byte base64 key (e.g. `openssl rand -base64 32`). Prefer dotnet user-secrets over this file.",
+      "EncryptionKeyBase64": ""
+    },
+    "HttpEgress": {
+      "AllowDomains": [],
+      "BlockDomains": [],
+      "//": "Dev only: false lets the local mock API (http://127.0.0.1:8787) be reached. Production keeps this true.",
+      "DenyPrivateNetworks": false
+    }
+  }
+}

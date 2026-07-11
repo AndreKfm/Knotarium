@@ -1,0 +1,19 @@
+<Solution>
+  <Project Path="Knotarium.Api/Knotarium.Api.csproj" />
+  <Project Path="Knotarium.Core/Knotarium.Core.csproj" />
+  <Project Path="Knotarium.Features/Knotarium.Features.csproj" />
+  <Project Path="Knotarium.Features.Options/Knotarium.Features.Options.csproj" />
+  <Project Path="Knotarium.Features.NodeEditor/Knotarium.Features.NodeEditor.csproj" />
+  <Project Path="Knotarium.Features.Compiler/Knotarium.Features.Compiler.csproj" />
+  <Project Path="Knotarium.Features.Settings/Knotarium.Features.Settings.csproj" />
+  <Project Path="Knotarium.Features.Condition/Knotarium.Features.Condition.csproj" />
+  <Project Path="Knotarium.Features.OpenApi/Knotarium.Features.OpenApi.csproj" />
+  <Project Path="Knotarium.Features.Portability/Knotarium.Features.Portability.csproj" />
+  <Project Path="Knotarium.Features.Ai/Knotarium.Features.Ai.csproj" />
+  <Project Path="Knotarium.Infrastructure/Knotarium.Infrastructure.csproj" />
+  <Project Path="Knotarium.NodeRuntime/Knotarium.NodeRuntime.csproj" />
+  <Project Path="Knotarium.NodeRuntime.Tests/Knotarium.NodeRuntime.Tests.csproj" />
+  <Project Path="Knotarium.Architecture.Tests/Knotarium.Architecture.Tests.csproj" />
+  <Project Path="Knotarium.Tests/Knotarium.Tests.csproj" />
+  <Project Path="Knotarium.Tests.Api/Knotarium.Tests.Api.csproj" />
+</Solution>

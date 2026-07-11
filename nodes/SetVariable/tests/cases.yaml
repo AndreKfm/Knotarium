@@ -1,0 +1,6 @@
+cases:
+  - name: Set Variable Success
+    inputs:
+      name: myVar
+      value: testValue
+    expectedOutput: result

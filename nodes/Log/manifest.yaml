@@ -1,0 +1,16 @@
+id: log
+version: 1.0.0
+displayName: Log
+category: Utility
+tier: Declarative
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 10
+capabilities: []
+parameters:
+  - name: message
+    type: string
+    required: false
+    expression: true
+outputs:
+  - name: result

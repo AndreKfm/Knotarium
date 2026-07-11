@@ -1,0 +1,15 @@
+openapi: "3.0.3"
+info:
+  title: External Ref Test
+  version: "1.0.0"
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './other.yaml#/components/schemas/Pet'

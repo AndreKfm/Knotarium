@@ -1,0 +1,21 @@
+id: transform
+version: 1.0.0
+displayName: Transform
+category: Data
+tier: Declarative
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 10
+capabilities: []
+parameters:
+  - name: inputJson
+    type: string
+    required: true
+    expression: true
+  - name: jsonPath
+    type: string
+    required: true
+    expression: false
+outputs:
+  - name: success
+  - name: error

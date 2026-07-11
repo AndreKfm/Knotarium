@@ -1,0 +1,13 @@
+cases:
+  - name: Evaluate Equal Match
+    inputs:
+      left: 5
+      operator: Equal
+      right: 5
+    expectedOutput: "true"
+  - name: Evaluate Equal Mismatch
+    inputs:
+      left: 5
+      operator: Equal
+      right: 10
+    expectedOutput: "false"

@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-hello-world",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Hello World",
+  "author": "Knotarium",
+  "description": "A minimal starter workflow: a manual trigger that logs a greeting, then ends. A good first thing to install and run while learning the editor.",
+  "tags": ["starter", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-06-19T00:00:00.0000000Z",
+  "sourceWorkflowName": "Hello World",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

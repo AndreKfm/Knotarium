@@ -1,0 +1,48 @@
+{
+  "_comment": [
+    "Phase 8 (v2 tree) conformance fixture — language-neutral, loaded by BOTH the FE and BE suites,",
+    "extending the B2 mechanism. It pins ONLY the tree aggregation (spec §10): group folds (B9), the",
+    "NOT truth table (B8), strict Error→Incomplete→boolean dominance at every level, depth-first error",
+    "surfacing, and empty/single-child groups. LEAF operator semantics stay in condition-conformance.",
+    "fixture.json — here a leaf carries a precomputed `status` (and, for Error, an `id` identifying the",
+    "error source) so this file tests the fold, not the operators.",
+    "",
+    "Node grammar: { kind:'leaf', id?, status } | { kind:'group', op:'and'|'or', children:[...] } |",
+    "{ kind:'not', child:{...} }. Each case: { id, tree, expect } and optional `expectErrorFrom` = the",
+    "leaf id whose B7 error must surface (asserts depth-first, child-order selection)."
+  ],
+  "version": 1,
+  "cases": [
+    { "id": "not-true",            "tree": { "kind": "not", "child": { "kind": "leaf", "status": "True" } },        "expect": "False" },
+    { "id": "not-false",           "tree": { "kind": "not", "child": { "kind": "leaf", "status": "False" } },       "expect": "True" },
+    { "id": "not-incomplete",      "tree": { "kind": "not", "child": { "kind": "leaf", "status": "Incomplete" } },  "expect": "Incomplete" },
+    { "id": "not-error",           "tree": { "kind": "not", "child": { "kind": "leaf", "id": "e1", "status": "Error" } }, "expect": "Error", "expectErrorFrom": "e1" },
+    { "id": "not-not-true",        "tree": { "kind": "not", "child": { "kind": "not", "child": { "kind": "leaf", "status": "True" } } }, "expect": "True" },
+
+    { "id": "and-all-true",        "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "leaf", "status": "True" } ] }, "expect": "True" },
+    { "id": "and-one-false",       "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "leaf", "status": "False" } ] }, "expect": "False" },
+    { "id": "and-false-with-incomplete", "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "leaf", "status": "Incomplete" } ] }, "expect": "Incomplete" },
+    { "id": "and-single-true",     "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "True" } ] }, "expect": "True" },
+
+    { "id": "or-any-true",         "tree": { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "leaf", "status": "True" } ] }, "expect": "True" },
+    { "id": "or-all-false",        "tree": { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "leaf", "status": "False" } ] }, "expect": "False" },
+    { "id": "or-true-with-incomplete", "tree": { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "leaf", "status": "Incomplete" } ] }, "expect": "Incomplete" },
+    { "id": "or-false-with-incomplete", "tree": { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "leaf", "status": "Incomplete" } ] }, "expect": "Incomplete" },
+    { "id": "or-single-false",     "tree": { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "False" } ] }, "expect": "False" },
+
+    { "id": "empty-and",           "tree": { "kind": "group", "op": "and", "children": [] }, "expect": "Incomplete" },
+    { "id": "empty-or",            "tree": { "kind": "group", "op": "or", "children": [] }, "expect": "Incomplete" },
+
+    { "id": "error-dominates-false", "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "leaf", "id": "e1", "status": "Error" }, { "kind": "leaf", "status": "Incomplete" } ] }, "expect": "Error", "expectErrorFrom": "e1" },
+    { "id": "error-dominates-true-in-or", "tree": { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "leaf", "id": "e1", "status": "Error" } ] }, "expect": "Error", "expectErrorFrom": "e1" },
+    { "id": "error-dominates-incomplete", "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "Incomplete" }, { "kind": "leaf", "id": "e1", "status": "Error" } ] }, "expect": "Error", "expectErrorFrom": "e1" },
+    { "id": "error-depth-first",   "tree": { "kind": "group", "op": "and", "children": [ { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "id": "e1", "status": "Error" }, { "kind": "leaf", "id": "e2", "status": "Error" } ] }, { "kind": "leaf", "id": "e3", "status": "Error" } ] }, "expect": "Error", "expectErrorFrom": "e1" },
+
+    { "id": "nested-true",         "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "not", "child": { "kind": "leaf", "status": "False" } } ] } ] }, "expect": "True" },
+    { "id": "nested-false",        "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "not", "child": { "kind": "leaf", "status": "True" } } ] } ] }, "expect": "False" },
+    { "id": "nested-incomplete-propagates", "tree": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "group", "op": "or", "children": [ { "kind": "leaf", "status": "False" }, { "kind": "leaf", "status": "Incomplete" } ] } ] }, "expect": "Incomplete" },
+    { "id": "nested-error-through-not", "tree": { "kind": "not", "child": { "kind": "group", "op": "and", "children": [ { "kind": "leaf", "status": "True" }, { "kind": "leaf", "id": "e1", "status": "Error" } ] } }, "expect": "Error", "expectErrorFrom": "e1" },
+
+    { "id": "deep-not-chain-true", "tree": { "kind": "not", "child": { "kind": "not", "child": { "kind": "not", "child": { "kind": "leaf", "status": "False" } } } }, "expect": "True" }
+  ]
+}

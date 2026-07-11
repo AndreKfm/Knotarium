@@ -1,0 +1,37 @@
+using System.Threading;
+using System.Threading.Channels;
+using System.Threading.Tasks;
+using Knotarium.Core.Contracts;
+using Knotarium.Core.Domain;
+
+namespace Knotarium.Features.Notifications;
+
+/// <summary>
+/// In-memory, non-blocking hand-off of failed execution ids from the workflow executor to the
+/// <see cref="FailureAlertWorker"/>. Mirrors <c>WorkflowExecutionQueue</c> so that alert dispatch is
+/// fully decoupled from execution and can never block or break a run.
+/// </summary>
+public class FailureAlertQueue : IFailureAlertSink
+{
+    private readonly Channel<ExecutionInstanceId> _channel;
+
+    public FailureAlertQueue()
+    {
+        _channel = Channel.CreateUnbounded<ExecutionInstanceId>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+    }
+
+    /// <summary>Enqueues a failed execution for alert dispatch. Non-blocking; safe to call from the hot path.</summary>
+    public void Enqueue(ExecutionInstanceId executionId)
+    {
+        _channel.Writer.TryWrite(executionId);
+    }
+
+    public ValueTask<ExecutionInstanceId> DequeueAsync(CancellationToken cancellationToken)
+    {
+        return _channel.Reader.ReadAsync(cancellationToken);
+    }
+}

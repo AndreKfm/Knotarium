@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Knotarium.Features.Ai</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Knotarium.Core\Knotarium.Core.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Compiler\Knotarium.Features.Compiler.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Settings\Knotarium.Features.Settings.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Portability\Knotarium.Features.Portability.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Ai unit tests construct slice types directly (generator, orchestrator, providers, job store). -->
+    <InternalsVisibleTo Include="Knotarium.Tests" />
+  </ItemGroup>
+
+</Project>

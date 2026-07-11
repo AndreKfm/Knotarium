@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- App version shown on the dashboard (GET /api/version). Bump per release so a running instance
+         can be told apart from a stale one. Build time is derived from the assembly file timestamp at
+         runtime, so it updates on every rebuild without touching this value. -->
+    <Version>0.1.4</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Knotarium.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Built-in template gallery sources (reviewable JSON, packed to .kgtpl on demand at runtime). -->
+    <Content Update="Templates\Sources\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Knotarium.Features\Knotarium.Features.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Options\Knotarium.Features.Options.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.NodeEditor\Knotarium.Features.NodeEditor.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Compiler\Knotarium.Features.Compiler.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Settings\Knotarium.Features.Settings.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.OpenApi\Knotarium.Features.OpenApi.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Portability\Knotarium.Features.Portability.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Ai\Knotarium.Features.Ai.csproj" />
+    <ProjectReference Include="..\Knotarium.Infrastructure\Knotarium.Infrastructure.csproj" />
+    <ProjectReference Include="..\Knotarium.Core\Knotarium.Core.csproj" />
+    <ProjectReference Include="..\Knotarium.NodeRuntime\Knotarium.NodeRuntime.csproj" />
+  </ItemGroup>
+
+</Project>

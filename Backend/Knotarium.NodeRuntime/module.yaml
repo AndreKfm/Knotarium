@@ -1,0 +1,31 @@
+version: 1
+module:
+  id: backend.node_runtime
+  name: Knotarium.NodeRuntime
+  level: runtime
+  path: Backend/Knotarium.NodeRuntime
+  owner_role: runtime-boundary
+  intention: Dynamic node loading, sandboxing, analyzers, and declarative runtime execution.
+  allowed_project_dependencies:
+    - Knotarium.Core
+  forbidden_project_dependencies:
+    - Knotarium.Api
+    - Knotarium.Features
+    - Knotarium.Infrastructure
+  component_map:
+    - path: Backend/Knotarium.NodeRuntime
+      architecture_level: Runtime / Sandbox Boundary
+      intention: Dynamic node loading, declarative execution, analyzers, and runtime services.
+      viable_changes:
+        - Roslyn analyzers
+        - Assembly loading
+        - Runtime registries
+        - Expression evaluation
+  place_here_when:
+    - The change is about assembly loading.
+    - The change is about dynamic node package execution.
+    - The change is about analyzers or runtime guards.
+    - The change is about declarative execution helpers.
+    - The change is about runtime-bound expression evaluation.
+  do_not_place_here:
+    - Workflow orchestration unless it is a true runtime-engine concern

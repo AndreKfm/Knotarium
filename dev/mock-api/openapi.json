@@ -1,0 +1,84 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Mock Pet Stores",
+    "version": "1.0.0",
+    "description": "Local dev API for exercising dynamic options / resource locator (auto-detect + cascading)."
+  },
+  "servers": [{ "url": "http://127.0.0.1:8787" }],
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "tags": ["pets"],
+        "summary": "List all pets",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "operationId": "getPet",
+        "tags": ["pets"],
+        "summary": "Get one pet by id",
+        "parameters": [
+          { "name": "petId", "in": "path", "required": true, "description": "Pet id", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/stores": {
+      "get": {
+        "operationId": "listStores",
+        "tags": ["stores"],
+        "summary": "List all stores",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/stores/{storeId}": {
+      "get": {
+        "operationId": "getStore",
+        "tags": ["stores"],
+        "summary": "Get one store by id",
+        "parameters": [
+          { "name": "storeId", "in": "path", "required": true, "description": "Store id", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/stores/{storeId}/pets": {
+      "get": {
+        "operationId": "listStorePets",
+        "tags": ["stores"],
+        "summary": "List the pets in a store",
+        "parameters": [
+          { "name": "storeId", "in": "path", "required": true, "description": "Store id", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/stores/{storeId}/pets/{petId}": {
+      "get": {
+        "operationId": "getStorePet",
+        "tags": ["stores"],
+        "summary": "Get a pet within a store (cascading: petId depends on storeId)",
+        "parameters": [
+          { "name": "storeId", "in": "path", "required": true, "description": "Store id", "schema": { "type": "string" } },
+          { "name": "petId", "in": "path", "required": true, "description": "Pet id", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/stores/{storeId}/pets/{petId}/adopt": {
+      "post": {
+        "operationId": "adoptPet",
+        "tags": ["stores"],
+        "summary": "Adopt a pet (a write that consumes resolved store + pet ids)",
+        "parameters": [
+          { "name": "storeId", "in": "path", "required": true, "description": "Store id", "schema": { "type": "string" } },
+          { "name": "petId", "in": "path", "required": true, "description": "Pet id", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  }
+}

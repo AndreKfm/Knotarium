@@ -1,0 +1,153 @@
+{
+  "feature": "condition-node-editor",
+  "branch": "feat/condition-node-editor",
+  "source": "docs/plans/condition-node-editor-TODO.md",
+  "generated_from_prose": true,
+  "counts": {
+    "block": 7,
+    "decide": 0,
+    "locked": 7
+  },
+  "items": [
+    {
+      "id": "B1",
+      "tag": "BLOCK",
+      "phase": "Phase 0",
+      "title": "Operator-semantics spec (kills \"mirror prototype\")",
+      "text": "Operator-semantics spec (kills \"mirror prototype\"): invariant-culture number parsing; ordinal vs ordinal-ignore-case compare; concrete epsilon value + formula applied consistently across `eq` and ordering ops; `contains`/`starts`/`ends` case sensitivity; regex flavor + options + timeout + invalid-regex behavior; membership parsing (trim, empty elements, escaped/quoted commas, per-element typed conversion); `empty` over null/`\"\"`/whitespace/empty array/object; `exists` (non-null vs resolved vs property-present-when-null); boolean operators on non-boolean operands; `eq` on arrays/objects (unsupported vs structural)."
+    },
+    {
+      "id": "B2",
+      "tag": "BLOCK",
+      "phase": "Phase 0",
+      "title": "Shared conformance fixture",
+      "text": "Shared conformance fixture: language-neutral JSON `(op, typeA, A, typeB, B) → expectedStatus` consumed by both FE and BE suites, plus a catalog fixture (`id, arity, accepts`) for drift detection. The enforcement mechanism for \"what you see == what runs\"."
+    },
+    {
+      "id": "B3",
+      "tag": "BLOCK",
+      "phase": "Phase 0",
+      "title": "Result is a status (True|False|Incomplete|Error) + record, not bool?, identical FE/BE",
+      "text": "Result is a status (`True|False|Incomplete|Error`) + record, not `bool?`, identical FE/BE."
+    },
+    {
+      "id": "B4",
+      "tag": "BLOCK",
+      "phase": "Phase 0",
+      "title": "Incomplete aggregation is strict",
+      "text": "Incomplete aggregation is strict: any incomplete comparator ⇒ whole condition `Incomplete`, even if another comparator already determines the boolean. Test `false AND incomplete` and `true OR incomplete`."
+    },
+    {
+      "id": "B5",
+      "tag": "BLOCK",
+      "phase": "Phase 1",
+      "title": "Operand type is non-optional at persistence — it must survive EvaluatePropertyValue (which replaces a ref with the raw value), or BE can't reproduce cross-type-equals-false",
+      "text": "Operand `type` is non-optional at persistence — it must survive `EvaluatePropertyValue` (which replaces a `ref` with the raw value), or BE can't reproduce cross-type-equals-false."
+    },
+    {
+      "id": "B6",
+      "tag": "BLOCK",
+      "phase": "Phase 1",
+      "title": "Exhaustive legacy operator-name → OperatorId map, enumerated from the legacy ConditionOperator enum, with a contract test (next to the catalog fixture) asserting no legacy operator is unmapped",
+      "text": "Exhaustive legacy operator-name → OperatorId map, enumerated from the legacy `ConditionOperator` enum, with a contract test (next to the catalog fixture) asserting no legacy operator is unmapped."
+    },
+    {
+      "id": "B7",
+      "tag": "BLOCK",
+      "phase": "Phase 0",
+      "title": "Per-operand error shape (above) defined once; runtime + dry-run emit it",
+      "text": "Per-operand error shape (above) defined once; runtime + dry-run emit it."
+    },
+    {
+      "id": "D1",
+      "tag": "LOCKED",
+      "phase": "Phase 1",
+      "title": "Error → fail-node with a code (INVALID_LOGIC / RESOLUTION_FAILED)",
+      "text": "Error → **fail-node** with a code (`INVALID_LOGIC` / `RESOLUTION_FAILED`). Never route `false` on failure."
+    },
+    {
+      "id": "D2",
+      "tag": "LOCKED",
+      "phase": "Phase 1",
+      "title": "Uncoercible resolved value → Error (COERCION_FAILED), not Incomplete (the comparator is fully configured)",
+      "text": "Uncoercible resolved value → **`Error` (`COERCION_FAILED`)**, not `Incomplete` (the comparator is fully configured). Cross-type-with-defined-semantics stays a legitimate `False`."
+    },
+    {
+      "id": "D3",
+      "tag": "LOCKED",
+      "phase": "Phase 1",
+      "title": "Operands colocated on the comparator ({ id, op, a, b? }); UI cards derived from the model",
+      "text": "Operands **colocated on the comparator** (`{ id, op, a, b? }`); UI cards derived from the model."
+    },
+    {
+      "id": "D4",
+      "tag": "LOCKED",
+      "phase": "Phase 1",
+      "title": "Exhaustive legacy map (B6); residual unknown operator = corrupted/ foreign data → INVALID_LOGIC (block on open/publish; fail-node at runtime for an already-published workflow)",
+      "text": "Exhaustive legacy map (B6); residual unknown operator = corrupted/ foreign data → `INVALID_LOGIC` (block on open/publish; fail-node at runtime for an already-published workflow). **Never silently substitute a default operator.**"
+    },
+    {
+      "id": "D5",
+      "tag": "LOCKED",
+      "phase": "Phase 5",
+      "title": "Last-run scoping & exposure",
+      "text": "Last-run scoping & exposure. **Decided:** - *Scope:* the **most recent `ExecutionInstance` for the workflow definition** (any version), by `CreatedAt`. Response carries `runId` / `versionId` / `createdAt`. - *Staleness:* `stale = run.WorkflowVersionId != ActiveWorkflowVersion` (when both known); the editor shows the run timestamp + a **\"stale\"** badge so a value from an older version is visibly flagged. - *Resolution:* backend-authoritative — reuses the runtime `ExpressionEvaluator` over a read-only projection of the stored run (found-ness preserved), so editor-shown == runtime-resolved. - *Exposure:* last-run values are a **strict subset of what `GET /api/executions/{id}` already returns** to the same authenticated user (the Execution UI shows full node outputs today), so no new trust boundary. `SecretValue`-wrapped credentials are never persisted to a run. **Defense-in-depth:** any value whose ref names a sensitive field (`secret|token|password|apikey|authorization`) is returned masked as `\"***\"` (`sensitive: true`). *(Override this if compliance needs last-run values gated behind a separate permission or fully withheld.)*"
+    },
+    {
+      "id": "D6",
+      "tag": "LOCKED",
+      "phase": "Phase 7",
+      "title": "Templated legacy condition migration",
+      "text": "Templated legacy condition migration: **no proactive auto-migration.** Decided after R9 surfaced that legacy `left/operator/right` carries **no operand types**, while persisted `logic` requires a declared type per operand (load-bearing: cross-type `eq`→False, ordering coerces to the declared type). Any publish/import/first-run migration would have to **guess** types with no resolved values to infer from — defaulting a ref to `string` silently flips the common case (`count gt 5` with `count=10`: legacy infers number → True; auto-migrated string → ordinal `\"10\">\"5\"` → False). The only safe auto-migratable subset is literal-vs-literal (types unambiguous), which is near-empty in practice. So: **legacy conditions keep running via the legacy path** (the runtime infers types from *resolved* values, semantics intact) and migrate to `logic` **only via the editor's one-way Save**, where the author reviews/sets operand types. (Considered & rejected: migrate-on-publish/import/first-run — all lossy for ref operands; migrate-only-literals — safe but migrates ~nothing.)"
+    },
+    {
+      "id": "D7",
+      "tag": "LOCKED",
+      "phase": "Phase 1",
+      "title": "Task-side ref resolution",
+      "text": "Task-side ref resolution. `logic` is `Expression:false` (handed over unresolved); the task resolves each `ref` via a new `IWorkflowState.TryResolveVariable` that reports found-ness, so missing ref → `RESOLUTION_FAILED` and resolved-`null` stays a legitimate value. The generic executor resolution collapses missing→`null`, which would destroy that distinction. Requires honoring `Expression:false` in the executor loop (primitives still unbox); this also makes the literal-`{{`-escape rule moot."
+    }
+  ],
+  "phases": [
+    {
+      "phase": 0,
+      "title": "Semantic contract + fixtures",
+      "status": "done"
+    },
+    {
+      "phase": 1,
+      "title": "Backend model / evaluator / task / legacy (tested)",
+      "status": "done"
+    },
+    {
+      "phase": 2,
+      "title": "FE pure core (tested; no value-API dependency)",
+      "status": "done"
+    },
+    {
+      "phase": 3,
+      "title": "Editor view on **Manual sample only**  ⏳ (slice 1 done; slice 2 next)",
+      "status": "todo"
+    },
+    {
+      "phase": 4,
+      "title": "Properties-panel integration  ✅ (DONE — +14 tests; FE 180 condition/entry green, BE 796 green)",
+      "status": "todo"
+    },
+    {
+      "phase": 5,
+      "title": "Last-run value resolution API  ✅ (DONE — +10 tests; FE 184 condition/entry green, BE 802 green)",
+      "status": "todo"
+    },
+    {
+      "phase": 6,
+      "title": "Dry-run capability framework (deferred; build only if justified)",
+      "status": "todo"
+    },
+    {
+      "phase": 7,
+      "title": "Round-trip + E2E",
+      "status": "todo"
+    }
+  ]
+}

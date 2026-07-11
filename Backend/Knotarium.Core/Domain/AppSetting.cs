@@ -1,0 +1,30 @@
+namespace Knotarium.Core.Domain;
+
+/// <summary>
+/// A single global, runtime-mutable, persisted application setting stored as a key/value row.
+/// Unlike <c>RuntimeArmingState</c> (in-memory only), these survive restarts. Used for global
+/// configuration that has no natural home on another entity — e.g. the default error workflow id.
+/// </summary>
+public class AppSetting
+{
+    public string Key { get; set; } = string.Empty;
+    public string? Value { get; set; }
+}
+
+/// <summary>Well-known <see cref="AppSetting.Key"/> values.</summary>
+public static class AppSettingKeys
+{
+    /// <summary>Workflow definition id of the global error-handler workflow run when any workflow fails.</summary>
+    public const string DefaultErrorWorkflowId = "DefaultErrorWorkflowId";
+
+    /// <summary>JSON blob holding the active AI provider configuration (vendor, model, base url, credential ref).</summary>
+    public const string AiProviderConfig = "AiProviderConfig";
+
+    /// <summary>JSON blob holding the global file-access policy (permitted path grants, total-access flag,
+    /// free-space reserve) enforced by the file nodes. Unset ⇒ deny-by-default.</summary>
+    public const string FileAccessPolicy = "FileAccessPolicy";
+
+    /// <summary>JSON blob listing the enabled privileged node capabilities (e.g. code execution, database).
+    /// Unset ⇒ all switchable capabilities off.</summary>
+    public const string CapabilityPolicy = "CapabilityPolicy";
+}

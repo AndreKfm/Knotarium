@@ -1,0 +1,25 @@
+id: condition
+version: 1.0.0
+displayName: Condition
+category: Control
+tier: Declarative
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 10
+capabilities: []
+parameters:
+  - name: left
+    type: string
+    required: true
+    expression: true
+  - name: operator
+    type: string
+    required: true
+    expression: false
+  - name: right
+    type: string
+    required: true
+    expression: true
+outputs:
+  - name: "true"
+  - name: "false"

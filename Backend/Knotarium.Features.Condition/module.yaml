@@ -1,0 +1,33 @@
+version: 1
+module:
+  id: backend.features.condition
+  name: Knotarium.Features.Condition
+  level: application
+  path: Backend/Knotarium.Features.Condition
+  owner_role: use-case-and-orchestration
+  intention: >-
+    The type-aware Condition evaluation engine: the persisted logic model + parser, the operator
+    catalog, the recursive tree/leaf evaluator, and the legacy left/operator/right mapping. Pure
+    domain logic with no persistence, shared by the Nodes Condition task (run path) and the Reactive
+    wire-guard evaluator so neither slice depends on the other. Depends only on Core.
+  allowed_project_dependencies:
+    - Knotarium.Core
+  forbidden_project_dependencies:
+    - Knotarium.Api
+    - Knotarium.Infrastructure
+    - Knotarium.NodeRuntime
+    - Knotarium.Features
+  component_map:
+    - path: Backend/Knotarium.Features.Condition
+      architecture_level: Application / Feature Slice
+      intention: Condition logic model, parser, operator catalog, and evaluator.
+      viable_changes:
+        - New operators
+        - Comparator/aggregation semantics
+        - Logic-tree parsing rules
+        - Legacy operator mapping
+  place_here_when:
+    - The change parses, models, or evaluates condition logic.
+  do_not_place_here:
+    - Node-task orchestration or ref resolution against a run (belongs in the Nodes slice)
+    - The publish-time incomplete-condition gate (belongs in the Nodes slice)

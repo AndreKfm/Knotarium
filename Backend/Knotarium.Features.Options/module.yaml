@@ -1,0 +1,32 @@
+version: 1
+module:
+  id: backend.features.options
+  name: Knotarium.Features.Options
+  level: application
+  path: Backend/Knotarium.Features.Options
+  owner_role: use-case-and-orchestration
+  intention: >-
+    Dynamic-options / resource-locator machinery: loader registry, built-in REST-collection
+    loader, short-TTL options cache, and fail-closed execution-time resource resolver.
+    Extracted leaf slice — depends only on Core contracts.
+  allowed_project_dependencies:
+    - Knotarium.Core
+  forbidden_project_dependencies:
+    - Knotarium.Api
+    - Knotarium.Infrastructure
+    - Knotarium.NodeRuntime
+    - Knotarium.Features
+  component_map:
+    - path: Backend/Knotarium.Features.Options
+      architecture_level: Application / Feature Slice
+      intention: Option loaders, resource resolution, and caching behind Core seams.
+      viable_changes:
+        - Loader implementations
+        - Resource resolution rules
+        - Caching policy
+  place_here_when:
+    - The change loads dynamic option lists for pickers.
+    - The change resolves a stored resource-locator to a live handle.
+  do_not_place_here:
+    - Node-task behavior (belongs in the Nodes slice)
+    - Persistence or EF concerns

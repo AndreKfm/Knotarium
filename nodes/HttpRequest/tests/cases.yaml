@@ -1,0 +1,6 @@
+cases:
+  - name: GET Request
+    inputs:
+      url: https://example.com
+      method: GET
+    expectedOutput: success

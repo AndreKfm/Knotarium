@@ -1,0 +1,269 @@
+version: 1
+system:
+  id: automate
+  name: Knotarium
+  description: >-
+    Workflow automation platform with an ASP.NET backend, React frontend,
+    dynamic node runtime, and file-system-discovered node packages.
+  primary_architecture_doc: docs/Knotarium_MVP_Architecture-5.md
+  generated_from:
+    - docs/Architecture_Review_Guide.md
+    - docs/Knotarium_MVP_Architecture-5.md
+    - docs/Knotarium_MVP_Architecture-4.md
+    - docs/Knotarium_MVP_Architecture-3.md
+    - docs/Knotarium_MVP_Architecture-2.md
+knowledge_sources:
+  priority_order:
+    - architecture/system.yaml
+    - '**/module.yaml'
+    - docs/Knotarium_MVP_Architecture-5.md
+    - docs/Knotarium_MVP_Architecture-4.md
+    - docs/Knotarium_MVP_Architecture-3.md
+    - docs/Knotarium_MVP_Architecture-2.md
+    - docs/Knotarium_MVP_Architecture.md
+    - Backend/*.csproj
+    - dominant observed repository pattern
+    - docs/Architecture_Review_Guide.md
+  override_rule: Higher-priority sources override lower-priority ones.
+  dominant_pattern_rule: Existing violations do not become the dominant pattern when they conflict with documented rules.
+modules:
+  - id: backend.api
+    name: Knotarium.Api
+    manifest: Backend/Knotarium.Api/module.yaml
+    path: Backend/Knotarium.Api
+    level: host
+  - id: backend.core
+    name: Knotarium.Core
+    manifest: Backend/Knotarium.Core/module.yaml
+    path: Backend/Knotarium.Core
+    level: core
+  - id: backend.features
+    name: Knotarium.Features
+    manifest: Backend/Knotarium.Features/module.yaml
+    path: Backend/Knotarium.Features
+    level: application
+    note: >-
+      Remaining shared feature assembly holding the slices not yet extracted (Execution, Compiler
+      coordination, Nodes, NodeEditor coordination, Polling, Scheduling, Notifications, etc.). The
+      leaves below were extracted into their own projects; this assembly references them.
+  - id: backend.features.options
+    name: Knotarium.Features.Options
+    manifest: Backend/Knotarium.Features.Options/module.yaml
+    path: Backend/Knotarium.Features.Options
+    level: application
+  - id: backend.features.node_editor
+    name: Knotarium.Features.NodeEditor
+    manifest: Backend/Knotarium.Features.NodeEditor/module.yaml
+    path: Backend/Knotarium.Features.NodeEditor
+    level: application
+  - id: backend.features.compiler
+    name: Knotarium.Features.Compiler
+    manifest: Backend/Knotarium.Features.Compiler/module.yaml
+    path: Backend/Knotarium.Features.Compiler
+    level: application
+  - id: backend.features.settings
+    name: Knotarium.Features.Settings
+    manifest: Backend/Knotarium.Features.Settings/module.yaml
+    path: Backend/Knotarium.Features.Settings
+    level: application
+  - id: backend.features.condition
+    name: Knotarium.Features.Condition
+    manifest: Backend/Knotarium.Features.Condition/module.yaml
+    path: Backend/Knotarium.Features.Condition
+    level: application
+  - id: backend.features.openapi
+    name: Knotarium.Features.OpenApi
+    manifest: Backend/Knotarium.Features.OpenApi/module.yaml
+    path: Backend/Knotarium.Features.OpenApi
+    level: application
+  - id: backend.features.portability
+    name: Knotarium.Features.Portability
+    manifest: Backend/Knotarium.Features.Portability/module.yaml
+    path: Backend/Knotarium.Features.Portability
+    level: application
+  - id: backend.features.ai
+    name: Knotarium.Features.Ai
+    manifest: Backend/Knotarium.Features.Ai/module.yaml
+    path: Backend/Knotarium.Features.Ai
+    level: application
+  - id: backend.infrastructure
+    name: Knotarium.Infrastructure
+    manifest: Backend/Knotarium.Infrastructure/module.yaml
+    path: Backend/Knotarium.Infrastructure
+    level: infrastructure
+  - id: backend.node_runtime
+    name: Knotarium.NodeRuntime
+    manifest: Backend/Knotarium.NodeRuntime/module.yaml
+    path: Backend/Knotarium.NodeRuntime
+    level: runtime
+  - id: backend.tests
+    name: Knotarium.Tests
+    manifest: Backend/Knotarium.Tests/module.yaml
+    path: Backend/Knotarium.Tests
+    level: test
+  - id: backend.node_runtime_tests
+    name: Knotarium.NodeRuntime.Tests
+    manifest: Backend/Knotarium.NodeRuntime.Tests/module.yaml
+    path: Backend/Knotarium.NodeRuntime.Tests
+    level: test
+  - id: backend.tests_api
+    name: Knotarium.Tests.Api
+    manifest: Backend/Knotarium.Tests.Api/module.yaml
+    path: Backend/Knotarium.Tests.Api
+    level: test
+  - id: backend.architecture_tests
+    name: Knotarium.Architecture.Tests
+    manifest: Backend/Knotarium.Architecture.Tests/module.yaml
+    path: Backend/Knotarium.Architecture.Tests
+    level: test
+    note: >-
+      Drift-control guard. Reads every production module.yaml (allowed/forbidden lists + Features
+      slice_rules) and fails the build on any violation; also snapshots the HTTP route surface.
+  - id: frontend.app
+    name: Frontend
+    manifest: Frontend/module.yaml
+    path: Frontend
+    level: presentation
+  - id: node_packages
+    name: Node Packages
+    manifest: nodes/module.yaml
+    path: nodes
+    level: extension
+cross_cutting_rules:
+  # Coarse layering only. The authoritative, build-enforced per-project edge lists live in each
+  # module.yaml (allowed_/forbidden_project_dependencies), checked by Knotarium.Architecture.Tests.
+  # The feature layer is split into the shared Knotarium.Features assembly plus extracted leaf
+  # slices (Options, NodeEditor, Compiler, Settings, Condition, OpenApi, Portability, Ai); the leaves
+  # depend only on Core (and, narrowly, on each other or NodeRuntime as their manifests declare).
+  backend_dependency_rules:
+    - from: Knotarium.Api
+      allow:
+        - Knotarium.Features
+        - Feature leaf slices (Knotarium.Features.*)
+        - Knotarium.Infrastructure
+        - Knotarium.NodeRuntime
+        - Knotarium.Core
+    - from: Knotarium.Features
+      allow:
+        - Knotarium.Core
+        - Knotarium.Infrastructure
+        - Knotarium.NodeRuntime
+        - Feature leaf slices (Knotarium.Features.*)
+    - from: Feature leaf slices (Knotarium.Features.*)
+      allow:
+        - Knotarium.Core
+        - Other leaves only where the leaf's own module.yaml declares it (e.g. Ai -> Compiler/
+          Settings/Portability, OpenApi -> Options, NodeEditor -> NodeRuntime)
+      forbid:
+        - Knotarium.Features
+        - Knotarium.Infrastructure
+        - Knotarium.Api
+    - from: Knotarium.Infrastructure
+      allow:
+        - Knotarium.Core
+    - from: Knotarium.NodeRuntime
+      allow:
+        - Knotarium.Core
+    - from: Knotarium.Core
+      allow: []
+  disallowed_dependencies:
+    - source: Knotarium.Core
+      targets:
+        - Knotarium.Infrastructure
+        - Knotarium.Features
+        - Knotarium.Api
+        - Knotarium.NodeRuntime
+    - source: Knotarium.NodeRuntime
+      targets:
+        - Knotarium.Infrastructure
+        - Knotarium.Features
+        - Knotarium.Api
+    - source: Knotarium.Infrastructure
+      targets:
+        - Knotarium.Features
+        - Knotarium.Api
+    - source: Frontend
+      rule: Must not encode backend persistence concerns directly.
+    - source: Production modules
+      rule: Must not reference tests.
+  boundary_interpretation:
+    - Knotarium.Api is the composition root and transport layer, not the home for business logic.
+    - Knotarium.Features owns use-case and orchestration logic.
+    - Feature leaf slices (Knotarium.Features.*) are extracted, Core-only use-case slices reused
+      across the feature layer; cross-slice reuse goes through Core seams, not direct references.
+    - Knotarium.Infrastructure owns persistence and environment-specific adapters.
+    - Knotarium.NodeRuntime owns dynamic node runtime concerns, not workflow policy.
+    - Knotarium.Core owns stable contracts and domain primitives.
+placement_rules:
+  host_and_transport:
+    module: Knotarium.Api
+    use_for:
+      - HTTP endpoint shape
+      - SSE transport
+      - DI registration
+      - host startup
+      - request and response mapping
+      - host-level logging and telemetry wiring
+    avoid:
+      - Workflow execution policy
+      - Node business behavior unless transport-specific
+  feature_and_use_case_logic:
+    module: Knotarium.Features (+ extracted leaf slices Knotarium.Features.*)
+    use_for:
+      - Compiling workflows
+      - Running workflows
+      - Authoring nodes
+      - Implementing built-in nodes
+      - Coordinating domain contracts to fulfill a use-case
+    guidance:
+      - Prefer slice-local placement over broad shared folders.
+      - A Core-only, reusable slice (compile, condition eval, options, settings, portability, AI
+        generation, OpenAPI) belongs in its own Knotarium.Features.* leaf project; see that leaf's
+        module.yaml for its exact allowed dependencies.
+  domain_and_contracts:
+    module: Knotarium.Core
+    use_for:
+      - Stable cross-module contracts
+      - Domain-oriented primitives
+      - Low-volatility business concepts
+    avoid:
+      - Volatile helpers added only to simplify references
+  persistence_and_security_adapters:
+    module: Knotarium.Infrastructure
+    use_for:
+      - EF Core and database details
+      - SQLite-specific persistence
+      - Credential encryption and secret storage
+      - Environment-specific enforcement such as HTTP egress policy
+    guidance:
+      - Infrastructure satisfies contracts and does not own feature decisions.
+  runtime_and_package_execution:
+    module: Knotarium.NodeRuntime
+    use_for:
+      - Assembly loading
+      - Dynamic node package execution
+      - Analyzers and runtime guards
+      - Declarative execution helpers
+      - Expression evaluation within the runtime boundary
+  frontend:
+    module: Frontend
+    use_for:
+      - UI composition in Frontend/src/components
+      - Node package authoring experience in Frontend/src/node-editor
+      - Narrow reusable client helpers in Frontend/src/utils
+      - Stable frontend contracts in Frontend/src/types.ts
+    avoid:
+      - Broad helpers or dumping-ground utilities
+  node_packages:
+    module: nodes
+    use_for:
+      - File-system-discovered package-specific manifests
+      - Declarative behavior
+      - Package-specific tests and assets
+review_focus:
+  - Business logic drifting into Knotarium.Api instead of Knotarium.Features.
+  - Volatile helpers being pushed into Knotarium.Core to simplify references.
+  - Knotarium.Infrastructure taking ownership of feature policy.
+  - Knotarium.NodeRuntime expanding into application orchestration.
+  - Broad shared helper growth in Frontend/src/utils.
+  - Confusion between built-in nodes in Backend/Knotarium.Features/Nodes and file-system node packages in nodes/.

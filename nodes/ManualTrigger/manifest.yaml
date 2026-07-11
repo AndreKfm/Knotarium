@@ -1,0 +1,12 @@
+id: manualTrigger
+version: 1.0.0
+displayName: Manual Trigger
+category: Triggers
+tier: Declarative
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 0
+capabilities: []
+parameters: []
+outputs:
+  - name: result

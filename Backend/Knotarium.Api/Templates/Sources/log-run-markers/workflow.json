@@ -1,0 +1,23 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-log-run-markers",
+    "WorkflowName": "Log Run Markers",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      { "Id": "log-start", "Type": "log", "Properties": { "message": "Run started" } },
+      { "Id": "log-finish", "Type": "log", "Properties": { "message": "Run finished" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "edge-1", "From": "start-1", "Output": "result", "To": "log-start", "Input": "in" },
+      { "Id": "edge-2", "From": "log-start", "Output": "result", "To": "log-finish", "Input": "in" },
+      { "Id": "edge-3", "From": "log-finish", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

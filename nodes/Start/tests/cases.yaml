@@ -1,0 +1,4 @@
+cases:
+  - name: Default Trigger
+    inputs: {}
+    expectedOutput: result

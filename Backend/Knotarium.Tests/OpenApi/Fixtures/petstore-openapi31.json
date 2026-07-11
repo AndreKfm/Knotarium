@@ -1,0 +1,32 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Petstore", "version": "1.0.0" },
+  "servers": [{ "url": "https://petstore.swagger.io/v2" }],
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "summary": "List all pets",
+        "tags": ["pets"],
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "A list of pets" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" }
+        }
+      }
+    }
+  }
+}

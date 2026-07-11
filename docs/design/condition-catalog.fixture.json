@@ -1,0 +1,42 @@
+{
+  "$comment": [
+    "B2 catalog fixture — the shared FE/BE operator catalog source of truth (id, group, arity, accepts).",
+    "Canonical over the prototype's operator-dialog-data.jsx OPERATORS. Loaded by both test suites;",
+    "a drift test in each language asserts the language's operator table is identical to this file.",
+    "DEVIATIONS FROM PROTOTYPE (intentional, see condition-operator-semantics.md): ",
+    "  1. not-equals id is 'ne' (spec §5.1/§8), prototype called it 'neq'.",
+    "  2. ordering ops gt/gte/lt/lte accept 'string' too (spec §5.1 defines ordinal string ordering);",
+    "     prototype listed only number/any. 'accepts' is an editor guardrail only (spec §4), not a",
+    "     runtime guarantee.",
+    "'accepts' is the editor type-filter vocabulary (string|number|boolean|array|object|any), a",
+    "superset of the persisted declared types (string|number|boolean). 'rightKind:list' marks ops",
+    "whose B operand is a comma-separated membership list (spec §5.3)."
+  ],
+  "version": 1,
+  "operators": [
+    { "id": "eq",        "group": "Comparison", "label": "Equals",           "symbol": "=", "arity": "binary", "accepts": ["string", "number", "boolean", "any"] },
+    { "id": "ne",        "group": "Comparison", "label": "Not equals",       "symbol": "≠", "arity": "binary", "accepts": ["string", "number", "boolean", "any"] },
+    { "id": "gt",        "group": "Comparison", "label": "Greater than",     "symbol": ">", "arity": "binary", "accepts": ["string", "number", "any"] },
+    { "id": "gte",       "group": "Comparison", "label": "Greater or equal", "symbol": "≥", "arity": "binary", "accepts": ["string", "number", "any"] },
+    { "id": "lt",        "group": "Comparison", "label": "Less than",        "symbol": "<", "arity": "binary", "accepts": ["string", "number", "any"] },
+    { "id": "lte",       "group": "Comparison", "label": "Less or equal",    "symbol": "≤", "arity": "binary", "accepts": ["string", "number", "any"] },
+
+    { "id": "contains",  "group": "Text", "label": "Contains",         "symbol": "∋", "arity": "binary", "accepts": ["string", "array", "any"] },
+    { "id": "ncontains", "group": "Text", "label": "Does not contain", "symbol": "∌", "arity": "binary", "accepts": ["string", "array", "any"] },
+    { "id": "starts",    "group": "Text", "label": "Starts with",      "symbol": "▸", "arity": "binary", "accepts": ["string", "any"] },
+    { "id": "ends",      "group": "Text", "label": "Ends with",        "symbol": "◂", "arity": "binary", "accepts": ["string", "any"] },
+    { "id": "regex",     "group": "Text", "label": "Matches regex",    "symbol": "≈", "arity": "binary", "accepts": ["string", "any"] },
+
+    { "id": "in",  "group": "Membership", "label": "Is one of",     "symbol": "∈", "arity": "binary", "accepts": ["string", "number", "any"], "rightKind": "list" },
+    { "id": "nin", "group": "Membership", "label": "Is not one of", "symbol": "∉", "arity": "binary", "accepts": ["string", "number", "any"], "rightKind": "list" },
+
+    { "id": "empty",   "group": "Existence", "label": "Is empty",      "symbol": "∅", "arity": "unary", "accepts": ["string", "array", "object", "any"] },
+    { "id": "nempty",  "group": "Existence", "label": "Is not empty",  "symbol": "⊙", "arity": "unary", "accepts": ["string", "array", "object", "any"] },
+    { "id": "exists",  "group": "Existence", "label": "Exists",        "symbol": "✓", "arity": "unary", "accepts": ["any"] },
+    { "id": "nexists", "group": "Existence", "label": "Does not exist", "symbol": "✕", "arity": "unary", "accepts": ["any"] },
+
+    { "id": "true",  "group": "Boolean", "label": "Is true",  "symbol": "T", "arity": "unary", "accepts": ["boolean", "any"] },
+    { "id": "false", "group": "Boolean", "label": "Is false", "symbol": "F", "arity": "unary", "accepts": ["boolean", "any"] }
+  ],
+  "groups": ["Comparison", "Text", "Membership", "Existence", "Boolean"]
+}

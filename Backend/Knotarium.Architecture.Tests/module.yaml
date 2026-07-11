@@ -1,0 +1,29 @@
+version: 1
+module:
+  id: backend.architecture_tests
+  name: Knotarium.Architecture.Tests
+  level: test
+  path: Backend/Knotarium.Architecture.Tests
+  owner_role: architecture-drift-guard
+  intention: >-
+    Drift-control guard for the backend module boundaries. Loads every production module.yaml and
+    fails the build when a project's actual references violate its allowed/forbidden lists, when a
+    new cross-slice edge or direct AppDbContext user appears in Knotarium.Features (slice_rules
+    ratchet), or when the HTTP route surface drifts from its snapshot. References Knotarium.Features
+    only so the feature assemblies load for IL analysis. This manifest is descriptive (test project,
+    not self-enforced).
+  allowed_project_dependencies:
+    - Knotarium.Features
+  forbidden_project_dependencies: []
+  component_map:
+    - path: Backend/Knotarium.Architecture.Tests
+      architecture_level: Test Layer
+      intention: Manifest conformance, slice-boundary ratchet, and route-inventory guards.
+      viable_changes:
+        - Manifest conformance rules
+        - Slice-boundary / AppDbContext ratchet
+        - Route-surface snapshot checks
+  place_here_when:
+    - The code enforces or verifies architectural boundaries and manifests.
+  do_not_place_here:
+    - Feature or endpoint behavior tests (belong in Knotarium.Tests / Knotarium.Tests.Api)

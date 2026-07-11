@@ -1,0 +1,4 @@
+cases:
+  - name: Manual Run Trigger
+    inputs: {}
+    expectedOutput: result
