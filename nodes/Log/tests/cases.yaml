@@ -1,0 +1,5 @@
+cases:
+  - name: Default Log Message
+    inputs:
+      message: hello from test
+    expectedOutput: result

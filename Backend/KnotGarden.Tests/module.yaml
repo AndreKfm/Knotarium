@@ -1,0 +1,27 @@
+version: 1
+module:
+  id: backend.tests
+  name: KnotGarden.Tests
+  level: test
+  path: Backend/KnotGarden.Tests
+  owner_role: integration-tests
+  intention: Backend integration and feature-level regression coverage.
+  allowed_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Features
+    - KnotGarden.Features.OpenApi
+    - KnotGarden.Features.Portability
+    - KnotGarden.Features.Ai
+    - KnotGarden.Infrastructure
+    - KnotGarden.Core
+  forbidden_project_dependencies: []
+  component_map:
+    - path: Backend/KnotGarden.Tests
+      architecture_level: Test Layer
+      intention: Mirror production behavior without becoming a utility dumping ground.
+      viable_changes:
+        - Tests only
+  place_here_when:
+    - The code is verifying production behavior.
+  do_not_place_here:
+    - Reusable production utilities

@@ -1,0 +1,269 @@
+version: 1
+system:
+  id: automate
+  name: KnotGarden
+  description: >-
+    Workflow automation platform with an ASP.NET backend, React frontend,
+    dynamic node runtime, and file-system-discovered node packages.
+  primary_architecture_doc: docs/KnotGarden_MVP_Architecture-5.md
+  generated_from:
+    - docs/Architecture_Review_Guide.md
+    - docs/KnotGarden_MVP_Architecture-5.md
+    - docs/KnotGarden_MVP_Architecture-4.md
+    - docs/KnotGarden_MVP_Architecture-3.md
+    - docs/KnotGarden_MVP_Architecture-2.md
+knowledge_sources:
+  priority_order:
+    - architecture/system.yaml
+    - '**/module.yaml'
+    - docs/KnotGarden_MVP_Architecture-5.md
+    - docs/KnotGarden_MVP_Architecture-4.md
+    - docs/KnotGarden_MVP_Architecture-3.md
+    - docs/KnotGarden_MVP_Architecture-2.md
+    - docs/KnotGarden_MVP_Architecture.md
+    - Backend/*.csproj
+    - dominant observed repository pattern
+    - docs/Architecture_Review_Guide.md
+  override_rule: Higher-priority sources override lower-priority ones.
+  dominant_pattern_rule: Existing violations do not become the dominant pattern when they conflict with documented rules.
+modules:
+  - id: backend.api
+    name: KnotGarden.Api
+    manifest: Backend/KnotGarden.Api/module.yaml
+    path: Backend/KnotGarden.Api
+    level: host
+  - id: backend.core
+    name: KnotGarden.Core
+    manifest: Backend/KnotGarden.Core/module.yaml
+    path: Backend/KnotGarden.Core
+    level: core
+  - id: backend.features
+    name: KnotGarden.Features
+    manifest: Backend/KnotGarden.Features/module.yaml
+    path: Backend/KnotGarden.Features
+    level: application
+    note: >-
+      Remaining shared feature assembly holding the slices not yet extracted (Execution, Compiler
+      coordination, Nodes, NodeEditor coordination, Polling, Scheduling, Notifications, etc.). The
+      leaves below were extracted into their own projects; this assembly references them.
+  - id: backend.features.options
+    name: KnotGarden.Features.Options
+    manifest: Backend/KnotGarden.Features.Options/module.yaml
+    path: Backend/KnotGarden.Features.Options
+    level: application
+  - id: backend.features.node_editor
+    name: KnotGarden.Features.NodeEditor
+    manifest: Backend/KnotGarden.Features.NodeEditor/module.yaml
+    path: Backend/KnotGarden.Features.NodeEditor
+    level: application
+  - id: backend.features.compiler
+    name: KnotGarden.Features.Compiler
+    manifest: Backend/KnotGarden.Features.Compiler/module.yaml
+    path: Backend/KnotGarden.Features.Compiler
+    level: application
+  - id: backend.features.settings
+    name: KnotGarden.Features.Settings
+    manifest: Backend/KnotGarden.Features.Settings/module.yaml
+    path: Backend/KnotGarden.Features.Settings
+    level: application
+  - id: backend.features.condition
+    name: KnotGarden.Features.Condition
+    manifest: Backend/KnotGarden.Features.Condition/module.yaml
+    path: Backend/KnotGarden.Features.Condition
+    level: application
+  - id: backend.features.openapi
+    name: KnotGarden.Features.OpenApi
+    manifest: Backend/KnotGarden.Features.OpenApi/module.yaml
+    path: Backend/KnotGarden.Features.OpenApi
+    level: application
+  - id: backend.features.portability
+    name: KnotGarden.Features.Portability
+    manifest: Backend/KnotGarden.Features.Portability/module.yaml
+    path: Backend/KnotGarden.Features.Portability
+    level: application
+  - id: backend.features.ai
+    name: KnotGarden.Features.Ai
+    manifest: Backend/KnotGarden.Features.Ai/module.yaml
+    path: Backend/KnotGarden.Features.Ai
+    level: application
+  - id: backend.infrastructure
+    name: KnotGarden.Infrastructure
+    manifest: Backend/KnotGarden.Infrastructure/module.yaml
+    path: Backend/KnotGarden.Infrastructure
+    level: infrastructure
+  - id: backend.node_runtime
+    name: KnotGarden.NodeRuntime
+    manifest: Backend/KnotGarden.NodeRuntime/module.yaml
+    path: Backend/KnotGarden.NodeRuntime
+    level: runtime
+  - id: backend.tests
+    name: KnotGarden.Tests
+    manifest: Backend/KnotGarden.Tests/module.yaml
+    path: Backend/KnotGarden.Tests
+    level: test
+  - id: backend.node_runtime_tests
+    name: KnotGarden.NodeRuntime.Tests
+    manifest: Backend/KnotGarden.NodeRuntime.Tests/module.yaml
+    path: Backend/KnotGarden.NodeRuntime.Tests
+    level: test
+  - id: backend.tests_api
+    name: KnotGarden.Tests.Api
+    manifest: Backend/KnotGarden.Tests.Api/module.yaml
+    path: Backend/KnotGarden.Tests.Api
+    level: test
+  - id: backend.architecture_tests
+    name: KnotGarden.Architecture.Tests
+    manifest: Backend/KnotGarden.Architecture.Tests/module.yaml
+    path: Backend/KnotGarden.Architecture.Tests
+    level: test
+    note: >-
+      Drift-control guard. Reads every production module.yaml (allowed/forbidden lists + Features
+      slice_rules) and fails the build on any violation; also snapshots the HTTP route surface.
+  - id: frontend.app
+    name: Frontend
+    manifest: Frontend/module.yaml
+    path: Frontend
+    level: presentation
+  - id: node_packages
+    name: Node Packages
+    manifest: nodes/module.yaml
+    path: nodes
+    level: extension
+cross_cutting_rules:
+  # Coarse layering only. The authoritative, build-enforced per-project edge lists live in each
+  # module.yaml (allowed_/forbidden_project_dependencies), checked by KnotGarden.Architecture.Tests.
+  # The feature layer is split into the shared KnotGarden.Features assembly plus extracted leaf
+  # slices (Options, NodeEditor, Compiler, Settings, Condition, OpenApi, Portability, Ai); the leaves
+  # depend only on Core (and, narrowly, on each other or NodeRuntime as their manifests declare).
+  backend_dependency_rules:
+    - from: KnotGarden.Api
+      allow:
+        - KnotGarden.Features
+        - Feature leaf slices (KnotGarden.Features.*)
+        - KnotGarden.Infrastructure
+        - KnotGarden.NodeRuntime
+        - KnotGarden.Core
+    - from: KnotGarden.Features
+      allow:
+        - KnotGarden.Core
+        - KnotGarden.Infrastructure
+        - KnotGarden.NodeRuntime
+        - Feature leaf slices (KnotGarden.Features.*)
+    - from: Feature leaf slices (KnotGarden.Features.*)
+      allow:
+        - KnotGarden.Core
+        - Other leaves only where the leaf's own module.yaml declares it (e.g. Ai -> Compiler/
+          Settings/Portability, OpenApi -> Options, NodeEditor -> NodeRuntime)
+      forbid:
+        - KnotGarden.Features
+        - KnotGarden.Infrastructure
+        - KnotGarden.Api
+    - from: KnotGarden.Infrastructure
+      allow:
+        - KnotGarden.Core
+    - from: KnotGarden.NodeRuntime
+      allow:
+        - KnotGarden.Core
+    - from: KnotGarden.Core
+      allow: []
+  disallowed_dependencies:
+    - source: KnotGarden.Core
+      targets:
+        - KnotGarden.Infrastructure
+        - KnotGarden.Features
+        - KnotGarden.Api
+        - KnotGarden.NodeRuntime
+    - source: KnotGarden.NodeRuntime
+      targets:
+        - KnotGarden.Infrastructure
+        - KnotGarden.Features
+        - KnotGarden.Api
+    - source: KnotGarden.Infrastructure
+      targets:
+        - KnotGarden.Features
+        - KnotGarden.Api
+    - source: Frontend
+      rule: Must not encode backend persistence concerns directly.
+    - source: Production modules
+      rule: Must not reference tests.
+  boundary_interpretation:
+    - KnotGarden.Api is the composition root and transport layer, not the home for business logic.
+    - KnotGarden.Features owns use-case and orchestration logic.
+    - Feature leaf slices (KnotGarden.Features.*) are extracted, Core-only use-case slices reused
+      across the feature layer; cross-slice reuse goes through Core seams, not direct references.
+    - KnotGarden.Infrastructure owns persistence and environment-specific adapters.
+    - KnotGarden.NodeRuntime owns dynamic node runtime concerns, not workflow policy.
+    - KnotGarden.Core owns stable contracts and domain primitives.
+placement_rules:
+  host_and_transport:
+    module: KnotGarden.Api
+    use_for:
+      - HTTP endpoint shape
+      - SSE transport
+      - DI registration
+      - host startup
+      - request and response mapping
+      - host-level logging and telemetry wiring
+    avoid:
+      - Workflow execution policy
+      - Node business behavior unless transport-specific
+  feature_and_use_case_logic:
+    module: KnotGarden.Features (+ extracted leaf slices KnotGarden.Features.*)
+    use_for:
+      - Compiling workflows
+      - Running workflows
+      - Authoring nodes
+      - Implementing built-in nodes
+      - Coordinating domain contracts to fulfill a use-case
+    guidance:
+      - Prefer slice-local placement over broad shared folders.
+      - A Core-only, reusable slice (compile, condition eval, options, settings, portability, AI
+        generation, OpenAPI) belongs in its own KnotGarden.Features.* leaf project; see that leaf's
+        module.yaml for its exact allowed dependencies.
+  domain_and_contracts:
+    module: KnotGarden.Core
+    use_for:
+      - Stable cross-module contracts
+      - Domain-oriented primitives
+      - Low-volatility business concepts
+    avoid:
+      - Volatile helpers added only to simplify references
+  persistence_and_security_adapters:
+    module: KnotGarden.Infrastructure
+    use_for:
+      - EF Core and database details
+      - SQLite-specific persistence
+      - Credential encryption and secret storage
+      - Environment-specific enforcement such as HTTP egress policy
+    guidance:
+      - Infrastructure satisfies contracts and does not own feature decisions.
+  runtime_and_package_execution:
+    module: KnotGarden.NodeRuntime
+    use_for:
+      - Assembly loading
+      - Dynamic node package execution
+      - Analyzers and runtime guards
+      - Declarative execution helpers
+      - Expression evaluation within the runtime boundary
+  frontend:
+    module: Frontend
+    use_for:
+      - UI composition in Frontend/src/components
+      - Node package authoring experience in Frontend/src/node-editor
+      - Narrow reusable client helpers in Frontend/src/utils
+      - Stable frontend contracts in Frontend/src/types.ts
+    avoid:
+      - Broad helpers or dumping-ground utilities
+  node_packages:
+    module: nodes
+    use_for:
+      - File-system-discovered package-specific manifests
+      - Declarative behavior
+      - Package-specific tests and assets
+review_focus:
+  - Business logic drifting into KnotGarden.Api instead of KnotGarden.Features.
+  - Volatile helpers being pushed into KnotGarden.Core to simplify references.
+  - KnotGarden.Infrastructure taking ownership of feature policy.
+  - KnotGarden.NodeRuntime expanding into application orchestration.
+  - Broad shared helper growth in Frontend/src/utils.
+  - Confusion between built-in nodes in Backend/KnotGarden.Features/Nodes and file-system node packages in nodes/.

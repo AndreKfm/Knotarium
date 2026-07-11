@@ -1,0 +1,33 @@
+version: 1
+module:
+  id: backend.features.node_editor
+  name: KnotGarden.Features.NodeEditor
+  level: application
+  path: Backend/KnotGarden.Features.NodeEditor
+  owner_role: use-case-and-orchestration
+  intention: >-
+    In-app custom-node authoring sandbox: parse a package manifest/tests, compile the
+    executor draft via Roslyn, run it in a collectible AssemblyLoadContext against recording
+    node-context capabilities, and gate publishing on a passing run. Extracted leaf slice —
+    depends only on Core + NodeRuntime.
+  allowed_project_dependencies:
+    - KnotGarden.Core
+    - KnotGarden.NodeRuntime
+  forbidden_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Infrastructure
+    - KnotGarden.Features
+  component_map:
+    - path: Backend/KnotGarden.Features.NodeEditor
+      architecture_level: Application / Feature Slice
+      intention: Node authoring sandbox, publish-gate session state, and the shared script helpers.
+      viable_changes:
+        - Sandbox compile/run flow
+        - Manifest/test validation coordination
+        - Publish-gate tracking
+  place_here_when:
+    - The change authors or tests a node package in-app.
+    - The change gates publishing on a passing sandbox run.
+  do_not_place_here:
+    - Persistence or EF concerns
+    - Transport/endpoint shape (belongs in the host)

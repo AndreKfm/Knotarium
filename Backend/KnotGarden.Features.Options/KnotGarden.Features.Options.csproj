@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>KnotGarden.Features.Options</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\KnotGarden.Core\KnotGarden.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Options unit tests instantiate these types directly (Options/*Tests.cs). -->
+    <InternalsVisibleTo Include="KnotGarden.Tests" />
+  </ItemGroup>
+
+</Project>

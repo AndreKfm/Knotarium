@@ -1,0 +1,43 @@
+version: 1
+module:
+  id: backend.api
+  name: KnotGarden.Api
+  level: host
+  path: Backend/KnotGarden.Api
+  owner_role: transport-composition-root
+  intention: ASP.NET host, endpoint transport, composition root, and bootstrap.
+  allowed_project_dependencies:
+    - KnotGarden.Features
+    - KnotGarden.Features.Options
+    - KnotGarden.Features.NodeEditor
+    - KnotGarden.Features.Compiler
+    - KnotGarden.Features.Settings
+    - KnotGarden.Features.OpenApi
+    - KnotGarden.Features.Portability
+    - KnotGarden.Features.Ai
+    - KnotGarden.Infrastructure
+    - KnotGarden.Core
+    # The host is the composition root and wires the runtime directly (NodeExecutorRegistry,
+    # NodePackageWatcher, HostPluginLoader). The prior manifest forbade this but the code has
+    # always depended on it; aligned to reality. Revisit if runtime wiring moves behind a seam.
+    - KnotGarden.NodeRuntime
+  forbidden_project_dependencies: []
+  component_map:
+    - path: Backend/KnotGarden.Api
+      architecture_level: Host / Transport / Composition Root
+      intention: ASP.NET host, DI registration, HTTP endpoints, SSE transport, application bootstrap.
+      viable_changes:
+        - Endpoint wiring
+        - Request validation
+        - Transport DTO mapping
+        - DI composition
+        - Host-level observability
+  place_here_when:
+    - The change is primarily about HTTP endpoint shape.
+    - The change is primarily about SSE transport.
+    - The change is primarily about DI registration or host startup.
+    - The change is primarily about request and response mapping.
+    - The change is primarily about host-level logging or telemetry wiring.
+  do_not_place_here:
+    - Workflow execution policy
+    - Node business behavior unless transport-specific

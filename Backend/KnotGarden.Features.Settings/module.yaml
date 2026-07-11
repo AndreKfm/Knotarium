@@ -1,0 +1,30 @@
+version: 1
+module:
+  id: backend.features.settings
+  name: KnotGarden.Features.Settings
+  level: application
+  path: Backend/KnotGarden.Features.Settings
+  owner_role: use-case-and-orchestration
+  intention: >-
+    Instance-wide global settings access (default error-workflow id, AI provider config, default
+    notification channels). Domain-flavoured accessors over the Core ISettingsStore seam; the EF
+    adapter lives in the host, so this is an extracted leaf slice depending only on Core contracts.
+  allowed_project_dependencies:
+    - KnotGarden.Core
+  forbidden_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Infrastructure
+    - KnotGarden.NodeRuntime
+    - KnotGarden.Features
+  component_map:
+    - path: Backend/KnotGarden.Features.Settings
+      architecture_level: Application / Feature Slice
+      intention: Global settings read/write behind the Core ISettingsStore seam.
+      viable_changes:
+        - New global-settings accessors
+        - Setting-key conventions
+  place_here_when:
+    - The change reads or writes an instance-wide global setting.
+  do_not_place_here:
+    - Persistence or EF concerns (the ISettingsStore adapter belongs in Infrastructure)
+    - Node-task behavior (belongs in the Nodes slice)

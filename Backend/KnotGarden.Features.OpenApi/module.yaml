@@ -1,0 +1,35 @@
+version: 1
+module:
+  id: backend.features.openapi
+  name: KnotGarden.Features.OpenApi
+  level: application
+  path: Backend/KnotGarden.Features.OpenApi
+  owner_role: use-case-and-orchestration
+  intention: >-
+    The OpenAPI integration slice: parse an imported spec into node manifests (generator), the
+    import/delete spec handlers, the pre-compiled interpreter executor that runs openapi.* nodes,
+    request-auth application, grouping and resource-locator inference. Persistence is behind Core
+    store seams (IOpenApiSpecStore, IServerConfigStore, INodePackageStore), so this is an extracted
+    leaf slice; the Nodes/Polling slices reach it only through Core inversion seams
+    (IOpenApiInterpreterExecutorFactory, IOpenApiRequestAuthApplier), never by direct reference.
+  allowed_project_dependencies:
+    - KnotGarden.Core
+    - KnotGarden.Features.Options
+  forbidden_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Infrastructure
+    - KnotGarden.NodeRuntime
+    - KnotGarden.Features
+  component_map:
+    - path: Backend/KnotGarden.Features.OpenApi
+      architecture_level: Application / Feature Slice
+      intention: OpenAPI spec import/delete, node generation, and interpreted execution.
+      viable_changes:
+        - Spec parsing-to-manifest rules
+        - Interpreter execution + auth schemes
+        - Resource-locator inference
+  place_here_when:
+    - The change imports, deletes, generates, or executes OpenAPI-derived nodes.
+  do_not_place_here:
+    - EF/persistence adapters (behind Core store seams in Infrastructure)
+    - Node-task registry wiring (belongs in the Nodes slice)

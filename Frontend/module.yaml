@@ -1,0 +1,57 @@
+version: 1
+module:
+  id: frontend.app
+  name: Frontend
+  level: presentation
+  path: Frontend
+  owner_role: user-interface
+  intention: React frontend for workflow editing, run inspection, and node authoring.
+  allowed_project_dependencies: []
+  forbidden_project_dependencies:
+    - Backend persistence concerns encoded directly in client code
+  component_map:
+    - path: Frontend/src/components
+      architecture_level: Presentation Layer
+      intention: Application UI, workflow canvas, execution inspection, and visual interaction.
+      viable_changes:
+        - React components
+        - UI composition
+        - Page-level state wiring
+    - path: Frontend/src/node-editor
+      architecture_level: Presentation / Authoring Layer
+      intention: Node package authoring experience in the UI.
+      viable_changes:
+        - Editor UX
+        - Node package authoring flows
+        - Preview and test UI
+    - path: Frontend/src/utils
+      architecture_level: Client Adapter Layer
+      intention: API adapters, schema mapping, and narrowly reusable client helpers.
+      viable_changes:
+        - API wrappers
+        - Mapping helpers
+        - Narrow reusable client utilities
+    - path: Frontend/src/types.ts
+      architecture_level: Shared Frontend Contract Layer
+      intention: TypeScript contracts that mirror backend API payload shape.
+      viable_changes:
+        - Stable frontend types
+        - Mapping-friendly contract definitions
+    - path: Frontend/src/test
+      architecture_level: Test Layer
+      intention: Frontend verification and regression coverage.
+      viable_changes:
+        - Tests only
+    - path: Frontend/src/__tests__
+      architecture_level: Test Layer
+      intention: Frontend verification and regression coverage.
+      viable_changes:
+        - Tests only
+  place_here_when:
+    - The change is UI composition or workflow-screen behavior.
+    - The change is node package authoring UX.
+    - The change is a narrow client helper or API adapter.
+    - The change is a stable frontend contract mirroring backend payloads.
+  do_not_place_here:
+    - Broad helper dumping grounds
+    - Direct persistence concerns from backend internals

@@ -1,0 +1,37 @@
+version: 1
+module:
+  id: backend.infrastructure
+  name: KnotGarden.Infrastructure
+  level: infrastructure
+  path: Backend/KnotGarden.Infrastructure
+  owner_role: adapters
+  intention: Persistence, crypto, secret handling, and environment-specific adapters.
+  allowed_project_dependencies:
+    - KnotGarden.Core
+  forbidden_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Features
+    - KnotGarden.NodeRuntime
+  component_map:
+    - path: Backend/KnotGarden.Infrastructure/Persistence
+      architecture_level: Infrastructure Adapter
+      intention: EF Core, SQLite persistence, journal writers, and durable storage concerns.
+      viable_changes:
+        - DB access
+        - Repositories
+        - EF mappings
+        - Provider-specific persistence
+    - path: Backend/KnotGarden.Infrastructure/Security
+      architecture_level: Infrastructure Adapter
+      intention: Encryption, secret resolution, credential storage, and security helpers.
+      viable_changes:
+        - Credential crypto
+        - Secret access
+        - Egress and security enforcement
+  place_here_when:
+    - The code is about EF Core or database details.
+    - The code is about SQLite-specific or provider-specific persistence.
+    - The code is about credential encryption or secret storage.
+    - The code is about environment-specific enforcement such as HTTP egress policy.
+  do_not_place_here:
+    - Feature policy or workflow decisions

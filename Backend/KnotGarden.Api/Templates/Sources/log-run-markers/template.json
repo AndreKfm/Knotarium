@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-log-run-markers",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Log Run Markers",
+  "author": "KnotGarden",
+  "description": "Logs a start marker and a finish marker around an empty middle step — a tiny scaffold to drop your own logic into between the two log lines.",
+  "tags": ["starter", "logging", "scaffold"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-06-19T00:00:00.0000000Z",
+  "sourceWorkflowName": "Log Run Markers",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

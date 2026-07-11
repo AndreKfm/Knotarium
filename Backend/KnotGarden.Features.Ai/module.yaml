@@ -1,0 +1,39 @@
+version: 1
+module:
+  id: backend.features.ai
+  name: KnotGarden.Features.Ai
+  level: application
+  path: Backend/KnotGarden.Features.Ai
+  owner_role: use-case-and-orchestration
+  intention: >-
+    The AI workflow-generation slice: turn a natural-language intent into a compiled, preview-ready
+    workflow via an LLM + compile/repair loop. Owns the per-vendor chat-provider adapters, the
+    prompt builder, the generated-workflow DTO/mapper, the generation orchestrator, and the
+    background generation runner/worker/queue/job-store. Depends only on Core plus the Compiler
+    (compile/repair), Settings (provider config), and Portability (credential-slot handling) leaves.
+    The thin HTTP surface (AiGenerationEndpoint) stays in the host.
+  allowed_project_dependencies:
+    - KnotGarden.Core
+    - KnotGarden.Features.Compiler
+    - KnotGarden.Features.Settings
+    - KnotGarden.Features.Portability
+  forbidden_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Infrastructure
+    - KnotGarden.NodeRuntime
+    - KnotGarden.Features
+  component_map:
+    - path: Backend/KnotGarden.Features.Ai
+      architecture_level: Application / Feature Slice
+      intention: LLM providers, prompt building, generated-workflow mapping, and generation orchestration.
+      viable_changes:
+        - Prompt construction
+        - Provider/vendor adapters
+        - Generated-workflow mapping rules
+        - Compile/repair orchestration
+        - Generation queue/worker/job-store behavior
+  place_here_when:
+    - The change generates a workflow from natural-language intent.
+    - The change talks to an LLM provider or shapes its prompt/response.
+  do_not_place_here:
+    - The HTTP endpoint wiring (belongs in the host)

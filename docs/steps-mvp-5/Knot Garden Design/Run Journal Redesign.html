@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Run Journal — Redesign Directions</title>
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#0b1c2a"/><g stroke="#34d399" stroke-width="4" fill="none" stroke-linecap="round"><path d="M30 38h40M30 50h28M30 62h34"/></g><circle cx="74" cy="62" r="6" fill="#22d3ee"/></svg>
+</template>
+<style>
+  :root { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+
+  /* ---- shared panel chrome (dark, matches the runner) ---- */
+  .jp-panel {
+    width: 380px;
+    background: #0a0e15;
+    border: 1px solid #1b2533;
+    border-radius: 16px;
+    padding: 16px;
+    color: #e6edf3;
+    font-family: system-ui, sans-serif;
+  }
+  .jp-head { display: flex; align-items: center; gap: 11px; padding: 2px 2px 14px; border-bottom: 1px solid #161f2b; margin-bottom: 14px; }
+  .jp-head-icon { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 700; font-size: 15px; }
+  .jp-head-title { font-size: 13px; font-weight: 700; letter-spacing: 0.14em; }
+  .jp-head-sub { font-size: 11px; color: #5d6b7c; letter-spacing: 0.04em; margin-top: 2px; }
+  .jp-run-ok { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #34d399; font-weight: 600; }
+  .jp-run-ok .jp-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 8px #34d399; }
+
+  .jp-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; color: #4ade9f; background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.28); }
+
+  .jp-foot { display: flex; align-items: center; gap: 9px; margin-top: 14px; padding: 12px 14px; border-radius: 11px; font-size: 12.5px; font-weight: 600; }
+  .jp-foot.ok { color: #6ee7b7; background: linear-gradient(90deg, rgba(52,211,153,0.13), rgba(52,211,153,0.03)); border: 1px solid rgba(52,211,153,0.22); }
+
+  /* ---------------- Direction A ---------------- */
+  .jp-list { display: flex; flex-direction: column; gap: 8px; }
+  .jpa-row { background: #0d1320; border: 1px solid #1a2433; border-radius: 12px; overflow: hidden; position: relative; }
+  .jpa-row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); opacity: 0.85; }
+  .jpa-main { width: 100%; display: flex; align-items: center; gap: 11px; padding: 12px 13px 12px 16px; background: none; border: 0; cursor: pointer; text-align: left; color: inherit; font: inherit; }
+  .jpa-idx { width: 19px; height: 19px; flex: none; border-radius: 6px; background: rgba(255,255,255,0.05); color: #7e8b9b; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+  .jpa-ico { width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center; background: rgba(var(--g),0.1); border: 1px solid rgba(var(--g),0.25); }
+  .jpa-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .jpa-name { font-size: 14px; font-weight: 650; color: #f1f5f9; }
+  .jpa-uid { font-size: 10.5px; color: #586374; font-family: ui-monospace, Menlo, monospace; }
+  .jpa-right { margin-left: auto; display: flex; align-items: center; gap: 9px; flex: none; }
+  .jpa-ms { font-size: 11px; color: #7c8a9c; font-family: ui-monospace, Menlo, monospace; min-width: 34px; text-align: right; }
+  .jpa-chev { transition: transform 0.18s ease; }
+  .jpa-chev.open { transform: rotate(180deg); }
+  .jpa-body { padding: 0 14px 13px 50px; display: flex; flex-direction: column; gap: 7px; }
+  .jpa-ev { display: flex; align-items: baseline; gap: 9px; font-size: 12px; }
+  .jpa-evtag { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 5px; flex: none; }
+  .jpa-evtag.started { color: #7fd0ff; background: rgba(59,158,255,0.12); }
+  .jpa-evtag.done { color: #5fe3ab; background: rgba(52,211,153,0.12); }
+  .jpa-evtxt { color: #aeb9c6; }
+  .jpa-pay { margin: 3px 0 0; padding: 9px 11px; background: #070b12; border: 1px solid #161f2b; border-radius: 8px; font-size: 11px; color: #8fa1b5; font-family: ui-monospace, Menlo, monospace; overflow-x: auto; }
+
+  /* ---------------- Direction B ---------------- */
+  .jpb-rail { display: flex; flex-direction: column; }
+  .jpb-step { display: flex; gap: 13px; }
+  .jpb-gutter { display: flex; flex-direction: column; align-items: center; flex: none; width: 32px; }
+  .jpb-node { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: rgba(var(--g),0.12); border: 1px solid rgba(var(--g),0.4); box-shadow: 0 0 14px rgba(var(--g),0.28); }
+  .jpb-line { width: 2px; flex: 1; min-height: 22px; background: linear-gradient(#7c5cff66, #7c5cff22); margin: 4px 0; border-radius: 2px; }
+  .jpb-content { flex: 1; padding-bottom: 18px; min-width: 0; }
+  .jpb-top { display: flex; align-items: center; gap: 9px; }
+  .jpb-name { font-size: 14px; font-weight: 650; color: #f1f5f9; }
+  .jpb-type { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: var(--c); padding: 2px 6px; border-radius: 5px; background: rgba(var(--g),0.1); border: 1px solid rgba(var(--g),0.22); }
+  .jpb-ms { margin-left: auto; font-size: 11px; color: #7c8a9c; font-family: ui-monospace, Menlo, monospace; }
+  .jpb-uid { font-size: 10.5px; color: #586374; font-family: ui-monospace, Menlo, monospace; margin: 3px 0 8px; }
+  .jpb-events { display: flex; flex-direction: column; gap: 5px; }
+  .jpb-ev { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #9aa7b6; }
+  .jpb-evdot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .jpb-evdot.s { background: #3b9eff; }
+  .jpb-evdot.d { background: #34d399; }
+
+  /* ---------------- Direction C ---------------- */
+  .jpc-stream { display: flex; flex-direction: column; background: #060a10; border: 1px solid #141d28; border-radius: 11px; padding: 6px 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .jpc-line { display: flex; align-items: center; gap: 9px; padding: 5px 10px 5px 0; position: relative; }
+  .jpc-first { margin-top: 6px; }
+  .jpc-line:first-child { margin-top: 0; }
+  .jpc-gutter { position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; }
+  .jpc-ms { width: 30px; flex: none; text-align: right; font-size: 10.5px; color: #4f5b6b; padding-left: 10px; }
+  .jpc-node { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+  .jpc-name { font-size: 12px; font-weight: 700; color: #f1f5f9; }
+  .jpc-uid { font-size: 10px; color: #4b5666; }
+  .jpc-cont { width: 0; }
+  .jpc-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.05em; padding: 1.5px 5px; border-radius: 4px; flex: none; }
+  .jpc-tag.s { color: #7fd0ff; background: rgba(59,158,255,0.13); }
+  .jpc-tag.d { color: #5fe3ab; background: rgba(52,211,153,0.13); }
+  .jpc-tag.wf { color: #6ee7b7; background: rgba(52,211,153,0.16); }
+  .jpc-txt { font-size: 11.5px; color: #94a2b3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .jpc-wf { margin-top: 7px; border-top: 1px dashed #1c2735; padding-top: 9px; }
+
+  /* ---------------- BEFORE (current) ---------------- */
+  .jpold-stream { display: flex; flex-direction: column; gap: 10px; background: #0c1119; border: 1px solid #1a2330; border-radius: 10px; padding: 12px; font-family: ui-monospace, Menlo, monospace; }
+  .jpold-line { border-bottom: 1px solid #141c27; padding-bottom: 9px; }
+  .jpold-line:last-child { border-bottom: 0; padding-bottom: 0; }
+  .jpold-top { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
+  .jpold-ts { color: #5a6675; }
+  .jpold-evt { font-weight: 600; }
+  .jpold-msg { font-size: 12.5px; color: #d4dce5; margin-bottom: 4px; }
+  .jpold-node { font-size: 11px; color: #5a6675; }
+  .jpold-pay { font-size: 11px; color: #4f9be0; margin-top: 5px; }
+
+  .note { font-family: system-ui, sans-serif; font-size: 12.5px; color: #4b5563; line-height: 1.55; max-width: 300px; }
+  .note b { color: #1f2937; }
+  .note .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: #047857; background: #d1fae5; padding: 1px 7px; border-radius: 999px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="frames/design-canvas.jsx"></script>
+<script type="text/babel" src="frames/journal-panels.jsx"></script>
+<script type="text/babel">
+  const { useEffect } = React;
+  function App() {
+    return (
+      <DesignCanvas>
+        <DCSection id="problem" title="The problem" subtitle="Current journal vs. the goal it should serve">
+          <DCArtboard id="before" label="Current — Runner Journal Stream" width={416} height={560}>
+            <div style={{ padding: 18 }}><PanelBefore /></div>
+          </DCArtboard>
+          <DCArtboard id="why" label="Why it's hard to read" width={340} height={560}>
+            <div style={{ padding: 26 }}>
+              <div className="note">
+                <span className="tag">DIAGNOSIS</span>
+                <p><b>Nodes are named by machine ID.</b> The log says <code>log-xjvuunpkv</code>; the canvas says <b>Log</b>. Your eye has to translate.</p>
+                <p><b>Every line repeats <code>[17:57:13]</code></b> — identical, so the timestamp adds weight but no signal.</p>
+                <p><b>The node ID is printed twice</b> per entry (in the sentence and the <code>Node:</code> line).</p>
+                <p><b>No grouping.</b> A node's <i>started → completed</i> pair is split across separate cards.</p>
+                <p><b>Eye zig-zags</b> between three corners: event type (top-right), message (mid), node (bottom).</p>
+              </div>
+            </div>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="directions" title="Three directions" subtitle="Same run, three ways to read it — mix & match">
+          <DCArtboard id="a" label="A · Grouped — one row per node (recommended)" width={416} height={520}>
+            <div style={{ padding: 18 }}><PanelA /></div>
+          </DCArtboard>
+          <DCArtboard id="b" label="B · Timeline — mirrors the canvas order" width={416} height={560}>
+            <div style={{ padding: 18 }}><PanelB /></div>
+          </DCArtboard>
+          <DCArtboard id="c" label="C · Refined terminal — keeps the mono feel" width={416} height={470}>
+            <div style={{ padding: 18 }}><PanelC /></div>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

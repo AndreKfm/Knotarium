@@ -1,0 +1,21 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-hello-world",
+    "WorkflowName": "Hello World",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      { "Id": "log-1", "Type": "log", "Properties": { "message": "Hello from your first KnotGarden template!" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "edge-1", "From": "start-1", "Output": "result", "To": "log-1", "Input": "in" },
+      { "Id": "edge-2", "From": "log-1", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

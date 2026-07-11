@@ -1,0 +1,19 @@
+<Solution>
+  <Project Path="KnotGarden.Api/KnotGarden.Api.csproj" />
+  <Project Path="KnotGarden.Core/KnotGarden.Core.csproj" />
+  <Project Path="KnotGarden.Features/KnotGarden.Features.csproj" />
+  <Project Path="KnotGarden.Features.Options/KnotGarden.Features.Options.csproj" />
+  <Project Path="KnotGarden.Features.NodeEditor/KnotGarden.Features.NodeEditor.csproj" />
+  <Project Path="KnotGarden.Features.Compiler/KnotGarden.Features.Compiler.csproj" />
+  <Project Path="KnotGarden.Features.Settings/KnotGarden.Features.Settings.csproj" />
+  <Project Path="KnotGarden.Features.Condition/KnotGarden.Features.Condition.csproj" />
+  <Project Path="KnotGarden.Features.OpenApi/KnotGarden.Features.OpenApi.csproj" />
+  <Project Path="KnotGarden.Features.Portability/KnotGarden.Features.Portability.csproj" />
+  <Project Path="KnotGarden.Features.Ai/KnotGarden.Features.Ai.csproj" />
+  <Project Path="KnotGarden.Infrastructure/KnotGarden.Infrastructure.csproj" />
+  <Project Path="KnotGarden.NodeRuntime/KnotGarden.NodeRuntime.csproj" />
+  <Project Path="KnotGarden.NodeRuntime.Tests/KnotGarden.NodeRuntime.Tests.csproj" />
+  <Project Path="KnotGarden.Architecture.Tests/KnotGarden.Architecture.Tests.csproj" />
+  <Project Path="KnotGarden.Tests/KnotGarden.Tests.csproj" />
+  <Project Path="KnotGarden.Tests.Api/KnotGarden.Tests.Api.csproj" />
+</Solution>

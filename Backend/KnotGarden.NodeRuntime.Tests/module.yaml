@@ -1,0 +1,22 @@
+version: 1
+module:
+  id: backend.node_runtime_tests
+  name: KnotGarden.NodeRuntime.Tests
+  level: test
+  path: Backend/KnotGarden.NodeRuntime.Tests
+  owner_role: runtime-tests
+  intention: Focused runtime and sandbox behavior verification.
+  allowed_project_dependencies:
+    - KnotGarden.NodeRuntime
+    - KnotGarden.Core
+  forbidden_project_dependencies: []
+  component_map:
+    - path: Backend/KnotGarden.NodeRuntime.Tests
+      architecture_level: Test Layer
+      intention: Runtime tests only.
+      viable_changes:
+        - Runtime tests only
+  place_here_when:
+    - The code verifies runtime and sandbox behavior.
+  do_not_place_here:
+    - Production code

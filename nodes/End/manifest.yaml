@@ -1,0 +1,15 @@
+id: end
+version: 1.0.0
+displayName: End
+category: Utility
+tier: Declarative
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 0
+capabilities: []
+parameters:
+  - name: payload
+    type: string
+    required: false
+    expression: true
+outputs: []

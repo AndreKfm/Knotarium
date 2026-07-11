@@ -1,0 +1,5 @@
+cases:
+  - name: Wait 10ms
+    inputs:
+      delayMs: 10
+    expectedOutput: result

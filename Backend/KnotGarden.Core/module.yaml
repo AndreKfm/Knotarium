@@ -1,0 +1,38 @@
+version: 1
+module:
+  id: backend.core
+  name: KnotGarden.Core
+  level: core
+  path: Backend/KnotGarden.Core
+  owner_role: domain-and-contracts
+  intention: Stable backend contracts and domain primitives with no infrastructure dependency.
+  allowed_project_dependencies: []
+  forbidden_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Features
+    - KnotGarden.Infrastructure
+    - KnotGarden.NodeRuntime
+  component_map:
+    - path: Backend/KnotGarden.Core/Contracts
+      architecture_level: Core Contract Layer
+      intention: Shared abstractions and contracts used across backend modules.
+      viable_changes:
+        - Interfaces
+        - IDs
+        - Execution contracts
+        - Stable DTO-like backend contracts
+    - path: Backend/KnotGarden.Core/Domain
+      architecture_level: Core Domain Layer
+      intention: Domain concepts and stable business primitives that must not depend on infrastructure.
+      viable_changes:
+        - Value objects
+        - Enums
+        - Stable domain models
+        - Low-volatility domain rules
+  place_here_when:
+    - The code defines a stable cross-module contract.
+    - The code defines a domain-oriented primitive.
+    - The code is unlikely to require infrastructure dependencies.
+  do_not_place_here:
+    - Volatile feature helpers added only to simplify references
+    - Storage-oriented types

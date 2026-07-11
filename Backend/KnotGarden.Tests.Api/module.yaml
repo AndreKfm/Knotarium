@@ -1,0 +1,31 @@
+version: 1
+module:
+  id: backend.tests_api
+  name: KnotGarden.Tests.Api
+  level: test
+  path: Backend/KnotGarden.Tests.Api
+  owner_role: api-integration-tests
+  intention: >-
+    HTTP-level integration tests that boot the ASP.NET host (WebApplicationFactory) and exercise the
+    real endpoints, scheduling worker, and OpenAPI/AI-generation surfaces end-to-end. Not enforced by
+    the manifest-conformance guard (test project); this manifest is descriptive only.
+  allowed_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Features
+    - KnotGarden.Features.Ai
+    - KnotGarden.Infrastructure
+    - KnotGarden.Core
+  forbidden_project_dependencies: []
+  component_map:
+    - path: Backend/KnotGarden.Tests.Api
+      architecture_level: Test Layer
+      intention: In-process HTTP integration tests against the composed host.
+      viable_changes:
+        - Endpoint integration tests
+        - Scheduling/worker integration tests
+        - API contract regression coverage
+  place_here_when:
+    - The code verifies behavior through the composed HTTP host.
+  do_not_place_here:
+    - Reusable production utilities
+    - Pure unit tests with no host (belong in KnotGarden.Tests)

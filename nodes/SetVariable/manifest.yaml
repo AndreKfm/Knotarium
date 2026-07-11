@@ -1,0 +1,20 @@
+id: setVariable
+version: 1.0.0
+displayName: Set Variable
+category: Utility
+tier: Declarative
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 10
+capabilities: []
+parameters:
+  - name: name
+    type: string
+    required: true
+    expression: false
+  - name: value
+    type: string
+    required: true
+    expression: true
+outputs:
+  - name: result

@@ -1,0 +1,51 @@
+# Build and Output Directories
+**/bin/
+**/obj/
+**/dist/
+**/dist-ssr/
+**/node_modules/
+
+# Database Files
+*.db
+*.db-shm
+*.db-wal
+**/automate.db*
+
+# Logs and Debug files
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Test Reports and results
+**/playwright-report/
+**/test-results/
+.playwright/
+
+# Editor and OS Files
+.vscode/*
+!.vscode/extensions.json
+.vs/
+.idea/
+.DS_Store
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Local Environment Variables
+*.local
+.env
+
+# Claude Code local config (personal launch/permission settings)
+.claude/
+
+# Local publish output (large build artifacts)
+publish/
+
+# Local dev settings — may hold secrets (credential / signing keys). Copy from the .example template.
+appsettings.Development.json
+appsettings.*.local.json

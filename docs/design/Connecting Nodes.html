@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Knoten verbinden — Treffsicherheit</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg: #0a0e16; --canvas: #090c13;
+    --surface: #0f141d; --surface-2: #131922;
+    --ink: #e6edf3; --muted: #8593a6; --faint: #5d6675;
+    --line: #212b39; --line-soft: #1b2430;
+    --violet: #7c6cf0; --violet-l: #a99bff;
+    --green: #34d399; --teal: #38bdf8; --amber: #f0b429; --blue: #3b9eff; --red: #f0556d;
+    --hit: 44px;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  #stage { position: fixed; inset: 0; overflow: hidden;
+    background: radial-gradient(circle at 1px 1px, #1a2433 1.1px, transparent 0) 0 0 / 30px 30px, var(--canvas); }
+
+  /* ---------- board (scaled to fit) ---------- */
+  #board { position: absolute; left: 50%; top: 47%; width: 1140px; height: 540px;
+    transform: translate(-50%, -50%) scale(var(--s, 1)); transform-origin: center center; }
+
+  /* ---------- nodes ---------- */
+  .node { position: absolute; width: 230px; border-radius: 15px; border: 1.5px solid var(--line);
+    background: linear-gradient(180deg, var(--surface-2), var(--surface));
+    box-shadow: 0 24px 60px -30px rgba(0,0,0,0.85); user-select: none; transition: outline-color 0.12s, box-shadow 0.12s; outline: 2px solid transparent; outline-offset: 3px; }
+  .node.drop-target { outline-color: var(--green); box-shadow: 0 24px 60px -24px rgba(52,211,153,0.5), 0 0 0 1px rgba(52,211,153,0.4); }
+  .node.dim { opacity: 0.42; }
+  .node-head { display: flex; align-items: center; gap: 10px; padding: 13px 15px; }
+  .node-ico { width: 28px; height: 28px; border-radius: 8px; flex: none; display: grid; place-items: center; }
+  .node-title { font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; }
+  .node-body { padding: 0 15px 14px; }
+  .node-sub { font-size: 12px; color: var(--muted); }
+  .node-sub.mono { color: var(--violet-l); }
+
+  /* ---------- ports ---------- */
+  .port-hit { position: absolute; width: var(--hit); height: var(--hit); transform: translate(-50%, -50%);
+    display: grid; place-items: center; cursor: crosshair; z-index: 6; border-radius: 50%; touch-action: none; }
+  .port-hit.show-hit { background: rgba(124,108,240,0.10); box-shadow: inset 0 0 0 1px rgba(124,108,240,0.45); }
+  .port-hit.show-hit::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
+    border: 1px dashed rgba(124,108,240,0.5); }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: #0c1119; border: 2.5px solid var(--c, var(--violet));
+    pointer-events: none; transition: transform 0.12s ease, box-shadow 0.12s ease; position: relative; z-index: 2; }
+  .port-hit.valid .dot { transform: scale(1.3); box-shadow: 0 0 0 6px rgba(52,211,153,0.16); border-color: var(--green); }
+  .port-hit.snap .dot { transform: scale(1.65); box-shadow: 0 0 0 9px rgba(52,211,153,0.30); border-color: var(--green); }
+  .port-out { left: 100%; top: 50%; }
+  .port-in  { left: 0;    top: 50%; }
+  .port-cap { position: absolute; font-size: 10px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--faint); top: 50%; transform: translateY(-50%); pointer-events: none; white-space: nowrap; }
+  .port-out .port-cap { left: calc(50% + 16px); }
+  .port-in  .port-cap { right: calc(50% + 16px); }
+
+  /* ---------- wires ---------- */
+  #wires { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; overflow: visible; }
+  .wire { fill: none; stroke: #9aa6b8; stroke-width: 2.4; opacity: 0.9; }
+  .wire.temp { stroke: var(--violet); stroke-width: 2.6; stroke-dasharray: 7 6; }
+  .wire.temp.snapped { stroke: var(--green); stroke-dasharray: none; }
+
+  /* ---------- control panel ---------- */
+  .panel { position: fixed; top: 22px; right: 22px; width: 290px; z-index: 40;
+    background: linear-gradient(180deg, var(--surface-2), var(--surface)); border: 1.5px solid var(--line);
+    border-radius: 16px; box-shadow: 0 40px 90px -40px rgba(0,0,0,0.9); overflow: hidden; }
+  .panel-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line-soft); }
+  .panel-head h2 { font-size: 13px; font-weight: 800; letter-spacing: 0.02em; margin: 0; }
+  .panel-head p { font-size: 11.5px; color: var(--muted); margin: 5px 0 0; line-height: 1.45; }
+  .panel-body { padding: 7px; }
+  .toggle { display: flex; gap: 11px; padding: 10px 10px; border-radius: 10px; cursor: pointer; align-items: flex-start; }
+  .toggle:hover { background: var(--surface-2); }
+  .sw { flex: none; width: 36px; height: 21px; border-radius: 999px; background: #2a3342; position: relative;
+    transition: background 0.15s ease; margin-top: 1px; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%;
+    background: #6b7686; transition: transform 0.15s ease, background 0.15s ease; }
+  .toggle.on .sw { background: rgba(124,108,240,0.9); }
+  .toggle.on .sw::after { transform: translateX(15px); background: #fff; }
+  .toggle .t-txt { min-width: 0; display: flex; flex-direction: column; }
+  .toggle .t-name, .toggle .t-desc { display: block; }
+  .toggle .t-name { font-size: 13px; font-weight: 650; }
+  .toggle .t-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+  .slider-row { padding: 6px 12px 12px; }
+  .slider-row .s-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .slider-row .s-name { font-size: 12.5px; font-weight: 600; }
+  .slider-row .s-val { font-size: 12px; color: var(--violet-l); font-family: ui-monospace, Menlo, monospace; }
+  .slider-row input[type=range] { width: 100%; accent-color: var(--violet); }
+  .slider-row.disabled { opacity: 0.4; pointer-events: none; }
+  .panel-foot { display: flex; gap: 8px; padding: 11px 13px; border-top: 1px solid var(--line-soft); }
+  .btn { flex: 1; font-family: inherit; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 8px; }
+  .btn:hover { border-color: var(--violet); }
+
+  /* ---------- header + hint ---------- */
+  .topbar { position: fixed; top: 26px; left: 30px; z-index: 8; max-width: 520px; }
+  .topbar h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+  .topbar p { font-size: 13px; color: var(--muted); margin: 6px 0 0; line-height: 1.5; }
+  .topbar .hl { color: var(--green); font-weight: 600; }
+  .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(12px); z-index: 50;
+    background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.4); color: #b6f3d9;
+    font-size: 13px; font-weight: 600; padding: 9px 18px; border-radius: 999px; opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="wires"></svg>
+  <div id="board"></div>
+</div>
+
+<div class="topbar">
+  <h1>Knoten leichter verbinden</h1>
+  <p>Zieh von einem <span class="hl">●</span>-Ausgang (rechts) zu einem Eingang (links). Schalte die Helfer rechts an und aus — fühl den Unterschied in der Treffsicherheit.</p>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <h2>Verbindungs-Helfer</h2>
+    <p>Jede Technik einzeln testbar. Alle aus = der „schwere“ Ausgangszustand.</p>
+  </div>
+  <div class="panel-body" id="toggles">
+    <div class="toggle on" data-key="hit">
+      <span class="sw"></span>
+      <span class="t-txt"><span class="t-name">Große Trefferfläche</span><span class="t-desc">Unsichtbare Ziehzone um den Punkt — 44 px statt 14 px.</span></span>
+    </div>
+    <div class="toggle on" data-key="highlight">
+      <span class="sw"></span>
+      <span class="t-txt"><span class="t-name">Gültige Ziele zeigen</span><span class="t-desc">Passende Eingänge leuchten beim Ziehen auf, der Rest dimmt.</span></span>
+    </div>
+    <div class="toggle on" data-key="snap">
+      <span class="sw"></span>
+      <span class="t-txt"><span class="t-name">Magnetisches Einrasten</span><span class="t-desc">Die Leitung rastet am nächsten Eingang im Umkreis ein.</span></span>
+    </div>
+    <div class="slider-row" id="snapRow">
+      <div class="s-top"><span class="s-name">Fangradius</span><span class="s-val" id="snapVal">70 px</span></div>
+      <input type="range" id="snapRange" min="20" max="140" step="5" value="70" />
+    </div>
+    <div class="toggle on" data-key="dropnode">
+      <span class="sw"></span>
+      <span class="t-txt"><span class="t-name">Auf Knoten droppen</span><span class="t-desc">Irgendwo auf dem Zielknoten loslassen — verbindet automatisch.</span></span>
+    </div>
+    <div class="toggle" data-key="showhit">
+      <span class="sw"></span>
+      <span class="t-txt"><span class="t-name">Trefferzonen sichtbar</span><span class="t-desc">Zeigt die unsichtbaren Ziehzonen als Debug-Overlay.</span></span>
+    </div>
+  </div>
+  <div class="panel-foot">
+    <button class="btn" id="resetWires">Verbindungen zurücksetzen</button>
+  </div>
+</div>
+
+<div class="toast" id="toast">Verbunden ✓</div>
+
+<script>
+  const COLORS = { green: "var(--green)", teal: "var(--teal)", amber: "var(--amber)", blue: "var(--blue)", violet: "var(--violet)" };
+  const ICONS = {
+    trigger: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    http:    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></svg>',
+    transform:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f0b429" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg>',
+    log:     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3b9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M7 3h8l5 5v13H7z"/><path d="M9 13h7M9 17h7"/></svg>',
+  };
+  const NODES = [
+    { id: "trigger",  title: "Trigger",      type: "trigger",  accent: "green", sub: "Webhook · POST /hook", x: 40,  y: 40,  in: false, out: true  },
+    { id: "http",     title: "HTTP Request", type: "http",     accent: "teal",  sub: "GET /orders",          x: 360, y: 0,   in: true,  out: true  },
+    { id: "transform",title: "Transform",    type: "transform",accent: "amber", sub: "map → fulfill[]",      x: 360, y: 270, in: true,  out: true  },
+    { id: "log",      title: "Log",          type: "log",      accent: "blue",  sub: "$item · #{index}",     x: 740, y: 130, in: true,  out: false },
+  ];
+  let wires = [ { from: "trigger", to: "http" } ];
+
+  const aids = { hit: true, highlight: true, snap: true, dropnode: true, showhit: false };
+  let snapRadius = 70;
+
+  const board = document.getElementById('board');
+  const wiresSvg = document.getElementById('wires');
+  const toastEl = document.getElementById('toast');
+
+  // ---------- build nodes ----------
+  function buildNodes() {
+    board.innerHTML = "";
+    NODES.forEach(n => {
+      const el = document.createElement('div');
+      el.className = 'node';
+      el.id = 'node-' + n.id;
+      el.style.left = n.x + 'px';
+      el.style.top = n.y + 'px';
+      el.dataset.node = n.id;
+      el.innerHTML =
+        '<div class="node-head"><span class="node-ico" style="background:' + accentBg(n.accent) + '">' + ICONS[n.type] + '</span>' +
+          '<span class="node-title">' + n.title + '</span></div>' +
+        '<div class="node-body"><span class="node-sub mono">' + n.sub + '</span></div>';
+      if (n.in) el.appendChild(makePort(n, 'in'));
+      if (n.out) el.appendChild(makePort(n, 'out'));
+      board.appendChild(el);
+    });
+    applyHit();
+  }
+  function accentBg(a){ return 'rgba(' + ({green:'52,211,153',teal:'56,189,248',amber:'240,180,41',blue:'59,158,255'}[a]) + ',0.14)'; }
+
+  function makePort(n, dir) {
+    const hit = document.createElement('div');
+    hit.className = 'port-hit port-' + dir;
+    hit.dataset.node = n.id;
+    hit.dataset.dir = dir;
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.setProperty('--c', COLORS[n.accent]);
+    const cap = document.createElement('span');
+    cap.className = 'port-cap';
+    cap.textContent = dir === 'out' ? 'out' : 'in';
+    hit.appendChild(dot); hit.appendChild(cap);
+    if (dir === 'out') hit.addEventListener('pointerdown', (e) => startDrag(e, n.id));
+    return hit;
+  }
+
+  function applyHit() {
+    document.documentElement.style.setProperty('--hit', aids.hit ? '44px' : '17px');
+    document.querySelectorAll('.port-hit').forEach(h => h.classList.toggle('show-hit', aids.showhit));
+  }
+
+  // ---------- geometry ----------
+  function dotCenter(nodeId, dir) {
+    const dot = document.querySelector('.port-hit[data-node="' + nodeId + '"][data-dir="' + dir + '"] .dot');
+    if (!dot) return null;
+    const r = dot.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+  function bezier(a, b) {
+    const dx = Math.max(50, Math.abs(b.x - a.x) * 0.5);
+    return 'M ' + a.x + ' ' + a.y + ' C ' + (a.x + dx) + ' ' + a.y + ', ' + (b.x - dx) + ' ' + b.y + ', ' + b.x + ' ' + b.y;
+  }
+
+  function renderWires(temp) {
+    let html = "";
+    wires.forEach(w => {
+      const a = dotCenter(w.from, 'out'), b = dotCenter(w.to, 'in');
+      if (a && b) html += '<path class="wire" d="' + bezier(a, b) + '"/>';
+    });
+    if (temp) {
+      const a = dotCenter(temp.from, 'out');
+      const cls = 'wire temp' + (temp.snapped ? ' snapped' : '');
+      if (a) html += '<path class="' + cls + '" d="' + bezier(a, temp.end) + '"/>';
+    }
+    wiresSvg.innerHTML = html;
+  }
+
+  // ---------- drag to connect ----------
+  let drag = null;
+  function startDrag(e, fromId) {
+    e.preventDefault();
+    drag = { from: fromId, end: { x: e.clientX, y: e.clientY }, target: null, snapped: false };
+    // highlight valid targets
+    if (aids.highlight) {
+      NODES.forEach(n => {
+        const el = document.getElementById('node-' + n.id);
+        const valid = n.in && n.id !== fromId;
+        if (!valid) el.classList.add('dim');
+        const inHit = el.querySelector('.port-hit[data-dir="in"]');
+        if (inHit && valid) inHit.classList.add('valid');
+      });
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  function onMove(e) {
+    if (!drag) return;
+    drag.end = { x: e.clientX, y: e.clientY };
+    // determine target
+    let target = null, snapped = false;
+    const candidates = NODES.filter(n => n.in && n.id !== drag.from);
+
+    // 1) direct hover over an input port hit-zone
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const portHit = under && under.closest && under.closest('.port-hit[data-dir="in"]');
+    if (portHit && portHit.dataset.node !== drag.from) { target = portHit.dataset.node; snapped = true; }
+
+    // 2) drop-on-node: hovering anywhere over a valid node
+    if (!target && aids.dropnode) {
+      const nodeEl = under && under.closest && under.closest('.node');
+      if (nodeEl && candidates.some(c => c.id === nodeEl.dataset.node)) { target = nodeEl.dataset.node; }
+    }
+
+    // 3) magnetic snap by proximity to input dot
+    if (!target && aids.snap) {
+      let best = null, bestD = snapRadius;
+      candidates.forEach(c => {
+        const p = dotCenter(c.id, 'in');
+        if (!p) return;
+        const d = Math.hypot(p.x - e.clientX, p.y - e.clientY);
+        if (d < bestD) { bestD = d; best = c.id; }
+      });
+      if (best) { target = best; snapped = true; }
+    }
+
+    drag.target = target;
+    drag.snapped = snapped || (!!target);
+    // snap the wire end to the target dot if we have a lock
+    if (target && (snapped || aids.dropnode)) {
+      const p = dotCenter(target, 'in');
+      if (p) drag.end = p;
+    }
+
+    // visual states
+    NODES.forEach(n => {
+      const el = document.getElementById('node-' + n.id);
+      el.classList.toggle('drop-target', n.id === target);
+      const inHit = el.querySelector('.port-hit[data-dir="in"]');
+      if (inHit) inHit.classList.toggle('snap', n.id === target && drag.snapped);
+    });
+
+    renderWires(drag);
+  }
+
+  function onUp() {
+    if (drag && drag.target) {
+      addWire(drag.from, drag.target);
+      showToast();
+    }
+    // cleanup
+    document.querySelectorAll('.node').forEach(el => el.classList.remove('dim', 'drop-target'));
+    document.querySelectorAll('.port-hit').forEach(h => h.classList.remove('valid', 'snap'));
+    drag = null;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    renderWires();
+  }
+
+  function addWire(from, to) {
+    wires = wires.filter(w => w.to !== to);   // one wire per input
+    wires.push({ from, to });
+  }
+
+  let toastTimer;
+  function showToast() {
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1100);
+  }
+
+  // ---------- panel ----------
+  document.getElementById('toggles').addEventListener('click', (e) => {
+    const t = e.target.closest('.toggle');
+    if (!t) return;
+    const key = t.dataset.key;
+    aids[key] = !aids[key];
+    t.classList.toggle('on', aids[key]);
+    if (key === 'hit' || key === 'showhit') applyHit();
+    if (key === 'snap') document.getElementById('snapRow').classList.toggle('disabled', !aids.snap);
+  });
+  const snapRange = document.getElementById('snapRange');
+  snapRange.addEventListener('input', () => {
+    snapRadius = +snapRange.value;
+    document.getElementById('snapVal').textContent = snapRadius + ' px';
+  });
+  document.getElementById('resetWires').addEventListener('click', () => {
+    wires = [{ from: "trigger", to: "http" }];
+    renderWires();
+  });
+
+  // ---------- fit + boot ----------
+  function fit() {
+    const s = Math.min(1, (window.innerWidth - 360) / 1140, (window.innerHeight - 150) / 540);
+    document.getElementById('board').style.setProperty('--s', Math.max(0.4, s));
+    renderWires();
+  }
+  window.addEventListener('resize', fit);
+  buildNodes();
+  fit();
+  renderWires();
+</script>
+</body>
+</html>

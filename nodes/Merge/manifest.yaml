@@ -1,0 +1,21 @@
+id: merge
+version: 1.0.0
+displayName: Merge
+category: Data
+tier: Compiled
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 10
+capabilities: []
+parameters:
+  - name: array1
+    type: string
+    required: false
+    expression: true
+  - name: array2
+    type: string
+    required: false
+    expression: true
+outputs:
+  - name: success
+  - name: error

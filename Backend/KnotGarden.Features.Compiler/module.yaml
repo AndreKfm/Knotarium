@@ -1,0 +1,34 @@
+version: 1
+module:
+  id: backend.features.compiler
+  name: KnotGarden.Features.Compiler
+  level: application
+  path: Backend/KnotGarden.Features.Compiler
+  owner_role: use-case-and-orchestration
+  intention: >-
+    Compiles a WorkflowDefinition into an ExecutionPlan: subflow inlining with instance-scoped
+    namespacing, manifest/parameter/edge/socket validation, type compatibility, cycle detection,
+    and trigger discovery; ships the in-memory built-in node-manifest catalog. Extracted leaf
+    slice — depends only on Core contracts and domain.
+  allowed_project_dependencies:
+    - KnotGarden.Core
+  forbidden_project_dependencies:
+    - KnotGarden.Api
+    - KnotGarden.Infrastructure
+    - KnotGarden.NodeRuntime
+    - KnotGarden.Features
+  component_map:
+    - path: Backend/KnotGarden.Features.Compiler
+      architecture_level: Application / Feature Slice
+      intention: Workflow validation and compilation into executable plans.
+      viable_changes:
+        - Compilation rules
+        - Diagnostics
+        - Plan construction
+        - Schema validation
+  place_here_when:
+    - The change validates or compiles workflows into execution plans.
+    - The change defines the built-in node manifest catalog.
+  do_not_place_here:
+    - Node-task execution behavior (belongs in the Nodes slice)
+    - Persistence or runtime concerns

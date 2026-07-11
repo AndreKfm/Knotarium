@@ -1,0 +1,25 @@
+# Build outputs & deps (rebuilt inside the image)
+**/bin/
+**/obj/
+**/node_modules/
+Frontend/dist/
+publish/
+
+# VCS & IDE
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+
+# Local data & secrets — never copy into the image
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/appsettings.Development.json
+**/appsettings.*.local.json
+
+# Docs / scripts not needed for the build
+docs/
+*.md
+publish.ps1

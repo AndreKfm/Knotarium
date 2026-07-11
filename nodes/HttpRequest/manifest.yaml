@@ -1,0 +1,35 @@
+id: httpRequest
+version: 1.0.0
+displayName: HTTP Request
+category: Integrations
+tier: Compiled
+sideEffectKind: NonIdempotentSideEffect
+recoveryMode: RetryAutomatically
+defaultTimeoutSeconds: 30
+capabilities:
+  - http
+  - credentials
+parameters:
+  - name: url
+    type: string
+    required: true
+    expression: true
+  - name: method
+    type: string
+    required: true
+    expression: false
+  - name: body
+    type: string
+    required: false
+    expression: true
+  - name: headers
+    type: string
+    required: false
+    expression: true
+  - name: apiKeySecretRef
+    type: string
+    required: false
+    expression: false
+outputs:
+  - name: success
+  - name: error
