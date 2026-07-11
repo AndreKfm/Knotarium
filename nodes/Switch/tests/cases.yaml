@@ -1,0 +1,11 @@
+cases:
+  - name: Switch Match Case
+    inputs:
+      value: apple
+      cases: apple,banana,orange
+    expectedOutput: apple
+  - name: Switch Default Case
+    inputs:
+      value: grape
+      cases: apple,banana,orange
+    expectedOutput: default

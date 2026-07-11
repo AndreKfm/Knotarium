@@ -1,0 +1,39 @@
+name: CI
+
+# Gates PRs on the backend drift-control / architecture tests
+# (Knotarium.Architecture.Tests) so module-boundary drift is caught in
+# review instead of only when someone runs the suite locally.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  architecture-tests:
+    name: Architecture / drift guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore Backend/Knotarium.Architecture.Tests/Knotarium.Architecture.Tests.csproj
+
+      - name: Run architecture tests
+        run: >-
+          dotnet test Backend/Knotarium.Architecture.Tests/Knotarium.Architecture.Tests.csproj
+          --no-restore
+          --configuration Release
+          --logger "console;verbosity=normal"

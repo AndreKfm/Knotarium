@@ -1,0 +1,53 @@
+id: pollingTrigger
+displayName: Polling Trigger
+version: 1.0.0
+category: Trigger
+triggerOnly: true
+description: Periodically polls an external source and starts the workflow when new data is detected.
+parameters:
+  - name: intervalSeconds
+    type: Number
+    required: true
+    expression: false
+  - name: sourceKind
+    type: String
+    required: true
+    expression: false
+  - name: changeDetection
+    type: String
+    required: true
+    expression: false
+  - name: jsonCursorPath
+    type: String
+    required: false
+    expression: false
+  - name: url
+    type: String
+    required: false
+    expression: true
+  - name: method
+    type: String
+    required: false
+    expression: false
+  - name: headersJson
+    type: String
+    required: false
+    expression: false
+  - name: apiKeySecretRef
+    type: String
+    required: false
+    expression: false
+  - name: serverConfigId
+    type: String
+    required: false
+    expression: false
+  - name: operationId
+    type: String
+    required: false
+    expression: false
+  - name: specVersion
+    type: String
+    required: false
+    expression: false
+outputs:
+  - name: result

@@ -1,0 +1,77 @@
+version: 1
+module:
+  id: backend.features
+  name: Knotarium.Features
+  level: application
+  path: Backend/Knotarium.Features
+  owner_role: use-case-and-orchestration
+  intention: Application feature slices for compilation, execution, node authoring, and built-in nodes.
+  allowed_project_dependencies:
+    - Knotarium.Core
+    - Knotarium.Infrastructure
+    - Knotarium.NodeRuntime
+    - Knotarium.Features.Options
+    - Knotarium.Features.NodeEditor
+    - Knotarium.Features.Compiler
+    - Knotarium.Features.Settings
+    - Knotarium.Features.Condition
+    - Knotarium.Features.Portability
+  forbidden_project_dependencies:
+    - Knotarium.Api
+  # Enforced by Knotarium.Architecture.Tests. Governs the feature slices that STILL live inside
+  # this single assembly (the extracted Options/NodeEditor/Compiler are enforced by project refs
+  # via allowed_project_dependencies above). Edges are IL-detected by NetArchTest; const-inlined
+  # cross-slice refs are invisible at IL and are NOT listed here (e.g. Execution reading Polling's
+  # PayloadVariableKey const). Baselines may only SHRINK — see the drift-control plan.
+  slice_rules:
+    # Cross-slice edges that exist today but shouldn't in the target architecture. A new edge
+    # outside this set fails the build; a removed edge must be deleted from this list (ratchet).
+    baseline_slice_edges: []
+    # Slices that inject the shared EF AppDbContext directly. Remove one when it moves behind a
+    # Core store seam. Target: empty.
+    # Execution is the sanctioned AppDbContext owner: it uses EF change-tracking (Entry/Property
+    # partial updates), ChangeTracker sweeps, and multi-entity transactions for replay/suspension/
+    # recovery that can't be hidden behind a repository without leaking EF or a lossy rewrite. The
+    # other four slices were moved behind Core store seams (Tier E). This entry is intentional, not
+    # drift; the ratchet still fails the build if a NEW slice starts injecting AppDbContext.
+    baseline_appdbcontext_users:
+      - Execution
+  component_map:
+    - path: Backend/Knotarium.Features/Compiler
+      architecture_level: Application / Feature Slice
+      intention: Workflow validation and compilation into executable plans.
+      viable_changes:
+        - Compilation rules
+        - Diagnostics
+        - Plan construction
+        - Schema validation
+    - path: Backend/Knotarium.Features/Execution
+      architecture_level: Application / Feature Slice
+      intention: Workflow execution, orchestration, journal publication, and state progression.
+      viable_changes:
+        - Executor logic
+        - Worker logic
+        - Node-state transitions
+        - Replay-safe orchestration
+    - path: Backend/Knotarium.Features/NodeEditor
+      architecture_level: Application / Feature Slice
+      intention: In-app node authoring and test workflows.
+      viable_changes:
+        - Node-editor orchestration
+        - Package test flow
+        - Manifest validation coordination
+    - path: Backend/Knotarium.Features/Nodes
+      architecture_level: Application / Built-in Node Slice
+      intention: Built-in node implementations and node-task registry logic.
+      viable_changes:
+        - Built-in node behavior
+        - Registry mapping
+        - Input and output conventions
+  place_here_when:
+    - The change compiles workflows.
+    - The change runs workflows.
+    - The change authors or tests node packages.
+    - The change implements built-in nodes.
+    - The change coordinates contracts to fulfill a use-case.
+  guidance:
+    - Prefer slice-local placement over broad shared folders.

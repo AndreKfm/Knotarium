@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Knotarium.Infrastructure\Knotarium.Infrastructure.csproj" />
+    <ProjectReference Include="..\Knotarium.Core\Knotarium.Core.csproj" />
+    <ProjectReference Include="..\Knotarium.NodeRuntime\Knotarium.NodeRuntime.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Options\Knotarium.Features.Options.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.NodeEditor\Knotarium.Features.NodeEditor.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Compiler\Knotarium.Features.Compiler.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Settings\Knotarium.Features.Settings.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Condition\Knotarium.Features.Condition.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Portability\Knotarium.Features.Portability.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Cronos" Version="0.11.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+    <PackageReference Include="MailKit" Version="4.8.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets the test suite reach internal test seams (e.g. WorkflowStateProjection for the
+         D7 resolution-parity test) without widening the public surface. -->
+    <InternalsVisibleTo Include="Knotarium.Tests" />
+  </ItemGroup>
+
+</Project>

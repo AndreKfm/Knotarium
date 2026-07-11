@@ -1,0 +1,17 @@
+id: scheduler
+displayName: Cron Scheduler
+version: 1.0.0
+category: Trigger
+triggerOnly: true          # Dynamic layout constraint
+description: Triggers workflow runs based on a defined cron expression.
+parameters:
+  - name: cronExpression
+    type: String
+    required: true
+    expression: false
+  - name: timezoneId
+    type: String
+    required: true
+    expression: false
+outputs:
+  - name: triggeredAt

@@ -1,0 +1,23 @@
+version: 1
+module:
+  id: node_packages
+  name: Node Packages
+  level: extension
+  path: nodes
+  owner_role: extension-surface
+  intention: File-system-discovered node packages used by the runtime and editor.
+  allowed_project_dependencies: []
+  forbidden_project_dependencies: []
+  component_map:
+    - path: nodes/*
+      architecture_level: Package Extension Surface
+      intention: Package-specific manifests, declarative behavior, executors, tests, and assets.
+      viable_changes:
+        - Node manifests
+        - Declarative behavior
+        - Package-specific assets
+        - Package-specific tests
+  place_here_when:
+    - The behavior belongs to a file-system-discovered package rather than a built-in backend node.
+  do_not_place_here:
+    - Built-in backend node behavior that belongs in Backend/Knotarium.Features/Nodes

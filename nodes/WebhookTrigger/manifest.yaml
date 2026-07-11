@@ -1,0 +1,16 @@
+id: webhookTrigger
+version: 1.0.0
+displayName: Webhook Trigger
+category: Triggers
+tier: Compiled
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 0
+capabilities: []
+parameters:
+  - name: payload
+    type: string
+    required: false
+    expression: false
+outputs:
+  - name: result

@@ -1,0 +1,28 @@
+{
+  "id": "delay",
+  "version": "1.0.0",
+  "displayName": "Delay",
+  "category": "Control",
+  "tier": "Compiled",
+  "sideEffectKind": "IdempotentSideEffect",
+  "recoveryMode": "FailImmediately",
+  "defaultTimeoutSeconds": 60,
+  "capabilities": [],
+  "parameters": [
+    {
+      "name": "delayMs",
+      "type": "number",
+      "required": false,
+      "expression": true
+    },
+    {
+      "name": "duration",
+      "type": "string",
+      "required": false,
+      "expression": true
+    }
+  ],
+  "outputs": [
+    { "name": "result" }
+  ]
+}

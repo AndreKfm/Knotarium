@@ -1,0 +1,5 @@
+cases:
+  - name: Receive JSON Webhook
+    inputs:
+      payload: '{"event":"user_created","id":42}'
+    expectedOutput: result

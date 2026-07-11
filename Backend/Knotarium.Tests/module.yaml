@@ -1,0 +1,27 @@
+version: 1
+module:
+  id: backend.tests
+  name: Knotarium.Tests
+  level: test
+  path: Backend/Knotarium.Tests
+  owner_role: integration-tests
+  intention: Backend integration and feature-level regression coverage.
+  allowed_project_dependencies:
+    - Knotarium.Api
+    - Knotarium.Features
+    - Knotarium.Features.OpenApi
+    - Knotarium.Features.Portability
+    - Knotarium.Features.Ai
+    - Knotarium.Infrastructure
+    - Knotarium.Core
+  forbidden_project_dependencies: []
+  component_map:
+    - path: Backend/Knotarium.Tests
+      architecture_level: Test Layer
+      intention: Mirror production behavior without becoming a utility dumping ground.
+      viable_changes:
+        - Tests only
+  place_here_when:
+    - The code is verifying production behavior.
+  do_not_place_here:
+    - Reusable production utilities

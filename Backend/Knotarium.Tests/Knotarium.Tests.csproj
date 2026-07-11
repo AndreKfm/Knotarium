@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="OpenApi\Fixtures\**\*" />
+  </ItemGroup>
+
+  <!-- B2 shared condition fixtures: linked from docs/design (the single FE/BE source of truth, NOT
+       copied) and emitted to the test output dir so the suite loads the same files the FE loads. -->
+  <ItemGroup>
+    <Content Include="..\..\docs\design\condition-conformance.fixture.json"
+             Link="Condition\Fixtures\condition-conformance.fixture.json"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\design\condition-catalog.fixture.json"
+             Link="Condition\Fixtures\condition-catalog.fixture.json"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\docs\design\condition-tree.fixture.json"
+             Link="Condition\Fixtures\condition-tree.fixture.json"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Knotarium.Api\Knotarium.Api.csproj" />
+    <ProjectReference Include="..\Knotarium.Core\Knotarium.Core.csproj" />
+    <ProjectReference Include="..\Knotarium.Features\Knotarium.Features.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.OpenApi\Knotarium.Features.OpenApi.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Portability\Knotarium.Features.Portability.csproj" />
+    <ProjectReference Include="..\Knotarium.Features.Ai\Knotarium.Features.Ai.csproj" />
+    <ProjectReference Include="..\Knotarium.Infrastructure\Knotarium.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

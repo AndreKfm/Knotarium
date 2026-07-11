@@ -1,0 +1,6 @@
+cases:
+  - name: Select Field Transform
+    inputs:
+      inputJson: '{"user":{"name":"Bob"}}'
+      jsonPath: user.name
+    expectedOutput: success

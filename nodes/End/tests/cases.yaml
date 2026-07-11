@@ -1,0 +1,5 @@
+cases:
+  - name: End Execution
+    inputs:
+      payload: testResponse
+    expectedOutput: ""

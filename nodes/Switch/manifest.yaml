@@ -1,0 +1,20 @@
+id: switch
+version: 1.0.0
+displayName: Switch
+category: Control
+tier: Declarative
+sideEffectKind: IdempotentSideEffect
+recoveryMode: FailImmediately
+defaultTimeoutSeconds: 10
+capabilities: []
+parameters:
+  - name: value
+    type: string
+    required: true
+    expression: true
+  - name: cases
+    type: string
+    required: true
+    expression: false
+outputs:
+  - name: "default"
