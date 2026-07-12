@@ -79,7 +79,7 @@ Found a vulnerability? Please follow the process in [SECURITY.md](SECURITY.md) r
 
 ## License
 
-[Apache License 2.0](LICENSE) — see [NOTICE](NOTICE) for attribution.
+[Apache License 2.0](LICENSE) — see [NOTICE](NOTICE) for attribution and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for bundled open-source components.
 
 ## Contributing
 
