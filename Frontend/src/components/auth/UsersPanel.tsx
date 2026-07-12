@@ -19,6 +19,19 @@ export function UsersPanel({ onClose }: { onClose: () => void }) {
   const load = () => api.listUsers().then(setUsers).catch((err) => setError(message(err)));
   useEffect(() => { load(); }, []);
 
+  // Escape closes the modal (in addition to the ✕ and a backdrop click), so backing out of
+  // "add user" is unambiguous from the keyboard too. Capture so it wins over background handlers.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
   const addUser = async () => {
     setError(null);
     try {
