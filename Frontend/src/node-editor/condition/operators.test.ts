@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadRepoJson } from '../../test/repoFixture';
 import { OPERATORS, OPERATOR_GROUPS } from './operators';
 
-// Drift guard (B2): the FE catalog must equal docs/design/condition-catalog.fixture.json, the shared
+// Drift guard (B2): the FE catalog must equal test-fixtures/condition/condition-catalog.fixture.json, the shared
 // FE/BE source of truth. Mirrors the backend ConditionOperatorCatalogTests so "what you see == what
 // runs" holds across both languages. Loads the SAME file the backend test loads (linked, not copied).
 
@@ -22,8 +22,8 @@ interface CatalogFixture {
   groups: string[];
 }
 
-// vitest runs with cwd = Frontend/; the shared fixture lives at the repo-root docs/design/.
-const fixture = loadRepoJson<CatalogFixture>('../docs/design/condition-catalog.fixture.json');
+// vitest runs with cwd = Frontend/; the shared fixture lives at the repo-root test-fixtures/condition/.
+const fixture = loadRepoJson<CatalogFixture>('../test-fixtures/condition/condition-catalog.fixture.json');
 
 describe('condition operator catalog drift', () => {
   it('has the same operator ids, in the same order, as the fixture', () => {

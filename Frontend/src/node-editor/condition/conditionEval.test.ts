@@ -13,7 +13,7 @@ import {
 } from './conditionEval';
 
 // Conformance (B2): the FE evaluator is driven by the SAME truth table as the backend
-// (docs/design/condition-conformance.fixture.json). Mirrors ConditionEvaluatorTests so the editor's
+// (test-fixtures/condition/condition-conformance.fixture.json). Mirrors ConditionEvaluatorTests so the editor's
 // live preview status == the server's run-time status, enforced by construction.
 
 interface FixtureOperand {
@@ -43,8 +43,8 @@ interface ConformanceFixture {
   aggregation: FixtureAggregation[];
 }
 
-// vitest runs with cwd = Frontend/; the shared fixture lives at the repo-root docs/design/.
-const fixture = loadRepoJson<ConformanceFixture>('../docs/design/condition-conformance.fixture.json');
+// vitest runs with cwd = Frontend/; the shared fixture lives at the repo-root test-fixtures/condition/.
+const fixture = loadRepoJson<ConformanceFixture>('../test-fixtures/condition/condition-conformance.fixture.json');
 
 function toOperand(o: FixtureOperand): ResolvedOperand {
   const state: OperandState = o.state ?? 'value';

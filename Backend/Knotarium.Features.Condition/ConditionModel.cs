@@ -5,7 +5,7 @@ namespace Knotarium.Features.Condition;
 // The status model (B3) and per-operand error shape (B7). See
 // docs/design/condition-operator-semantics.md — this code is the backend half of the spec; the
 // frontend conditionEval.ts is the other half, and both are pinned by the shared conformance
-// fixture (docs/design/condition-conformance.fixture.json).
+// fixture (test-fixtures/condition/condition-conformance.fixture.json).
 
 /// <summary>Result status for a single comparator and for the aggregate (spec §1/§6).</summary>
 public enum ConditionStatus
