@@ -24,6 +24,8 @@ Open **http://localhost:8080**. On first run you create an admin account. The SQ
 
 > Want to skip login for a throwaway local try? `KG_AUTH_ENABLED=false docker compose up --build`.
 
+**New here?** The [Getting Started guide](docs/getting-started.md) walks you from install to your first API-calling workflow in about five minutes.
+
 ## Run from source
 
 Prerequisites: **.NET 10 SDK** and **Node 22+**.
