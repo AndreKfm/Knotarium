@@ -1,0 +1,24 @@
+{
+  "Manifest": { "WorkflowId": "starter-fetch-wait-fetch", "WorkflowName": "Fetch, Wait, Fetch Again", "VersionNumber": 1, "Origin": "Published", "Label": null, "Checksum": "" },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      { "Id": "http-1", "Type": "httpRequest", "Properties": { "url": "https://api.github.com/zen", "method": "GET" } },
+      { "Id": "delay-1", "Type": "delay", "Properties": { "delayMs": 2000 } },
+      { "Id": "http-2", "Type": "httpRequest", "Properties": { "url": "https://api.github.com/zen", "method": "GET" } },
+      { "Id": "log-1", "Type": "log", "Properties": { "message": "Second call returned: {{ $node.http-2.output.body }}" } },
+      { "Id": "log-err", "Type": "log", "Properties": { "message": "A request failed." } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "http-1", "Input": "in" },
+      { "Id": "e2", "From": "http-1", "Output": "success", "To": "delay-1", "Input": "in" },
+      { "Id": "e3", "From": "http-1", "Output": "error", "To": "log-err", "Input": "in" },
+      { "Id": "e4", "From": "delay-1", "Output": "result", "To": "http-2", "Input": "in" },
+      { "Id": "e5", "From": "http-2", "Output": "success", "To": "log-1", "Input": "in" },
+      { "Id": "e6", "From": "http-2", "Output": "error", "To": "log-err", "Input": "in" },
+      { "Id": "e7", "From": "log-1", "Output": "result", "To": "end-1", "Input": "in" },
+      { "Id": "e8", "From": "log-err", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

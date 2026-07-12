@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-http-post",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "HTTP POST a Payload",
+  "author": "Knotarium",
+  "description": "Sends a JSON body to an HTTP endpoint and logs the status. Shows the HTTP Request node with a method, body, and headers, plus its success/error branches.",
+  "tags": ["starter", "http", "api", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "HTTP POST a Payload",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}
