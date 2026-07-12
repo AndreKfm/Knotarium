@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-set-a-variable",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Set and Use a Variable",
+  "author": "KnotGarden",
+  "description": "Stores a value in a variable, then logs it back with {{ $variables.<name> }}. Shows how data flows between nodes without wiring every field by hand.",
+  "tags": ["starter", "variables", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "Set and Use a Variable",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

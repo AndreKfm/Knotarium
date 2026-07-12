@@ -1,0 +1,16 @@
+{
+  "Manifest": { "WorkflowId": "starter-set-a-variable", "WorkflowName": "Set and Use a Variable", "VersionNumber": 1, "Origin": "Published", "Label": null, "Checksum": "" },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      { "Id": "setvar-1", "Type": "setVariable", "Properties": { "variableName": "greeting", "value": "Hello from your first variable!" } },
+      { "Id": "log-1", "Type": "log", "Properties": { "message": "{{ $variables.greeting }}" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "setvar-1", "Input": "in" },
+      { "Id": "e2", "From": "setvar-1", "Output": "result", "To": "log-1", "Input": "in" },
+      { "Id": "e3", "From": "log-1", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

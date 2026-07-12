@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-scheduled-fetch",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Scheduled API Fetch",
+  "author": "KnotGarden",
+  "description": "Every morning, calls an API and logs the response. Combines a schedule trigger with an HTTP request — the shape of a daily sync or digest.",
+  "tags": ["starter", "schedule", "http", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "Scheduled API Fetch",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

@@ -1,0 +1,19 @@
+{
+  "Manifest": { "WorkflowId": "starter-http-post", "WorkflowName": "HTTP POST a Payload", "VersionNumber": 1, "Origin": "Published", "Label": null, "Checksum": "" },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      { "Id": "http-1", "Type": "httpRequest", "Properties": { "url": "https://httpbin.org/post", "method": "POST", "body": "{\"hello\":\"world\"}", "headers": "{\"Content-Type\":\"application/json\"}" } },
+      { "Id": "log-ok", "Type": "log", "Properties": { "message": "Posted — HTTP {{ $node.http-1.output.statusCode }}" } },
+      { "Id": "log-err", "Type": "log", "Properties": { "message": "POST failed: {{ $node.http-1.output.error }}" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "http-1", "Input": "in" },
+      { "Id": "e2", "From": "http-1", "Output": "success", "To": "log-ok", "Input": "in" },
+      { "Id": "e3", "From": "http-1", "Output": "error", "To": "log-err", "Input": "in" },
+      { "Id": "e4", "From": "log-ok", "Output": "result", "To": "end-1", "Input": "in" },
+      { "Id": "e5", "From": "log-err", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}
