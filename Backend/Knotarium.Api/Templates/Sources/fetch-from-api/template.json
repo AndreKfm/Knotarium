@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-fetch-from-api",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Fetch from an API",
+  "author": "Knotarium",
+  "description": "Calls a public HTTP endpoint and logs the response body and status code. The most common real building block — swap the URL for your own API. Shows the HTTP Request node's success/error branches and the {{ $node.<id>.output.<field> }} reference syntax.",
+  "tags": ["starter", "http", "api", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "Fetch from an API",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}
