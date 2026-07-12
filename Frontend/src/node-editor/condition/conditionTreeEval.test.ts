@@ -10,7 +10,7 @@ import {
 } from './conditionEval';
 
 // Tree-aggregation conformance (Phase 8, spec §10): the FE recursive evaluator is driven by the SAME
-// docs/design/condition-tree.fixture.json the backend ConditionTreeEvaluatorTests load — so the editor's
+// test-fixtures/condition/condition-tree.fixture.json the backend ConditionTreeEvaluatorTests load — so the editor's
 // live preview folds a nested condition identically to the server. Fixture leaves carry a precomputed
 // status (not operands); leaf operator semantics stay in condition-conformance.fixture.json.
 
@@ -31,7 +31,7 @@ interface TreeFixture {
   cases: TreeCase[];
 }
 
-const fixture = loadRepoJson<TreeFixture>('../docs/design/condition-tree.fixture.json');
+const fixture = loadRepoJson<TreeFixture>('../test-fixtures/condition/condition-tree.fixture.json');
 
 function num(v: number): ResolvedOperand {
   return { type: 'number', state: 'value', raw: v };
