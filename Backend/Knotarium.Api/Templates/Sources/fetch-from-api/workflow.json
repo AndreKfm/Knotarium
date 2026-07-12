@@ -1,0 +1,26 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-fetch-from-api",
+    "WorkflowName": "Fetch from an API",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      { "Id": "http-1", "Type": "httpRequest", "Properties": { "url": "https://api.github.com/zen", "method": "GET" } },
+      { "Id": "log-ok", "Type": "log", "Properties": { "message": "API responded (HTTP {{ $node.http-1.output.statusCode }}): {{ $node.http-1.output.body }}" } },
+      { "Id": "log-err", "Type": "log", "Properties": { "message": "API request failed: {{ $node.http-1.output.error }}" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "edge-1", "From": "start-1", "Output": "result", "To": "http-1", "Input": "in" },
+      { "Id": "edge-2", "From": "http-1", "Output": "success", "To": "log-ok", "Input": "in" },
+      { "Id": "edge-3", "From": "http-1", "Output": "error", "To": "log-err", "Input": "in" },
+      { "Id": "edge-4", "From": "log-ok", "Output": "result", "To": "end-1", "Input": "in" },
+      { "Id": "edge-5", "From": "log-err", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}
