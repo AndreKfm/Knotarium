@@ -1,5 +1,9 @@
 # Knotarium
 
+[![CI](https://github.com/AndreKfm/Knotarium/actions/workflows/ci.yml/badge.svg)](https://github.com/AndreKfm/Knotarium/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 **Self-hosted, visual workflow automation.** Build automations as a graph of nodes on a canvas — HTTP, database, files, email, conditionals, loops, sub-flows, scheduled and webhook triggers — then run, version, and monitor them. One .NET process serves the API and the UI; data lives in a local SQLite file.
 
 > **Status:** early / active development. The project name is provisional and may change.
@@ -67,7 +71,7 @@ This is an automation engine that can **execute code and touch the filesystem**,
 - **File Read/Write** is **deny-by-default**; grant specific directories in *Settings → File Access* (path-traversal and symlink escapes are blocked server-side).
 - **Do not expose an instance directly to the public internet** without putting it behind your own authentication/reverse-proxy and a threat model.
 
-Found a vulnerability? Please see `SECURITY.md` (coming soon) rather than opening a public issue.
+Found a vulnerability? Please follow the process in [SECURITY.md](SECURITY.md) rather than opening a public issue.
 
 ## Tech
 
@@ -75,4 +79,8 @@ Found a vulnerability? Please see `SECURITY.md` (coming soon) rather than openin
 
 ## License
 
-[Apache License 2.0](LICENSE). Contributions are welcome — a contributor process (and CLA) will be added shortly.
+[Apache License 2.0](LICENSE) — see [NOTICE](NOTICE) for attribution.
+
+## Contributing
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md) before opening a pull request.
