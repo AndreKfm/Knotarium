@@ -119,6 +119,9 @@ export function GuidedTour({ onClose }: GuidedTourProps) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{index + 1} / {TOUR_STEPS.length}</span>
           <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} style={{ padding: '7px 12px', borderRadius: 8, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.83rem', fontWeight: 600, cursor: 'pointer' }}>
+              Skip
+            </button>
             {!isFirst && (
               <button onClick={back} style={{ padding: '7px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '0.83rem', fontWeight: 600, cursor: 'pointer' }}>
                 Back
@@ -128,6 +131,10 @@ export function GuidedTour({ onClose }: GuidedTourProps) {
               {isLast ? 'Done' : 'Next'}
             </button>
           </div>
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: '0.72rem', color: 'var(--text-muted)', opacity: 0.85 }}>
+          Reopen anytime from the “Tour” button in the top bar.
         </div>
       </div>
     </div>
