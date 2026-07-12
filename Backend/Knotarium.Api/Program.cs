@@ -190,6 +190,8 @@ builder.Services.AddSingleton(new RuntimeArmingState(builder.Configuration.GetVa
 builder.Services.AddSingleton<Knotarium.Core.Contracts.IRuntimeArmingState>(sp => sp.GetRequiredService<RuntimeArmingState>());
 builder.Services.AddHostedService<SchedulingWorker>();
 builder.Services.AddHostedService<PollingWorker>();
+// Bounds run-history growth: prunes old terminal runs (cascades to their journal + node states).
+builder.Services.AddHostedService<JournalRetentionWorker>();
 
 // Built-in node tasks + node-task registry + shared Roslyn script compiler.
 builder.Services.AddBuiltInNodes();

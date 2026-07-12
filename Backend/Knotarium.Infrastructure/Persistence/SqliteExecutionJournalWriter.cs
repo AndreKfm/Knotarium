@@ -37,6 +37,9 @@ public class SqliteExecutionJournalWriter : IExecutionJournalWriter
         {
             connection = new SqliteConnection(_connectionString);
             await connection.OpenAsync();
+            // Pooling reuses the underlying handle, so this is a cheap idempotent no-op after the first open;
+            // it guarantees synchronous=NORMAL (no fsync per journal row) on the writer's own connections.
+            await SqlitePragmas.ApplyConnectionPragmasAsync(connection);
             shouldDispose = true;
         }
 
