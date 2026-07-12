@@ -89,6 +89,7 @@ import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { variablePathHead, hasVariablePath, pathContainerKind } from '../utils/variablePath';
 import { PropertiesPanel } from './PropertiesPanel';
 import { SidebarPalette } from './SidebarPalette';
+import { EmptyCanvasHint } from './EmptyCanvasHint';
 import { CanvasImportModal } from './CanvasImportModal';
 import { useCanvasStore } from '../stores/useCanvasStore';
 import type { ActiveWorkflowVersion, CompilationDiagnostic, NodePackageSummary, WorkflowVersionSummary, WorkflowVersion, RestoreVersionResult, WorkflowDefinition } from '../types';
@@ -2973,6 +2974,9 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
                 maskColor="rgba(0,0,0,0.6)"
               />
             </ReactFlow>
+
+            {/* First-run coach hint on an empty, editable canvas (not in read-only preview). */}
+            {editorMode.kind !== 'preview' && nodes.length === 0 && <EmptyCanvasHint />}
 
             {searchOpen && (
               <NodeSearchPalette
