@@ -55,7 +55,7 @@ export function LoginPage() {
             <Activity size={20} color="#fff" />
           </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: '1.15rem', letterSpacing: '0.04em', color: '#fff' }}>KNOTARIUM<span style={{ color: 'var(--color-accent)' }}>.</span></div>
+            <div style={{ fontWeight: 800, fontSize: '1.15rem', letterSpacing: '0.04em', color: '#fff' }}>KNOT<span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>ARIUM</span><span style={{ color: 'var(--color-accent)' }}>.</span></div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{isSetup ? 'Create the first administrator' : 'Sign in to continue'}</div>
           </div>
         </div>

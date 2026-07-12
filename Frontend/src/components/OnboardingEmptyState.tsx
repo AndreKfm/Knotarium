@@ -15,7 +15,6 @@ interface OnboardingEmptyStateProps {
 // Line-icon paths (viewBox 0 0 24 24) ported from the Welcome redesign so the tiles and node-flow
 // chips render exactly as designed, independent of the icon library.
 const G: Record<string, string> = {
-  hub: '<path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><path d="M9.5 9.5 7 7M14.5 9.5 17 7M9.5 14.5 7 17M14.5 14.5 17 17"/><circle cx="12" cy="12" r="3.2"/>',
   manual: '<path d="M6 12.5V6a2 2 0 0 1 4 0v5.5M10 8.5a2 2 0 0 1 4 0V12M14 9.5a2 2 0 0 1 4 0v5a6 6 0 0 1-6 6h-1.2a5 5 0 0 1-3.6-1.6L4 15.6a2 2 0 0 1 3-2.6l1 1"/>',
   delay: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9.5v3.5l2.5 1.8M9 3h6"/>',
   log: '<path d="M5 4h14M5 9h14M5 14h9M5 19h11"/>',
@@ -77,7 +76,23 @@ export function OnboardingEmptyState({ onCreateBlank, onOpenWorkflow }: Onboardi
       <style>{css}</style>
 
       <div className="hero">
-        <div className="hmark"><Icon k="hub" size={30} sw={1.9} /></div>
+        <div className="brand">
+          <div className="hmark">
+            <svg
+              width={32} height={32} viewBox="0 0 48 48" fill="none" stroke="currentColor"
+              strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"
+            >
+              <path d="M15 8v32" />
+              <path d="M15 24l16-14M15 24l16 14" />
+              <circle cx="15" cy="8" r="4" fill="currentColor" stroke="none" />
+              <circle cx="15" cy="40" r="4" fill="currentColor" stroke="none" />
+              <circle cx="33" cy="9" r="4" fill="currentColor" stroke="none" />
+              <circle cx="33" cy="39" r="4" fill="currentColor" stroke="none" />
+              <circle cx="15" cy="24" r="4.5" fill="currentColor" stroke="none" />
+            </svg>
+          </div>
+          <div className="wordmark"><span className="knot">Knot</span><span className="arium">arium</span></div>
+        </div>
         <h1>Welcome — let’s build your first workflow</h1>
         <p>This instance is empty. Start from a blank canvas, or install a ready-to-run sample and open it right away.</p>
         <button className="cta" onClick={onCreateBlank}>
@@ -143,8 +158,12 @@ const css = `
 .kg-onb { --line:#1a2230; --line-soft:#141c28; --card:#0d121b; --card-h:#10161f; --muted:#8a95a6; --faint:#5a6675;
   max-width: 1120px; margin: 0 auto; width: 100%; padding: 8px 0 40px; }
 .kg-onb .hero { text-align: center; }
+.kg-onb .brand { display: inline-flex; align-items: center; gap: 14px; }
 .kg-onb .hmark { width: 60px; height: 60px; margin: 0 auto; border-radius: 16px; display: grid; place-items: center;
   background: linear-gradient(155deg, #5d4de0, #7c6cf0); color: #eae7ff; box-shadow: 0 16px 34px -14px rgba(124,108,240,0.7); }
+.kg-onb .wordmark { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; }
+.kg-onb .wordmark .knot { color: var(--text-primary, #e6edf3); }
+.kg-onb .wordmark .arium { color: var(--muted); font-weight: 600; }
 .kg-onb h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.025em; margin: 22px 0 0; color: var(--text-primary, #e6edf3); }
 .kg-onb .hero p { font-size: 15px; color: var(--muted); margin: 12px auto 0; max-width: 620px; line-height: 1.55; }
 .kg-onb .cta { display: inline-flex; align-items: center; gap: 10px; margin-top: 26px; font-size: 15px; font-weight: 700;

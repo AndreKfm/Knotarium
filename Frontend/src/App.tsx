@@ -327,7 +327,7 @@ export default function App() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
             <span style={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '0.05em', color: '#fff' }}>
-              KNOTARIUM<span style={{ color: 'var(--color-accent)', textShadow: '0 0 10px var(--color-accent-glow)' }}>.</span>
+              KNOT<span style={{ color: 'var(--text-secondary, #94a3b8)', fontWeight: 600 }}>ARIUM</span><span style={{ color: 'var(--color-accent)', textShadow: '0 0 10px var(--color-accent-glow)' }}>.</span>
             </span>
             {version && (
               <span
