@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-webhook-receiver",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Webhook Receiver",
+  "author": "KnotGarden",
+  "description": "Logs the JSON payload of every incoming webhook call. Shows a webhook trigger — enable the workflow and POST to its webhook URL to fire it.",
+  "tags": ["starter", "webhook", "trigger", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "Webhook Receiver",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-fetch-wait-fetch",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Fetch, Wait, Fetch Again",
+  "author": "KnotGarden",
+  "description": "Calls an API, waits with the non-blocking Delay node, then calls again — the shape of a simple poll or a rate-limited sequence.",
+  "tags": ["starter", "http", "delay", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "Fetch, Wait, Fetch Again",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

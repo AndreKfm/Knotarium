@@ -1,0 +1,14 @@
+{
+  "Manifest": { "WorkflowId": "starter-webhook-receiver", "WorkflowName": "Webhook Receiver", "VersionNumber": 1, "Origin": "Published", "Label": null, "Checksum": "" },
+  "Content": {
+    "Nodes": [
+      { "Id": "hook-1", "Type": "webhookTrigger", "Properties": {} },
+      { "Id": "log-1", "Type": "log", "Properties": { "message": "Webhook received: {{ $node.hook-1.output.payload }}" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "hook-1", "Output": "result", "To": "log-1", "Input": "in" },
+      { "Id": "e2", "From": "log-1", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "Manifest": { "WorkflowId": "starter-scheduled-fetch", "WorkflowName": "Scheduled API Fetch", "VersionNumber": 1, "Origin": "Published", "Label": null, "Checksum": "" },
+  "Content": {
+    "Nodes": [
+      { "Id": "sched-1", "Type": "scheduler", "Properties": { "cronExpression": "0 9 * * *", "timezoneId": "UTC" } },
+      { "Id": "http-1", "Type": "httpRequest", "Properties": { "url": "https://api.github.com/zen", "method": "GET" } },
+      { "Id": "log-1", "Type": "log", "Properties": { "message": "Fetched on schedule: {{ $node.http-1.output.body }}" } },
+      { "Id": "log-err", "Type": "log", "Properties": { "message": "Scheduled fetch failed: {{ $node.http-1.output.error }}" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "sched-1", "Output": "triggeredAt", "To": "http-1", "Input": "in" },
+      { "Id": "e2", "From": "http-1", "Output": "success", "To": "log-1", "Input": "in" },
+      { "Id": "e3", "From": "http-1", "Output": "error", "To": "log-err", "Input": "in" },
+      { "Id": "e4", "From": "log-1", "Output": "result", "To": "end-1", "Input": "in" },
+      { "Id": "e5", "From": "log-err", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}
