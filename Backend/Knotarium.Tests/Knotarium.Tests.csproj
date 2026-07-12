@@ -22,16 +22,16 @@
     <EmbeddedResource Include="OpenApi\Fixtures\**\*" />
   </ItemGroup>
 
-  <!-- B2 shared condition fixtures: linked from docs/design (the single FE/BE source of truth, NOT
-       copied) and emitted to the test output dir so the suite loads the same files the FE loads. -->
+  <!-- B2 shared condition fixtures: linked from test-fixtures/condition (the single FE/BE source of
+       truth, NOT copied) and emitted to the test output dir so the suite loads the same files the FE loads. -->
   <ItemGroup>
-    <Content Include="..\..\docs\design\condition-conformance.fixture.json"
+    <Content Include="..\..\test-fixtures\condition\condition-conformance.fixture.json"
              Link="Condition\Fixtures\condition-conformance.fixture.json"
              CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\docs\design\condition-catalog.fixture.json"
+    <Content Include="..\..\test-fixtures\condition\condition-catalog.fixture.json"
              Link="Condition\Fixtures\condition-catalog.fixture.json"
              CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\docs\design\condition-tree.fixture.json"
+    <Content Include="..\..\test-fixtures\condition\condition-tree.fixture.json"
              Link="Condition\Fixtures\condition-tree.fixture.json"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
