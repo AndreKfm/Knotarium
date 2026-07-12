@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../utils/api';
 import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, NotificationChannel, FailureAlertConfig, SystemActivityEntry } from '../types';
 import { Eye, Plus, RefreshCw, Layers, Terminal, AlertTriangle, CheckCircle, Clock, Search, Globe, Trash2, Check, Minus, Ban, Archive, RotateCcw, Filter, Power, Activity } from 'lucide-react';
+import { TipOfTheDay } from './TipOfTheDay';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
 // app accent — selection is a frequent list action, so it should read as part of the list.
@@ -840,6 +841,9 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
 
       {/* Overview strip — read instance health at a glance before diving into the lists below. */}
       <StatStrip stats={overviewStats} />
+
+      {/* Rotating feature hint for newcomers — dismissible for good. */}
+      <TipOfTheDay />
 
       {error && (
         <div style={{ padding: '16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--color-error)', borderRadius: '10px', color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
