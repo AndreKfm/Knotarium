@@ -4,6 +4,7 @@ import { api } from '../utils/api';
 import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, NotificationChannel, FailureAlertConfig, SystemActivityEntry } from '../types';
 import { Eye, Plus, RefreshCw, Layers, Terminal, AlertTriangle, CheckCircle, Clock, Search, Globe, Trash2, Check, Minus, Ban, Archive, RotateCcw, Filter, Power, Activity } from 'lucide-react';
 import { TipOfTheDay } from './TipOfTheDay';
+import { OnboardingEmptyState } from './OnboardingEmptyState';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
 // app accent — selection is a frequent list action, so it should read as part of the list.
@@ -859,6 +860,8 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
             <span style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Querying workspace data...</span>
           </div>
         </div>
+      ) : workflows.length === 0 && archived.length === 0 ? (
+        <OnboardingEmptyState onCreateBlank={() => onEditWorkflow('')} onOpenWorkflow={onEditWorkflow} />
       ) : (
         <div
           ref={splitRowRef}
