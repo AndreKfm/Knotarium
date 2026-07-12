@@ -31,16 +31,21 @@ COPY --from=backend /app/publish ./
 # The backend serves the SPA from ./wwwroot (same origin) when present.
 COPY --from=frontend /ui/dist ./wwwroot
 
-# SQLite database lives on a volume so it survives container restarts.
+# The SQLite database AND the auto-generated at-rest credential key live under this one
+# directory, mounted as a volume so both survive container restarts/recreation. Storage__DataDirectory
+# anchors both (CommonApplicationData — the default — is /usr/share on Linux, not persisted, so we
+# point it at the volume explicitly).
 RUN mkdir -p /data
 VOLUME /data
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://+:8080 \
-    Database__ConnectionString="Data Source=/data/Knotarium.db"
+    Storage__DataDirectory=/data
 
-# Secrets (credential-encryption + bundle-signing keys) are supplied at RUN time via env,
-# never baked into the image — see docker-compose.yml / README.
+# The credential-encryption key auto-generates onto /data on first run (persisted with the DB), so
+# credentials work out of the box. Supply Security__Credentials__EncryptionKeyBase64 at RUN time only
+# to bring your own key (e.g. to share one across instances) — never bake secrets into the image; see
+# docker-compose.yml / README. The bundle-signing key is env-only and optional.
 # TODO(hardening): run as a non-root user once /data volume ownership is sorted.
 
 EXPOSE 8080

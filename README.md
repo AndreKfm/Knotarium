@@ -11,13 +11,12 @@
 ## Quickstart (Docker)
 
 ```bash
-# optional but recommended: a stable key that encrypts stored credentials at rest
-export KG_ENCRYPTION_KEY="$(openssl rand -base64 32)"
-
 docker compose up --build
 ```
 
-Open **http://localhost:8080**. On first run you create an admin account. The SQLite database persists in the `knotarium-data` volume.
+Open **http://localhost:8080**. On first run you create an admin account. The SQLite database **and** the auto-generated credential-encryption key persist in the `knotarium-data` volume, so credentials survive restarts with no extra setup.
+
+> Bringing your own encryption key (e.g. to share one across instances)? `export KG_ENCRYPTION_KEY="$(openssl rand -base64 32)"` before `docker compose up`.
 
 > Want to skip login for a throwaway local try? `KG_AUTH_ENABLED=false docker compose up --build`.
 
@@ -41,10 +40,11 @@ Set via environment variables (double-underscore = nested config):
 
 | Variable | Purpose |
 |---|---|
-| `Security__Credentials__EncryptionKeyBase64` | 32-byte base64 key encrypting stored credentials. Keep it stable, or saved credentials can't be decrypted. |
+| `Security__Credentials__EncryptionKeyBase64` | 32-byte base64 key encrypting stored credentials. Optional — auto-generated into the data directory and reused if unset. Set it to bring your own key; then keep it stable, or saved credentials can't be decrypted. |
 | `Security__PackageSigning__HostPrivateKeyBase64` | Base64 key to *sign* exported bundles (only needed if you use bundle export). |
 | `Auth__Enabled` | Cookie auth. Default `true` (first run creates the admin). |
-| `Database__ConnectionString` | Defaults to `Data Source=/data/Knotarium.db` in Docker. |
+| `Storage__DataDirectory` | Machine-wide home for the SQLite DB + auto-generated credential key (Docker sets `/data`; defaults to `%ProgramData%\Knotarium` on Windows, `CommonApplicationData/Knotarium` elsewhere). Set it so a Windows service and an interactive run share one DB + key. |
+| `Database__ConnectionString` | Overrides the SQLite location entirely (e.g. a Postgres connection string). Otherwise the DB lives at `<DataDirectory>/Knotarium.db`. |
 
 For local development, copy `Backend/Knotarium.Api/appsettings.Development.json.example` to `appsettings.Development.json` (gitignored) and fill in your own keys.
 
