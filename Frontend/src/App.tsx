@@ -3,7 +3,7 @@ import { Dashboard } from './components/Dashboard';
 import { Canvas } from './components/Canvas';
 import { ExecutionDetail } from './components/ExecutionDetail/index';
 import { OpenApiView } from './components/OpenApiView';
-import { Activity, Edit3, Grid, Code, Globe, Settings, ArrowLeft, Inbox, Package, LayoutTemplate, FileInput, Sparkles } from 'lucide-react';
+import { Activity, Edit3, Grid, Code, Globe, Settings, ArrowLeft, Inbox, Package, LayoutTemplate, FileInput, Sparkles, Compass } from 'lucide-react';
 import { AiGenerateModal } from './components/AiGenerateModal';
 import type { WorkflowDefinition, VersionInfo } from './types';
 import { NodeEditorShell } from './node-editor/NodeEditorShell';
@@ -11,6 +11,7 @@ import { SettingsView } from './components/SettingsView';
 import { DeadLetterView } from './components/DeadLetterView';
 import { RuntimeArmingToggle } from './components/RuntimeArmingToggle';
 import { UserMenu } from './components/auth/UserMenu';
+import { GuidedTour } from './components/tour/GuidedTour';
 import { BundlesView } from './components/BundlesView';
 import { TemplatesView } from './components/TemplatesView';
 import { SettingImporter } from './components/SettingImporter';
@@ -128,6 +129,15 @@ export default function App() {
 
   // Build identity shown in the header so a stale instance is obvious after a rebuild.
   const [version, setVersion] = useState<VersionInfo | null>(null);
+  const [showTour, setShowTour] = useState(false);
+  const closeTour = () => {
+    setShowTour(false);
+    try { localStorage.setItem('kg-tour-done', '1'); } catch { /* ignore */ }
+  };
+  // First run: open the guided tour once (persisted). Re-openable from the header "Tour" button.
+  useEffect(() => {
+    try { if (localStorage.getItem('kg-tour-done') !== '1') setShowTour(true); } catch { /* ignore */ }
+  }, []);
   useEffect(() => {
     api.getVersion().then(setVersion).catch(() => setVersion(null));
   }, []);
@@ -333,6 +343,7 @@ export default function App() {
         {/* Custom Premium Tabs Navigation */}
         <nav style={{ display: 'flex', gap: '8px' }}>
           <button
+            data-tour="dashboard"
             onClick={navigateToDashboard}
             style={{
               display: 'flex',
@@ -353,6 +364,7 @@ export default function App() {
             Dashboard
           </button>
           <button
+            data-tour="canvas-editor"
             onClick={() => { setPreviewDefinition(null); navigateToEditor(null); }}
             style={{
               display: 'flex',
@@ -373,6 +385,7 @@ export default function App() {
             Canvas Editor
           </button>
           <button
+            data-tour="ai-generate"
             onClick={openAiModal}
             style={{
               display: 'flex',
@@ -439,6 +452,7 @@ export default function App() {
             API Importer
           </button>
           <button
+            data-tour="settings"
             onClick={() => {
               setCurrentView('settings');
               setLastNonExecutionView('settings');
@@ -462,6 +476,7 @@ export default function App() {
             Settings
           </button>
           <button
+            data-tour="dead-letter"
             onClick={() => {
               setCurrentView('dead-letter');
               setLastNonExecutionView('dead-letter');
@@ -508,6 +523,7 @@ export default function App() {
             Bundles
           </button>
           <button
+            data-tour="templates"
             onClick={() => {
               setCurrentView('templates');
               setLastNonExecutionView('templates');
@@ -583,6 +599,13 @@ export default function App() {
             busy={armingBusy}
             onToggle={() => { void setRuntimeArmed(!(armed === true)); }}
           />
+          <button
+            onClick={() => setShowTour(true)}
+            title="Take the product tour"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
+          >
+            <Compass size={15} /> Tour
+          </button>
           <UserMenu />
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>
             Local time: {new Date().toLocaleTimeString()}
@@ -760,6 +783,8 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {showTour && <GuidedTour onClose={closeTour} />}
     </div>
   );
 }
