@@ -20,7 +20,7 @@ public sealed record OperatorDefinition(
 
 /// <summary>
 /// The backend operator catalog. This must stay byte-for-byte equivalent (per id/group/arity/accepts)
-/// to <c>docs/design/condition-catalog.fixture.json</c> — a drift test asserts it, mirroring the
+/// to <c>test-fixtures/condition/condition-catalog.fixture.json</c> — a drift test asserts it, mirroring the
 /// FE drift test, so "what you see == what runs" holds across both languages (B2).
 /// </summary>
 public static class ConditionOperatorCatalog
