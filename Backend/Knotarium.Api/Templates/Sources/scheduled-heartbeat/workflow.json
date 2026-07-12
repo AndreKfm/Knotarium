@@ -1,0 +1,14 @@
+{
+  "Manifest": { "WorkflowId": "starter-scheduled-heartbeat", "WorkflowName": "Scheduled Heartbeat", "VersionNumber": 1, "Origin": "Published", "Label": null, "Checksum": "" },
+  "Content": {
+    "Nodes": [
+      { "Id": "sched-1", "Type": "scheduler", "Properties": { "cronExpression": "*/5 * * * *", "timezoneId": "UTC" } },
+      { "Id": "log-1", "Type": "log", "Properties": { "message": "Heartbeat at {{ $node.sched-1.output.triggeredAt }}" } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "sched-1", "Output": "triggeredAt", "To": "log-1", "Input": "in" },
+      { "Id": "e2", "From": "log-1", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}
