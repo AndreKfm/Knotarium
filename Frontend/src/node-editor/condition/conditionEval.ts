@@ -1,6 +1,6 @@
 // The pure, type-aware Condition evaluator — the frontend half of the spec, mirroring the backend
 // Backend/KnotGarden.Features/Nodes/Condition/ConditionEvaluator.cs. Both halves are pinned by the
-// shared conformance fixture (docs/design/condition-conformance.fixture.json, B2) so the editor's
+// shared conformance fixture (test-fixtures/condition/condition-conformance.fixture.json, B2) so the editor's
 // live preview produces the same status the server will at run time.
 //
 // Authoritative implementation of docs/design/condition-operator-semantics.md (§2 precedence,

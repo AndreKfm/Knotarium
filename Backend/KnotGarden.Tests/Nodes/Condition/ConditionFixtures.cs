@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace KnotGarden.Tests.Nodes.Condition;
 
 /// <summary>
-/// Loads the shared B2 fixtures (linked into the test output from docs/design — the same files the
+/// Loads the shared B2 fixtures (linked into the test output from test-fixtures/condition — the same files the
 /// frontend suite consumes). Centralizes the path so both the evaluator and catalog tests agree.
 /// </summary>
 internal static class ConditionFixtures
@@ -20,7 +20,7 @@ internal static class ConditionFixtures
         {
             throw new FileNotFoundException(
                 $"Condition fixture '{fileName}' not found at '{path}'. " +
-                "Ensure docs/design/*.fixture.json is linked into KnotGarden.Tests.csproj as copied Content.",
+                "Ensure test-fixtures/condition/*.fixture.json is linked into KnotGarden.Tests.csproj as copied Content.",
                 path);
         }
         return JsonDocument.Parse(File.ReadAllText(path));
