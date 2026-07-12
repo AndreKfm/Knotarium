@@ -19,14 +19,15 @@ public static class PersistenceServiceCollectionExtensions
 {
     /// <summary>
     /// Database provider factory + <see cref="AppDbContext"/> + the journal-writer chain (provider-selected
-    /// inner writer wrapped in the telemetry-instrumented decorator). <paramref name="appBaseDir"/> anchors the
-    /// default SQLite file next to the executable in a productive build; <paramref name="isDevelopment"/> keeps
-    /// the plain relative path (project dir) in Development.
+    /// inner writer wrapped in the telemetry-instrumented decorator). <paramref name="dataDirectory"/> anchors
+    /// the default SQLite file in the shared machine-wide data directory in a productive build (so every launch
+    /// mode uses the same DB); <paramref name="isDevelopment"/> keeps the plain relative path (project dir) in
+    /// Development.
     /// </summary>
     public static IServiceCollection AddPersistence(
         this IServiceCollection services,
         IConfiguration configuration,
-        string appBaseDir,
+        string dataDirectory,
         bool isDevelopment)
     {
         // Register dynamic database providers and factory
@@ -38,12 +39,12 @@ public static class PersistenceServiceCollectionExtensions
         var dbConnectionString = configuration["Database:ConnectionString"];
         if (string.IsNullOrWhiteSpace(dbConnectionString))
         {
-            // Default SQLite database. In a published (productive) build, anchor the file next to
-            // the executable so a copied folder is self-contained no matter the launch working
-            // directory. In Development we keep the plain relative path (project dir) as before.
+            // Default SQLite database. In a published (productive) build, anchor the file in the shared
+            // machine-wide data directory so the service and an interactive run share one DB no matter the
+            // launch working directory. In Development we keep the plain relative path (project dir) as before.
             var dbFile = isDevelopment
                 ? "Knotarium.db"
-                : Path.Combine(appBaseDir, "Knotarium.db");
+                : Path.Combine(dataDirectory, "Knotarium.db");
             dbConnectionString = $"Data Source={dbFile}";
         }
 
