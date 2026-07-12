@@ -1,7 +1,7 @@
 // The frontend operator catalog — the FE half of the shared FE/BE source of truth (B2).
 //
 // This MUST stay equivalent (per id/group/label/symbol/arity/accepts/rightKind, and group order)
-// to docs/design/condition-catalog.fixture.json. A drift test (operators.test.ts) asserts it,
+// to test-fixtures/condition/condition-catalog.fixture.json. A drift test (operators.test.ts) asserts it,
 // mirroring the backend ConditionOperatorCatalogTests, so "what you see == what runs" holds across
 // both languages. Canonical over the prototype's operator-dialog-data.jsx OPERATORS.
 //
