@@ -55,8 +55,26 @@ builder.Host.UseSerilog((context, _, loggerConfiguration) =>
 // to find where the exe (and the wwwroot / db beside it) really live.
 var appBaseDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
 
+// Machine-wide data home shared across launch modes. A Windows service and an interactive run started
+// from different exe paths would otherwise each anchor their own SQLite DB + at-rest credential key
+// (next to their own exe) and never see each other's data. Anchoring both under one fixed directory
+// (%ProgramData%\KnotGarden on Windows, the platform CommonApplicationData elsewhere) keeps them in
+// sync. Overridable via Storage:DataDirectory (or Storage__DataDirectory env) for containers/Linux
+// where CommonApplicationData isn't the right home. Development keeps the plain relative paths.
+var dataDir = builder.Configuration["Storage:DataDirectory"];
+if (string.IsNullOrWhiteSpace(dataDir))
+{
+    dataDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "KnotGarden");
+}
+if (!builder.Environment.IsDevelopment())
+{
+    Directory.CreateDirectory(dataDir);
+}
+
 // Database provider factory + AppDbContext + provider-selected, telemetry-instrumented journal writer.
-builder.Services.AddPersistence(builder.Configuration, appBaseDir, builder.Environment.IsDevelopment());
+builder.Services.AddPersistence(builder.Configuration, dataDir, builder.Environment.IsDevelopment());
 
 // Register Core/Features/Infrastructure services
 // Binary node-package support: the registry holds executors loaded from prebuilt *.dll packages
@@ -78,11 +96,12 @@ builder.Services.AddScoped<IWorkflowStore>(sp => sp.GetRequiredService<FileWorkf
 builder.Services.AddScoped<IWorkflowDefinitionProvider>(sp => sp.GetRequiredService<DatabaseWorkflowStore>());
 builder.Services.AddSingleton<SseEventPublisher>();
 builder.Services.AddSingleton<IExecutionEventPublisher>(sp => sp.GetRequiredService<SseEventPublisher>());
-// In a productive (non-Development) build, auto-generate + persist the at-rest credential key next to the
-// exe when none is configured, so a copy-and-run bundle works without manual key setup (the key stays
-// out of the DB). In Development a missing key stays a configuration error (no directory → no provisioning).
+// In a productive (non-Development) build, auto-generate + persist the at-rest credential key in the
+// shared data directory when none is configured, so a copy-and-run bundle works without manual key setup
+// (the key stays out of the DB) and every launch mode resolves the same key. In Development a missing key
+// stays a configuration error (no directory → no provisioning).
 builder.Services.AddSingleton(new KnotGarden.Infrastructure.Security.CredentialKeyProvisioning(
-    builder.Environment.IsDevelopment() ? null : appBaseDir));
+    builder.Environment.IsDevelopment() ? null : dataDir));
 builder.Services.AddSingleton<ICredentialCipher, AesCredentialCipher>();
 builder.Services.AddScoped<CredentialAccessor>();
 builder.Services.AddScoped<ISecretResolver>(sp => sp.GetRequiredService<CredentialAccessor>());
