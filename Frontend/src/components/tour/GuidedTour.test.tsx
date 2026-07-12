@@ -51,4 +51,12 @@ describe('GuidedTour', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose2).toHaveBeenCalledOnce();
   });
+
+  it('offers a labelled Skip button and a persistent reopen hint', () => {
+    const onClose = vi.fn();
+    render(<GuidedTour onClose={onClose} />);
+    expect(screen.getByText(/reopen anytime from the .Tour. button/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^skip$/i }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });
