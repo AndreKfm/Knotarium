@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-scheduled-heartbeat",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Scheduled Heartbeat",
+  "author": "Knotarium",
+  "description": "Logs a line every five minutes on a cron schedule. Shows a schedule trigger — enable the workflow to let it fire on its own.",
+  "tags": ["starter", "schedule", "trigger", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "Scheduled Heartbeat",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}
