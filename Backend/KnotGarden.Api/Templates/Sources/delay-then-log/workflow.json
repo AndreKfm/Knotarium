@@ -1,0 +1,23 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-delay-then-log",
+    "WorkflowName": "Delay Then Log",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      { "Id": "delay-1", "Type": "delay", "Properties": { "delayMs": 2000 } },
+      { "Id": "log-1", "Type": "log", "Properties": { "message": "Two seconds later — continuing." } },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "edge-1", "From": "start-1", "Output": "result", "To": "delay-1", "Input": "in" },
+      { "Id": "edge-2", "From": "delay-1", "Output": "result", "To": "log-1", "Input": "in" },
+      { "Id": "edge-3", "From": "log-1", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-delay-then-log",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Delay Then Log",
+  "author": "KnotGarden",
+  "description": "Waits two seconds, then logs a line. Shows the non-blocking Delay node — the building block for retries, rate-limiting, and timed steps. Run it and watch the run pause on the timeline.",
+  "tags": ["starter", "delay", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-12T00:00:00.0000000Z",
+  "sourceWorkflowName": "Delay Then Log",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}
