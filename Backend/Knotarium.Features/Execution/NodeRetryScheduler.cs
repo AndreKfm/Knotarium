@@ -1,24 +1,32 @@
 using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.Diagnostics;
-using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Knotarium.Core.Contracts;
 using Knotarium.Core.Domain;
-using Knotarium.Features.Compiler;
 using Knotarium.Infrastructure.Persistence;
-using Knotarium.Infrastructure.Security;
 
 namespace Knotarium.Features.Execution;
 
-public partial class WorkflowExecutor
+/// <summary>
+/// Schedules automatic retries for idempotent nodes whose manifest opts in
+/// (<see cref="RecoveryMode.RetryAutomatically"/>): parks the run in
+/// <see cref="ExecutionStatus.WaitingForRetry"/>, enqueues a delayed <c>Retry</c> work item per the
+/// backoff policy, and tracks per-node attempt state.
+/// </summary>
+internal sealed class NodeRetryScheduler
 {
-    private async Task<bool> TryScheduleRetryAsync(
+    private readonly AppDbContext _dbContext;
+    private readonly TimeProvider _timeProvider;
+
+    public NodeRetryScheduler(AppDbContext dbContext, TimeProvider timeProvider)
+    {
+        _dbContext = dbContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<bool> TryScheduleRetryAsync(
         ExecutionInstance instance,
         NodeState nodeState,
         NodePackageManifest manifest,
@@ -98,20 +106,7 @@ public partial class WorkflowExecutor
         }
     }
 
-    private async Task<int> GetAttemptNumberAsync(
-        ExecutionInstanceId executionInstanceId,
-        NodeId nodeId,
-        CancellationToken cancellationToken)
-    {
-        var retryState = await _dbContext.NodeRetryStates
-            .SingleOrDefaultAsync(
-                state => state.ExecutionInstanceId == executionInstanceId && state.NodeId == nodeId,
-                cancellationToken);
-
-        return retryState?.AttemptNumber ?? 1;
-    }
-
-    private async Task ClearRetryStateAsync(
+    public async Task ClearRetryStateAsync(
         ExecutionInstanceId executionInstanceId,
         NodeId nodeId,
         CancellationToken cancellationToken)
@@ -130,101 +125,17 @@ public partial class WorkflowExecutor
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static Dictionary<string, object> CreateFailureJournalData(
-        string? errorMessage, Guid? attemptId, string? errorCode = null)
+    private async Task<int> GetAttemptNumberAsync(
+        ExecutionInstanceId executionInstanceId,
+        NodeId nodeId,
+        CancellationToken cancellationToken)
     {
-        var data = new Dictionary<string, object>
-        {
-            ["error"] = errorMessage ?? "Node execution failed."
-        };
+        var retryState = await _dbContext.NodeRetryStates
+            .SingleOrDefaultAsync(
+                state => state.ExecutionInstanceId == executionInstanceId && state.NodeId == nodeId,
+                cancellationToken);
 
-        if (attemptId.HasValue)
-        {
-            data["AttemptId"] = attemptId.Value.ToString();
-        }
-
-        // R6: a discrete, field-queryable error code in the hash-chained audit Data (vs substring-matching
-        // the message). Present only when the failing task supplied a structured code.
-        if (!string.IsNullOrWhiteSpace(errorCode))
-        {
-            data["errorCode"] = errorCode;
-        }
-
-        return data;
-    }
-
-    private static Dictionary<string, object> CreateAttemptData(string? reason, string? attemptId)
-    {
-        var data = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-
-        if (!string.IsNullOrWhiteSpace(reason))
-        {
-            data["reason"] = reason;
-        }
-
-        if (!string.IsNullOrWhiteSpace(attemptId))
-        {
-            data["AttemptId"] = attemptId;
-        }
-
-        return data;
-    }
-
-    private static string? FindPendingAttemptId(IEnumerable<ExecutionJournal> journalEntries, NodeId nodeId)
-    {
-        var attemptEntries = journalEntries
-            .Where(entry => entry.EventType == JournalEventTypes.AttemptingExternalEffect && entry.NodeId == nodeId)
-            .OrderByDescending(entry => entry.Timestamp)
-            .ToList();
-
-        foreach (var attemptEntry in attemptEntries)
-        {
-            var attemptId = TryReadString(attemptEntry.Data, "AttemptId");
-            if (string.IsNullOrWhiteSpace(attemptId))
-            {
-                continue;
-            }
-
-            var hasCompletion = journalEntries.Any(entry =>
-                entry.NodeId == nodeId &&
-                (entry.EventType == JournalEventTypes.NodeExecutionCompleted || entry.EventType == JournalEventTypes.NodeExecutionFailed) &&
-                string.Equals(TryReadString(entry.Data, "AttemptId"), attemptId, StringComparison.OrdinalIgnoreCase));
-
-            if (!hasCompletion)
-            {
-                return attemptId;
-            }
-        }
-
-        return null;
-    }
-
-    private static string? TryReadString(IReadOnlyDictionary<string, object>? data, string key)
-    {
-        if (data == null || !data.TryGetValue(key, out var value) || value == null)
-        {
-            return null;
-        }
-
-        return value switch
-        {
-            string stringValue => stringValue,
-            Guid guidValue => guidValue.ToString(),
-            JsonElement jsonElement when jsonElement.ValueKind == JsonValueKind.String => jsonElement.GetString(),
-            _ => value.ToString()
-        };
-    }
-
-    private static bool TryNormalizeManualDecision(string decision, out ManualDecision normalizedDecision)
-    {
-        normalizedDecision = default;
-
-        if (string.IsNullOrWhiteSpace(decision))
-        {
-            return false;
-        }
-
-        return Enum.TryParse(decision, ignoreCase: true, out normalizedDecision);
+        return retryState?.AttemptNumber ?? 1;
     }
 
     private static string SanitizeFailureMessage(string? message)
@@ -246,5 +157,4 @@ public partial class WorkflowExecutor
 
         return sanitized;
     }
-
 }
