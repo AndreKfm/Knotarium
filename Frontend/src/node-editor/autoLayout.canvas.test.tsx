@@ -22,11 +22,17 @@ vi.mock('../components/PropertiesPanel', () => ({ PropertiesPanel: () => <div da
 vi.mock('../components/VariablesPanel', () => ({ VariablesPanel: () => <div data-testid="variables-panel" /> }));
 
 let loadedGraph: { nodes: any[]; edges: any[] } = { nodes: [], edges: [] };
+// Controls for the auto-tidy-on-load path: whether the loaded definition has saved positions, and whether
+// React Flow reports the nodes as measured. Default to the "already positioned / not initialized" combo so
+// the existing toolbar tests are unaffected.
+let mockHasSavedPositions = true;
+let mockNodesInitialized = false;
 vi.mock('../utils/schemaMapper', () => ({
   schemaMapper: {
     toReactFlow: () => ({ nodes: loadedGraph.nodes, edges: loadedGraph.edges }),
     toBackend: (_id: string, name: string, nodes: any[], edges: any[]) => ({ name, nodes, edges }),
   },
+  definitionHasSavedPositions: () => mockHasSavedPositions,
 }));
 
 vi.mock('../utils/api', () => ({
@@ -77,6 +83,7 @@ vi.mock('@xyflow/react', async () => {
       getZoom: () => 1,
     }),
     useStoreApi: () => ({ setState: vi.fn(), getState: () => ({}) }),
+    useNodesInitialized: () => mockNodesInitialized,
     useConnection: (selector?: (c: { inProgress: boolean }) => unknown) =>
       selector ? selector({ inProgress: false }) : { inProgress: false },
     useNodeConnections: () => [],
@@ -125,9 +132,31 @@ describe('layout toolbar (integration)', () => {
   beforeEach(() => {
     store.nodes = [];
     store.edges = [];
+    mockHasSavedPositions = true;
+    mockNodesInitialized = false;
     vi.mocked(api.getWorkflow).mockResolvedValue({ id: { value: 'wf-1' }, name: 'WF', nodes: [], edges: [] } as never);
   });
   afterEach(() => vi.clearAllMocks());
+
+  it('auto-tidies a position-less workflow on load, once measured', async () => {
+    mockHasSavedPositions = false; // loaded definition carries no saved positions (gallery example / import)
+    mockNodesInitialized = true;   // React Flow reports the nodes as measured
+    // Scrambled x: a left-to-right result can only come from the auto-layout firing on load (no button click).
+    loadedGraph = {
+      nodes: [node('a', 400, 0), node('b', 0, 0), node('c', 200, 50)],
+      edges: [
+        { id: 'e1', source: 'a', sourceHandle: 'result', target: 'b', targetHandle: 'in' },
+        { id: 'e2', source: 'b', sourceHandle: 'result', target: 'c', targetHandle: 'in' },
+      ],
+    };
+    await renderCanvas();
+
+    await waitFor(() => {
+      const n = byId(readNodes());
+      expect(n.a.position.x).toBeLessThan(n.b.position.x);
+      expect(n.b.position.x).toBeLessThan(n.c.position.x);
+    });
+  });
 
   it('Tidy re-arranges a chain left-to-right', async () => {
     // Deliberately scrambled x so left-to-right is not already satisfied.
