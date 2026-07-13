@@ -29,6 +29,12 @@ public static class ExecutionEndpoints
         // enforces the limit during body read, so an oversized payload never gets fully buffered/parsed.
         var webhookMaxBodyBytes = app.Configuration.GetValue("Security:WebhookMaxBodyBytes", 1_048_576L);
 
+        // Bound the executions list read so it can't load + serialize an unbounded result set (each row carries
+        // a GlobalVariables blob). Clients may page with ?skip=&take=; without take we return the most recent
+        // DefaultPageSize, and take is always clamped to MaxPageSize.
+        var defaultPageSize = app.Configuration.GetValue("Executions:DefaultPageSize", 500);
+        var maxPageSize = app.Configuration.GetValue("Executions:MaxPageSize", 2000);
+
         app.MapPost("/api/executions", async (StartExecutionRequest request, HttpRequest httpRequest, IWorkflowStore workflowStore, ExecutionStarter executionStarter, ActiveWorkflowVersionService activeWorkflowVersionService, Knotarium.Api.Services.RuntimeArmingState armingState, Knotarium.Api.Services.WebhookSecretService webhookSecrets, CancellationToken cancellationToken) =>
         {
             var workflowId = new WorkflowDefinitionId(request.WorkflowDefinitionId);
@@ -116,10 +122,12 @@ public static class ExecutionEndpoints
         .AllowAnonymous()   // machine-facing resume — authenticated by the per-run correlation token, not a user session
         .RequireRateLimiting(RateLimitPolicies.AnonymousMachine);
 
-        app.MapGet("/api/executions", async (AppDbContext db, string? status, string? search) =>
+        app.MapGet("/api/executions", async (AppDbContext db, string? status, string? search, int? skip, int? take) =>
         {
             var normalizedStatus = NormalizeExecutionStatusFilter(status);
             var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+            var pageSkip = Math.Max(0, skip ?? 0);
+            var pageTake = Math.Clamp(take ?? defaultPageSize, 1, maxPageSize);
 
             var query = db.ExecutionInstances
                 .AsNoTracking()
@@ -145,6 +153,8 @@ public static class ExecutionEndpoints
 
             var list = await query
                 .OrderByDescending(item => item.Execution.CreatedAt)
+                .Skip(pageSkip)
+                .Take(pageTake)
                 .ToListAsync();
 
             return Results.Ok(list.Select(item => new
