@@ -555,6 +555,17 @@ public static class StartupInitializer
                 );
             ");
 
+            // Indexes for the two central poll loops, which scan for active triggers due to fire/poll. Without
+            // these, each 10s evaluation is a full table scan of Schedules / PollingTriggers.
+            db.Database.ExecuteSqlRaw(@"
+                CREATE INDEX IF NOT EXISTS IX_Schedules_IsActive_NextFireAtUtc
+                ON Schedules (IsActive, NextFireAtUtc);
+            ");
+            db.Database.ExecuteSqlRaw(@"
+                CREATE INDEX IF NOT EXISTS IX_PollingTriggers_IsActive_NextPollAtUtc
+                ON PollingTriggers (IsActive, NextPollAtUtc);
+            ");
+
             db.Database.ExecuteSqlRaw(@"
                 CREATE TABLE IF NOT EXISTS Users (
                     Id TEXT NOT NULL PRIMARY KEY,

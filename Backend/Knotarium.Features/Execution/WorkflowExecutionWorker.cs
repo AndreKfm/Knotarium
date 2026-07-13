@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,16 +21,25 @@ public class WorkflowExecutionWorker : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<WorkflowExecutionWorker> _logger;
     private readonly string _workerId;
+    // Run-level concurrency cap. Default 1 = fully serial (the historical, single-writer-safe behavior).
+    // Each run already executes in its own DI scope (own WorkflowExecutor + AppDbContext), so a higher cap
+    // is safe against shared-state races; SQLite remains single-writer, so concurrent runs' writes serialize
+    // (WAL + busy_timeout) rather than corrupt. Raise Execution:MaxConcurrentRuns only if runs are I/O-bound.
+    private readonly int _maxConcurrentRuns;
+    private readonly SemaphoreSlim? _runSlots;
 
     public WorkflowExecutionWorker(
         WorkflowExecutionQueue queue,
         IServiceProvider serviceProvider,
-        ILogger<WorkflowExecutionWorker> logger)
+        ILogger<WorkflowExecutionWorker> logger,
+        IConfiguration? configuration = null)
     {
         _queue = queue;
         _serviceProvider = serviceProvider;
         _logger = logger;
         _workerId = Guid.NewGuid().ToString();
+        _maxConcurrentRuns = Math.Max(1, configuration?.GetValue("Execution:MaxConcurrentRuns", 1) ?? 1);
+        _runSlots = _maxConcurrentRuns > 1 ? new SemaphoreSlim(_maxConcurrentRuns, _maxConcurrentRuns) : null;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -178,10 +188,46 @@ public class WorkflowExecutionWorker : BackgroundService
         {
             _logger.LogInformation("Processing queued workflow execution instance: {ExecutionId}", executionId);
 
+            if (_runSlots is null)
+            {
+                // Serial (default): await each run to completion before dequeuing the next.
+                await RunOneAsync(executionId, stoppingToken);
+            }
+            else
+            {
+                // Bounded concurrency: acquire a slot, then run without awaiting so the next run can start.
+                // The single poll-loop thread stays the sole channel reader; only execution fans out.
+                await _runSlots.WaitAsync(stoppingToken);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await RunOneAsync(executionId, stoppingToken);
+                    }
+                    finally
+                    {
+                        _runSlots.Release();
+                    }
+                }, stoppingToken);
+            }
+        }
+    }
+
+    private async Task RunOneAsync(ExecutionInstanceId executionId, CancellationToken stoppingToken)
+    {
+        try
+        {
             using var scope = _serviceProvider.CreateScope();
             var executor = scope.ServiceProvider.GetRequiredService<WorkflowExecutor>();
-
             await executor.ExecuteAsync(executionId, null, null, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Shutting down.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Workflow execution {ExecutionId} failed in the background worker.", executionId);
         }
     }
 
