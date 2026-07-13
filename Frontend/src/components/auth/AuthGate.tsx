@@ -14,7 +14,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!status.authenticated) {
+  // No-auth mode (Auth:Enabled=false): every endpoint is anonymous, so open the app without a login.
+  if (status.enabled && !status.authenticated) {
     return <LoginPage />;
   }
 
