@@ -14,6 +14,7 @@ import {
   SelectionMode,
   useReactFlow,
   useStoreApi,
+  useNodesInitialized,
   getNodesBounds,
 } from '@xyflow/react';
 import type {
@@ -26,7 +27,7 @@ import type {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '../utils/api';
-import { schemaMapper } from '../utils/schemaMapper';
+import { schemaMapper, definitionHasSavedPositions } from '../utils/schemaMapper';
 import { createNodeTypes } from '../utils/nodeTypes';
 import { createNodePackageMetadataMap, enrichNodesWithPackageMetadata, type NodePackageMetadata } from '../utils/nodePackages';
 import { extractSubflowInterface, type SubflowInterface } from '../utils/subflowInterface';
@@ -252,12 +253,19 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     nodesRef.current = nodes;
     edgesRef.current = edges;
   }, [nodes, edges]);
+  // True after a workflow loads WITHOUT saved positions (gallery examples, imports): the graph is then
+  // auto-tidied once React Flow has measured the nodes (so wide nodes get real spacing, not the default).
+  // State, not a ref, so setting it re-runs the tidy effect even when the graph was already measured before
+  // this load (otherwise the effect, keyed only on nodesInitialized, would miss the no-transition case).
+  const [autoTidyPending, setAutoTidyPending] = useState(false);
   const [selectedNode, setSelectedNode] = useState<RFNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [selectedNodeCount, setSelectedNodeCount] = useState(0);
   const [extracting, setExtracting] = useState(false);
   
   const [workflowName, setWorkflowName] = useState('New Workflow');
+  const workflowNameRef = useRef(workflowName);
+  useEffect(() => { workflowNameRef.current = workflowName; }, [workflowName]);
   const [currentId, setCurrentId] = useState('');
   // Armed when a brand-new workflow is created, consumed on its first save: a fresh graph is assembled at
   // wherever the user dropped nodes, so framing it once at the first save keeps it from landing in a corner.
@@ -815,6 +823,9 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         setActiveWorkflowVersion(activeVersion);
         setSelectedActivationVersionId(activeVersion?.workflowVersionId ?? versions[0]?.id ?? '');
         const { nodes: rfNodes, edges: rfEdges } = schemaMapper.toReactFlow(wf);
+        // A definition without saved positions gets a measured auto-tidy once React Flow lays it out
+        // (see the useNodesInitialized effect) — the mapper's default-width pass can overlap wide nodes.
+        setAutoTidyPending(!definitionHasSavedPositions(wf));
         // Re-derive child visibility from any persisted collapsed groups (#14): the
         // runtime `hidden` flag isn't persisted, only the group's `collapsed` property.
         setNodes(applyGroupCollapseOnLoad(enrichNodesWithPackageMetadata(rfNodes, availableNodeMetadataRef.current)));
@@ -1663,6 +1674,40 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     // canvas looks empty (especially for large/disconnected graphs). Fit once the new positions render.
     requestAnimationFrame(() => fitView({ padding: 0.15, duration: 400 }));
   }, [nodeSize, setNodes, recordUndo, snapIfEnabled, fitView]);
+
+  // Same dagre layout as the Tidy button, but run automatically once a freshly loaded position-less graph
+  // has been MEASURED — so wide nodes (e.g. a Log with a long message) get real spacing instead of the
+  // mapper's default-width guess, which overlaps them. Unlike the button this records no undo step and
+  // rebaselines the saved signature, since an auto-arrange on open isn't a user edit.
+  const autoTidyOnLoad = useCallback(() => {
+    const current = nodesRef.current;
+    if (current.length === 0) return;
+    const positions = computeNestedAutoLayout(
+      current.map((n) => ({ id: n.id, type: n.type, parentId: n.parentId, ...nodeSize(n) })),
+      edgesRef.current.map((e) => ({ source: e.source, target: e.target })),
+      { direction: 'LR' },
+    );
+    if (positions.length === 0) return;
+    const posById = new Map(positions.map((p) => [p.id, { ...p, ...snapIfEnabled(p) }]));
+    const next = current.map((n) => {
+      const p = posById.get(n.id);
+      if (!p) return n;
+      const moved: RFNode = { ...n, position: { x: p.x, y: p.y } };
+      if (p.width && p.height) moved.style = { ...n.style, width: p.width, height: p.height };
+      return moved;
+    });
+    setNodes(next);
+    setSavedSignature(workflowSignature(workflowNameRef.current, next, edgesRef.current));
+    requestAnimationFrame(() => fitView({ padding: 0.15, duration: 400 }));
+  }, [nodeSize, setNodes, snapIfEnabled, fitView]);
+
+  const nodesInitialized = useNodesInitialized();
+  useEffect(() => {
+    if (nodesInitialized && autoTidyPending) {
+      setAutoTidyPending(false);
+      autoTidyOnLoad();
+    }
+  }, [nodesInitialized, autoTidyPending, autoTidyOnLoad]);
 
   // Apply new positions for a set of node ids in one undo step.
   const applyPositions = useCallback(
