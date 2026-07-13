@@ -66,6 +66,20 @@ public static class StartupInitializer
                 // connection inherits it): readers don't block the single writer, and appends are cheaper.
                 Knotarium.Infrastructure.Persistence.SqlitePragmas.EnableWal(connection);
 
+                // Convert the file to incremental auto-vacuum (one-time VACUUM) so deleted rows can return
+                // disk to the OS. Best-effort: a VACUUM needs free space and exclusive access, so if it can't
+                // run right now, log and continue — retention still bounds logical growth and the next startup
+                // retries the conversion. Never block startup on a disk-reclaim optimization.
+                try
+                {
+                    Knotarium.Infrastructure.Persistence.SqlitePragmas.EnsureIncrementalAutoVacuum(connection);
+                }
+                catch (Exception vacuumEx)
+                {
+                    Console.Error.WriteLine(
+                        "[WARN] Could not enable incremental auto-vacuum (will retry next startup): " + vacuumEx.Message);
+                }
+
                 using var command = connection.CreateCommand();
                 command.CommandText = "PRAGMA table_info('ExecutionInstances');";
 

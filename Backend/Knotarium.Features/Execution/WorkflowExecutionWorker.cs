@@ -74,6 +74,36 @@ public class WorkflowExecutionWorker : BackgroundService
             await dbContext.SaveChangesAsync(stoppingToken);
         }
 
+        // 1b. Crash recovery, now that the startup guard has confirmed we are the sole worker: fail runs left
+        // orphaned in Running, reclaim work items stuck in Running, and re-queue runs that were Pending (the
+        // in-memory queue does not survive a restart). Without this, orphaned runs sit forever and Pending
+        // runs never execute.
+        using (var recoveryScope = _serviceProvider.CreateScope())
+        {
+            var recoveryService = recoveryScope.ServiceProvider.GetRequiredService<RecoveryService>();
+            try
+            {
+                var failedOrphans = await recoveryService.FailOrphanedRunningRunsAsync(stoppingToken);
+                var reclaimedWorkItems = await recoveryService.ReclaimStuckWorkItemsAsync(stoppingToken);
+                var pendingRunIds = await recoveryService.GetPendingRunIdsAsync(stoppingToken);
+                foreach (var pendingRunId in pendingRunIds)
+                {
+                    _queue.QueueExecution(pendingRunId);
+                }
+
+                if (failedOrphans > 0 || reclaimedWorkItems > 0 || pendingRunIds.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "Crash recovery: failed {Orphans} orphaned run(s), reclaimed {WorkItems} stuck work item(s), re-queued {Pending} pending run(s).",
+                        failedOrphans, reclaimedWorkItems, pendingRunIds.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Crash recovery step failed during worker startup.");
+            }
+        }
+
         // 2. Start Background Heartbeat Loop Task
         var heartbeatTask = Task.Run(async () =>
         {
@@ -193,6 +223,22 @@ public class WorkflowExecutionWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to process execution work item {WorkItemId}.", workItemId);
+
+                // Return the item to Pending (with a short backoff) so a transient failure retries instead of
+                // leaving it stuck in Running forever. A crash before this runs is covered by startup reclaim.
+                try
+                {
+                    await dbContext.ExecutionWorkItems
+                        .Where(workItem => workItem.Id == workItemId && workItem.Status == WorkItemStatus.Running)
+                        .ExecuteUpdateAsync(updates => updates
+                            .SetProperty(workItem => workItem.Status, WorkItemStatus.Pending)
+                            .SetProperty(workItem => workItem.NotBeforeUtc, DateTimeOffset.UtcNow.AddSeconds(30)),
+                            stoppingToken);
+                }
+                catch (Exception resetEx)
+                {
+                    _logger.LogWarning(resetEx, "Failed to reset stuck work item {WorkItemId} back to Pending.", workItemId);
+                }
             }
         }
     }

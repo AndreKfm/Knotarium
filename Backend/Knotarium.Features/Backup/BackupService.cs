@@ -67,6 +67,12 @@ public sealed class BackupService
     public const string ServerConfigsEntry = "server-configs.json";
     public const string OpenApiSpecsEntry = "openapi-specs.json";
 
+    // Filename prefix for the auto pre-restore safety-net backups written to the temp directory.
+    private const string PreRestorePrefix = "knotarium-pre-restore-";
+
+    // How long a pre-restore backup is kept before the next restore prunes it.
+    private static readonly TimeSpan PreRestoreRetention = TimeSpan.FromDays(7);
+
     private readonly AppDbContext _db;
     private readonly ICredentialCipher _cipher;
     private readonly FileWorkflowStore _fileStore;
@@ -91,6 +97,37 @@ public sealed class BackupService
         _armingState = armingState ?? throw new ArgumentNullException(nameof(armingState));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _keyProvisioning = keyProvisioning;
+    }
+
+    /// <summary>
+    /// Best-effort removal of pre-restore safety-net backups older than <see cref="PreRestoreRetention"/> from
+    /// the temp directory. Each restore writes one and previously never deleted it, so they accumulated
+    /// indefinitely; recent ones are retained so a just-completed restore can still be reversed.
+    /// </summary>
+    private void CleanupOldPreRestoreBackups()
+    {
+        try
+        {
+            var cutoff = _timeProvider.GetUtcNow() - PreRestoreRetention;
+            foreach (var file in Directory.EnumerateFiles(Path.GetTempPath(), PreRestorePrefix + "*"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) < cutoff.UtcDateTime)
+                    {
+                        File.Delete(file);
+                    }
+                }
+                catch
+                {
+                    // A single locked/partially-removed file must not abort the sweep or the restore.
+                }
+            }
+        }
+        catch
+        {
+            // Temp enumeration is best-effort; never let cleanup block a restore.
+        }
     }
 
     /// <summary>
@@ -273,12 +310,16 @@ public sealed class BackupService
         var archive = BackupArchiveCodec.Read(bytes, secret); // 400 on bad key/corruption
         EnsureCompatible(archive.Manifest); // 409 on format mismatch
 
+        // Prune stale pre-restore backups from previous restores so they don't accumulate in temp forever
+        // (each restore used to leak one). Recent ones are kept as a short-lived safety net.
+        CleanupOldPreRestoreBackups();
+
         // Auto pre-restore backup of the CURRENT state, in the SAME mode as the incoming archive, so the
         // operation is reversible.
         var preRestore = await CreateAsync(secret, includeRunHistory: false, cancellationToken);
         var preRestorePath = Path.Combine(
             Path.GetTempPath(),
-            $"knotarium-pre-restore-{Guid.NewGuid():N}-{preRestore.FileName}");
+            $"{PreRestorePrefix}{Guid.NewGuid():N}-{preRestore.FileName}");
         await File.WriteAllBytesAsync(preRestorePath, preRestore.Bytes, cancellationToken);
 
         // Decode the archive's aggregates up front so any malformed document fails before we delete anything.
