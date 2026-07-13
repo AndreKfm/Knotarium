@@ -41,7 +41,7 @@ public class ConditionResolutionParityTests
     [Fact]
     public void Direct_global_resolves_identically_on_both_paths()
     {
-        var proj = new WorkflowExecutor.WorkflowStateProjection(
+        var proj = new WorkflowStateProjection(
             Run(globals: new Dictionary<string, object> { ["plan"] = Json("\"pro\"") }));
 
         Assert.True(proj.TryResolveVariable("plan", out var resolved));
@@ -52,7 +52,7 @@ public class ConditionResolutionParityTests
     public void Promoted_node_output_resolves_identically_on_both_paths()
     {
         // Promoted-variable pattern: "<nodeId>_<outputHandle>".
-        var proj = new WorkflowExecutor.WorkflowStateProjection(
+        var proj = new WorkflowStateProjection(
             Run(nodes: ("n1", new Dictionary<string, object> { ["out"] = Json("200") })));
 
         Assert.True(proj.TryResolveVariable("n1_out", out var resolved));
@@ -66,7 +66,7 @@ public class ConditionResolutionParityTests
         // it is present and both yield null.
         var run = Run(globals: new Dictionary<string, object>());
         run.GlobalVariables["maybe"] = null!; // present key, null value
-        var proj = new WorkflowExecutor.WorkflowStateProjection(run);
+        var proj = new WorkflowStateProjection(run);
 
         Assert.True(proj.TryResolveVariable("maybe", out var resolved));
         Assert.Null(resolved);
@@ -78,7 +78,7 @@ public class ConditionResolutionParityTests
     {
         // A dragged ref targeting a field of a structured global (e.g. the inbound `signal`) resolves
         // by walking the dotted path; both resolution paths must agree, and a missing leaf is a miss.
-        var proj = new WorkflowExecutor.WorkflowStateProjection(
+        var proj = new WorkflowStateProjection(
             Run(globals: new Dictionary<string, object>
             {
                 ["signal"] = Json("""{ "type":"2", "active":true, "params": { "valueA":"x", "n":5 } }"""),
@@ -102,7 +102,7 @@ public class ConditionResolutionParityTests
         // The divergence the Condition task deliberately introduces: a missing ref is reported as NOT
         // found (→ RESOLUTION_FAILED) where the generic path can only return a value-shaped null. The
         // found-ness flag is exactly the extra bit the generic GetVariable cannot express.
-        var proj = new WorkflowExecutor.WorkflowStateProjection(Run());
+        var proj = new WorkflowStateProjection(Run());
 
         Assert.False(proj.TryResolveVariable("absent", out var resolved));
         Assert.Null(resolved);

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Reflection;
 using Knotarium.Core.Domain;
 using Knotarium.Features.Execution;
 using Knotarium.Features.Polling;
@@ -23,11 +22,7 @@ public class PollingTriggerExecutorTests
             }
         };
 
-        var method = typeof(WorkflowExecutor).GetMethod(
-            "CreateTriggerOutputs", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
-        var outputs = (Dictionary<string, object>)method!.Invoke(null, new object[] { "pollingTrigger", instance })!;
+        var outputs = TriggerEntryResolver.CreateTriggerOutputs("pollingTrigger", instance);
 
         Assert.True(outputs.ContainsKey("result"));
         Assert.Equal("{\"v\":1}", outputs["result"]);
@@ -44,9 +39,7 @@ public class PollingTriggerExecutorTests
             GlobalVariables = new Dictionary<string, object>()
         };
 
-        var method = typeof(WorkflowExecutor).GetMethod(
-            "CreateTriggerOutputs", BindingFlags.NonPublic | BindingFlags.Static);
-        var outputs = (Dictionary<string, object>)method!.Invoke(null, new object[] { "pollingTrigger", instance })!;
+        var outputs = TriggerEntryResolver.CreateTriggerOutputs("pollingTrigger", instance);
 
         Assert.False(outputs.ContainsKey("result"));
     }
@@ -54,14 +47,7 @@ public class PollingTriggerExecutorTests
     [Fact]
     public void IsTriggerCompatibleWithOrigin_PollMapsToPollingTrigger()
     {
-        var method = typeof(WorkflowExecutor).GetMethod(
-            "IsTriggerCompatibleWithOrigin", BindingFlags.NonPublic | BindingFlags.Static);
-        Assert.NotNull(method);
-
-        var compatible = (bool)method!.Invoke(null, new object[] { "pollingTrigger", "poll" })!;
-        var notCompatible = (bool)method.Invoke(null, new object[] { "scheduler", "poll" })!;
-
-        Assert.True(compatible);
-        Assert.False(notCompatible);
+        Assert.True(TriggerEntryResolver.IsTriggerCompatibleWithOrigin("pollingTrigger", "poll"));
+        Assert.False(TriggerEntryResolver.IsTriggerCompatibleWithOrigin("scheduler", "poll"));
     }
 }

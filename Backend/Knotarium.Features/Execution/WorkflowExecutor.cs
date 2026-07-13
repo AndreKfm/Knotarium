@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -16,18 +14,29 @@ using Knotarium.Infrastructure.Security;
 
 namespace Knotarium.Features.Execution;
 
+/// <summary>
+/// Drives workflow runs: schedules nodes along the compiled plan, executes their tasks with
+/// timeouts, and reacts to each result (success, wait, delay, failure). Suspension, retries,
+/// replays and manual decisions round-trip through execution work items processed by
+/// <see cref="ProcessWorkItemAsync"/>. Cross-cutting concerns are delegated to focused
+/// collaborators: <see cref="ExecutionPlanLoader"/>, <see cref="ExecutionJournalPublisher"/>,
+/// <see cref="NodeRetryScheduler"/>, <see cref="TriggerEntryResolver"/>,
+/// <see cref="ParallelForEachNodeRunner"/> and <see cref="PropertyValueEvaluator"/>.
+/// </summary>
 public partial class WorkflowExecutor
 {
     private readonly AppDbContext _dbContext;
-    private readonly WorkflowCompiler _compiler;
     private readonly INodeTaskRegistry _registry;
-    private readonly IExecutionEventPublisher _publisher;
-    private readonly IExecutionJournalWriter _journalWriter;
     private readonly ExecutionTelemetry _telemetry;
     private readonly ICorrelationTokenCrypto _correlationTokenCrypto;
     private readonly TimeProvider _timeProvider;
-    private readonly IFailureAlertSink? _failureAlertQueue;
-    private readonly IErrorWorkflowSink? _errorWorkflowQueue;
+
+    private readonly ExecutionJournalPublisher _journal;
+    private readonly ExecutionPlanLoader _planLoader;
+    private readonly NodeManifestSource _manifests;
+    private readonly NodeRetryScheduler _retryScheduler;
+    private readonly TriggerEntryResolver _triggerResolver;
+    private readonly ParallelForEachNodeRunner _parallelForEach;
 
     // Replay mock-side-effects mode (set per Replay work item). When enabled, a non-idempotent
     // node replays its original output from the source run instead of firing the real effect.
@@ -47,15 +56,17 @@ public partial class WorkflowExecutor
         IErrorWorkflowSink? errorWorkflowQueue = null)
     {
         _dbContext = dbContext;
-        _compiler = compiler;
         _registry = registry;
-        _publisher = publisher;
-        _journalWriter = journalWriter;
         _telemetry = telemetry ?? new ExecutionTelemetry();
         _correlationTokenCrypto = correlationTokenCrypto ?? new CorrelationTokenCrypto();
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _failureAlertQueue = failureAlertQueue;
-        _errorWorkflowQueue = errorWorkflowQueue;
+
+        _journal = new ExecutionJournalPublisher(journalWriter, publisher, failureAlertQueue, errorWorkflowQueue);
+        _planLoader = new ExecutionPlanLoader(dbContext, compiler, _journal, _timeProvider);
+        _manifests = new NodeManifestSource(compiler);
+        _retryScheduler = new NodeRetryScheduler(dbContext, _timeProvider);
+        _triggerResolver = new TriggerEntryResolver(_manifests);
+        _parallelForEach = new ParallelForEachNodeRunner(dbContext, registry, _manifests, _journal);
     }
 
     public async Task<bool> ResumeWorkflowTransactionAsync(
@@ -188,7 +199,7 @@ public partial class WorkflowExecutor
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(nodeId) ||
-            !TryNormalizeManualDecision(decision, out var normalizedDecision))
+            !ManualDecisions.TryNormalize(decision, out var normalizedDecision))
         {
             return false;
         }
@@ -219,7 +230,7 @@ public partial class WorkflowExecutor
                 return false;
             }
 
-            var pendingAttemptId = FindPendingAttemptId(instance.JournalEntries, manualNode.NodeId);
+            var pendingAttemptId = ExecutionJournalData.FindPendingAttemptId(instance.JournalEntries, manualNode.NodeId);
             if (!string.IsNullOrWhiteSpace(expectedAttemptId) &&
                 !string.Equals(expectedAttemptId, pendingAttemptId, StringComparison.OrdinalIgnoreCase))
             {
@@ -334,45 +345,10 @@ public partial class WorkflowExecutor
         }
     }
 
-    private async Task<ExecutionJournal> PublishJournalEntryAsync(
-        ExecutionInstance instance,
-        string eventType,
-        string message,
-        NodeId? nodeId = null,
-        Dictionary<string, object>? data = null,
-        CancellationToken cancellationToken = default)
-    {
-        var entry = new ExecutionJournal
-        {
-            Id = Guid.NewGuid(),
-            ExecutionInstanceId = instance.Id,
-            NodeId = nodeId,
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = eventType,
-            Message = message,
-            Data = data ?? new Dictionary<string, object>()
-        };
-
-        // Write directly to IExecutionJournalWriter bypassing EF Core change-tracking overhead on hot-path
-        await _journalWriter.WriteAsync(entry);
-
-        await _publisher.PublishAsync(instance.Id, entry, cancellationToken);
-
-        // Single failure chokepoint: every WorkflowFailed path flows through here. Enqueue is a
-        // non-blocking in-memory hand-off, so it can never block or break the run.
-        if (eventType == JournalEventTypes.WorkflowFailed)
-        {
-            _failureAlertQueue?.Enqueue(instance.Id);
-            _errorWorkflowQueue?.Enqueue(instance.Id);
-        }
-
-        return entry;
-    }
-
     public async Task ExecuteAsync(
-        ExecutionInstanceId executionId, 
-        string? resumeEventName = null, 
-        Dictionary<string, object>? eventData = null, 
+        ExecutionInstanceId executionId,
+        string? resumeEventName = null,
+        Dictionary<string, object>? eventData = null,
         CancellationToken cancellationToken = default)
     {
         var startedExecution = false;
@@ -402,7 +378,7 @@ public partial class WorkflowExecutor
 
         using var workflowActivity = _telemetry.StartWorkflowActivity(instance, string.IsNullOrEmpty(resumeEventName) ? "start" : "resume");
 
-        var plan = await LoadExecutionPlanAsync(instance, cancellationToken);
+        var plan = await _planLoader.LoadAsync(instance, cancellationToken);
         if (plan is null)
         {
             return;
@@ -435,7 +411,7 @@ public partial class WorkflowExecutor
 
                 instance.Status = ExecutionStatus.Running;
                 instance.UpdatedAt = DateTimeOffset.UtcNow;
-                await PublishJournalEntryAsync(instance, "NodeResumed", $"Node '{waitingNode.NodeId}' resumed on event '{resumeEventName}' and completed successfully.", nodeId: waitingNode.NodeId, cancellationToken: cancellationToken);
+                await _journal.PublishAsync(instance, "NodeResumed", $"Node '{waitingNode.NodeId}' resumed on event '{resumeEventName}' and completed successfully.", nodeId: waitingNode.NodeId, cancellationToken: cancellationToken);
 
                 var outgoingEdges = plan.Edges.Where(e => e.From == waitingNode.NodeId);
                 foreach (var edge in outgoingEdges)
@@ -458,9 +434,9 @@ public partial class WorkflowExecutor
             instance.UpdatedAt = DateTimeOffset.UtcNow;
             _telemetry.RecordExecutionStarted();
             startedExecution = true;
-            await PublishJournalEntryAsync(instance, "WorkflowStarted", $"Workflow run started for definition '{instance.WorkflowDefinitionId}'.", cancellationToken: cancellationToken);
+            await _journal.PublishAsync(instance, "WorkflowStarted", $"Workflow run started for definition '{instance.WorkflowDefinitionId}'.", cancellationToken: cancellationToken);
 
-            var entryNodeIds = await ResolveEntryNodesForTriggerOriginAsync(plan, instance, cancellationToken);
+            var entryNodeIds = await _triggerResolver.ResolveEntryNodesAsync(plan, instance, cancellationToken);
             foreach (var entryNodeId in entryNodeIds)
             {
                 scheduledNodes.Enqueue(entryNodeId);
@@ -476,7 +452,7 @@ public partial class WorkflowExecutor
             instance.Status = ExecutionStatus.Completed;
             instance.UpdatedAt = DateTimeOffset.UtcNow;
 
-            await PublishJournalEntryAsync(instance, "WorkflowCompleted", "Workflow run completed successfully.", cancellationToken: cancellationToken);
+            await _journal.PublishAsync(instance, "WorkflowCompleted", "Workflow run completed successfully.", cancellationToken: cancellationToken);
             _telemetry.RecordExecutionCompleted();
             finishedExecution = true;
 
@@ -633,7 +609,7 @@ public partial class WorkflowExecutor
                 continue;
             }
 
-            var manifest = await GetManifestAsync(plannedNode.Type, cancellationToken);
+            var manifest = await _manifests.GetManifestAsync(plannedNode.Type, cancellationToken);
             var task = _registry.GetTask(plannedNode.Type);
             if (manifest?.TriggerOnly == true && task == null)
             {
@@ -679,13 +655,13 @@ public partial class WorkflowExecutor
             }
 
             var stateProjection = new WorkflowStateProjection(instance);
-            var nonExpressionParams = NonExpressionParams(manifest);
+            var nonExpressionParams = PropertyValueEvaluator.NonExpressionParams(manifest);
             var evaluatedInputs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             foreach (var input in nodeInputs)
             {
                 // Expression:false params are handed over unresolved (D7) — primitives still unbox.
                 bool resolve = !nonExpressionParams.Contains(input.Key);
-                evaluatedInputs[input.Key] = EvaluatePropertyValue(input.Value, stateProjection, resolve)!;
+                evaluatedInputs[input.Key] = PropertyValueEvaluator.Evaluate(input.Value, stateProjection, resolve)!;
             }
 
             nodeState.Inputs = evaluatedInputs;
@@ -697,7 +673,7 @@ public partial class WorkflowExecutor
             nodeState.ExecutionCount++;
             instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-            await PublishJournalEntryAsync(
+            await _journal.PublishAsync(
                 instance,
                 JournalEventTypes.NodeExecutionStarted,
                 $"Executing node '{currentNodeId}' (type '{plannedNode.Type}').",
@@ -706,13 +682,16 @@ public partial class WorkflowExecutor
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            // Parallel map (fan-out + wait-for-all fan-in): the executor itself drives the body node
-            // once per collection item, concurrently and bounded, then commits the aggregate result.
-            // This is the only node whose body runs on multiple threads, which is why it lives here
-            // (with all DB/state writes kept on this thread) rather than in an INodeTask.
+            // Parallel map (fan-out + wait-for-all fan-in): the runner drives the body node once per
+            // collection item, concurrently and bounded, then commits the aggregate result. When it
+            // reports failure, the failure journal entry is already written and this loop owns the
+            // usual failure handling (retry scheduling / failure edges / failing the run).
             if (plannedNode.Type.Equals("parallelForEach", StringComparison.OrdinalIgnoreCase))
             {
-                await ExecuteParallelForEachAsync(instance, plan, plannedNode, nodeState, evaluatedInputs, scheduledNodes, cancellationToken);
+                if (!await _parallelForEach.RunAsync(instance, plan, plannedNode, nodeState, evaluatedInputs, scheduledNodes, cancellationToken))
+                {
+                    await HandleNodeFailureAsync(instance, plan, nodeState, scheduledNodes, cancellationToken);
+                }
                 continue;
             }
 
@@ -721,7 +700,7 @@ public partial class WorkflowExecutor
                 nodeState.Status = NodeStatus.Failed;
                 nodeState.ErrorMessage = $"No task implementation registered for type '{plannedNode.Type}'.";
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionFailed,
                     $"Failed to execute node '{currentNodeId}': No task registered.",
@@ -772,7 +751,7 @@ public partial class WorkflowExecutor
 
             if (attemptId.HasValue)
             {
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.AttemptingExternalEffect,
                     $"Attempting non-idempotent external effect for node '{currentNodeId}'.",
@@ -798,7 +777,7 @@ public partial class WorkflowExecutor
                 // source run. Makes replay safe for pure-logic debugging.
                 result = new LegacyNodeResult.Success(mockedOutputs);
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionStarted,
                     $"Replay is mocking the non-idempotent side effect for node '{currentNodeId}'; returning its original output.",
@@ -810,7 +789,7 @@ public partial class WorkflowExecutor
                 // Design-time pinned output: return the sample instead of executing the task.
                 result = new LegacyNodeResult.Success(pinnedOutputs);
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionStarted,
                     $"Node '{currentNodeId}' is pinned; returning its pinned output instead of executing.",
@@ -855,12 +834,12 @@ public partial class WorkflowExecutor
                             nodeState.Status = NodeStatus.Failed;
                             nodeState.ErrorMessage = $"Execution timed out after {timeoutSeconds}s.";
 
-                            await PublishJournalEntryAsync(
+                            await _journal.PublishAsync(
                                 instance,
                                 JournalEventTypes.NodeExecutionFailed,
                                 $"Node '{currentNodeId}' execution timed out after {timeoutSeconds} seconds.",
                                 nodeId: currentNodeId,
-                                data: CreateFailureJournalData(nodeState.ErrorMessage, attemptId),
+                                data: ExecutionJournalData.CreateFailureJournalData(nodeState.ErrorMessage, attemptId),
                                 cancellationToken: cancellationToken);
 
                             await HandleNodeFailureAsync(instance, plan, nodeState, scheduledNodes, cancellationToken);
@@ -911,7 +890,7 @@ public partial class WorkflowExecutor
                     journalData["AttemptId"] = attemptId.Value.ToString();
                 }
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionCompleted,
                     completionMessage,
@@ -964,7 +943,7 @@ public partial class WorkflowExecutor
                 // in production; it was only masked in tests by a shared connection).
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.WorkflowSuspended,
                     $"Workflow suspended. Node '{currentNodeId}' is waiting for event '{waitResult.EventName}'.",
@@ -1020,7 +999,7 @@ public partial class WorkflowExecutor
 
                 // Journal AFTER the save (no open transaction) so the resume can rehydrate globals — same
                 // `["Variables"]` shape as WaitForEvent — without the journal-writer connection deadlocking.
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.WorkflowSuspended,
                     $"Workflow suspended. Node '{currentNodeId}' is delaying until {resumeAtUtc:o}.",
@@ -1042,12 +1021,12 @@ public partial class WorkflowExecutor
                 nodeState.Status = NodeStatus.Failed;
                 nodeState.ErrorMessage = failureResult.ErrorMessage;
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionFailed,
                     $"Node '{currentNodeId}' failed: {failureResult.ErrorMessage}.",
                     nodeId: currentNodeId,
-                    data: CreateFailureJournalData(failureResult.ErrorMessage, attemptId, failureResult.ErrorCode),
+                    data: ExecutionJournalData.CreateFailureJournalData(failureResult.ErrorMessage, attemptId, failureResult.ErrorCode),
                     cancellationToken: cancellationToken);
 
                 await HandleNodeFailureAsync(instance, plan, nodeState, scheduledNodes, cancellationToken);
@@ -1118,501 +1097,6 @@ public partial class WorkflowExecutor
         }
     }
 
-    /// <summary>
-    /// Executes a <c>parallelForEach</c> node as a true parallel container: it runs the body
-    /// <em>subgraph</em> (everything reachable from its <c>start</c> output, up to the loop-back
-    /// <c>end</c> input) once per collection item, concurrently and bounded by <c>maxParallelism</c>.
-    /// <para>
-    /// Each item runs in its own in-memory sub-executor — a private node-state map and a private copy
-    /// of the global variables — so concurrent iterations never share mutable state, and no iteration
-    /// touches the (non-thread-safe) DbContext. The per-item result is the value the body sends back
-    /// into the loop's <c>end</c> input (mirroring ForLoop). Only after <see cref="Task.WhenAll(Task[])"/>
-    /// does this thread commit the aggregate and per-body-node states.
-    /// </para>
-    /// <para>
-    /// Limitations (v1): the body may not contain nested control-flow nodes (forLoop / parallelForEach /
-    /// join) — wrap such logic in a subflow. A body node returning WaitForEvent fails that item, since a
-    /// single parallel branch cannot suspend the whole run. Only <c>condition</c> port-selection is honored
-    /// inside the body, matching the main executor.
-    /// </para>
-    /// </summary>
-    private async Task ExecuteParallelForEachAsync(
-        ExecutionInstance instance,
-        ExecutionPlan plan,
-        PlannedNode plannedNode,
-        NodeState nodeState,
-        Dictionary<string, object> evaluatedInputs,
-        Queue<NodeId> scheduledNodes,
-        CancellationToken cancellationToken)
-    {
-        var nodeId = nodeState.NodeId;
-
-        var maxParallelism = 8;
-        if (evaluatedInputs.TryGetValue("maxParallelism", out var maxObj) && maxObj != null &&
-            int.TryParse(maxObj.ToString(), out var parsedMax))
-        {
-            maxParallelism = Math.Clamp(parsedMax, 1, 64);
-        }
-
-        var continueOnError = false;
-        if (evaluatedInputs.TryGetValue("continueOnError", out var coeObj) && coeObj != null &&
-            bool.TryParse(coeObj.ToString(), out var parsedCoe))
-        {
-            continueOnError = parsedCoe;
-        }
-
-        var items = MaterializeCollection(evaluatedInputs.TryGetValue("collection", out var colObj) ? colObj : null);
-
-        // The body subgraph starts at the 'start' output and rejoins at the 'end' input (same
-        // convention as ForLoop). Both support fan-out / fan-in: 'start' may launch several body
-        // branches and 'end' may collect several converging branches. 'success'/'failure'/'error'
-        // edges are the POST-loop continuation and bound the body so the BFS never wanders out.
-        var startTargets = plan.Edges
-            .Where(edge => edge.From == nodeId && edge.Output.Equals("start", StringComparison.OrdinalIgnoreCase))
-            .Select(edge => edge.To)
-            .ToHashSet();
-        var endEdges = plan.Edges
-            .Where(edge => edge.To == nodeId && edge.Input.Equals("end", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var exitTargets = plan.Edges
-            .Where(edge => edge.From == nodeId &&
-                (edge.Output.Equals("success", StringComparison.OrdinalIgnoreCase) ||
-                 edge.Output.Equals("failure", StringComparison.OrdinalIgnoreCase) ||
-                 edge.Output.Equals("error", StringComparison.OrdinalIgnoreCase)))
-            .Select(edge => edge.To)
-            .ToHashSet();
-
-        // Collect the body subgraph (everything reachable from 'start', minus the loop node and the
-        // post-loop nodes), then pre-resolve every body type's task + timeout on THIS thread so the
-        // concurrent iterations never call into the registry / manifest provider (which can hit the DB).
-        var bodyNodeById = new Dictionary<NodeId, PlannedNode>();
-        var bodyTasks = new Dictionary<string, INodeTask>(StringComparer.OrdinalIgnoreCase);
-        var bodyTimeouts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var bodyNonExpressionParams = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        string? setupError = null;
-
-        if (startTargets.Count == 0)
-        {
-            setupError = "parallelForEach requires a body connected to its 'start' output.";
-        }
-        else
-        {
-            var bfs = new Queue<NodeId>();
-            foreach (var target in startTargets)
-            {
-                bfs.Enqueue(target);
-            }
-            var seen = new HashSet<NodeId>();
-            while (bfs.Count > 0)
-            {
-                var current = bfs.Dequeue();
-                if (current == nodeId || exitTargets.Contains(current) || !seen.Add(current))
-                {
-                    continue;
-                }
-                var planned = plan.Nodes.FirstOrDefault(node => node.Id == current);
-                if (planned == null)
-                {
-                    continue;
-                }
-                bodyNodeById[current] = planned;
-                foreach (var edge in plan.Edges.Where(edge => edge.From == current))
-                {
-                    if (edge.To != nodeId && !exitTargets.Contains(edge.To))
-                    {
-                        bfs.Enqueue(edge.To);
-                    }
-                }
-            }
-
-            if (bodyNodeById.Count == 0)
-            {
-                setupError = "parallelForEach body is empty (nothing wired to its 'start' output).";
-            }
-        }
-
-        if (setupError == null)
-        {
-            foreach (var planned in bodyNodeById.Values)
-            {
-                if (planned.Type.Equals("forLoop", StringComparison.OrdinalIgnoreCase) ||
-                    planned.Type.Equals("parallelForEach", StringComparison.OrdinalIgnoreCase) ||
-                    planned.Type.Equals("join", StringComparison.OrdinalIgnoreCase))
-                {
-                    setupError =
-                        $"parallelForEach body cannot contain a nested control-flow node " +
-                        $"('{planned.Id}' of type '{planned.Type}'). Move that logic into a subflow.";
-                    break;
-                }
-
-                if (bodyTasks.ContainsKey(planned.Type))
-                {
-                    continue;
-                }
-
-                var resolvedTask = _registry.GetTask(planned.Type);
-                if (resolvedTask == null)
-                {
-                    setupError = $"parallelForEach body node '{planned.Id}' has no registered task for type '{planned.Type}'.";
-                    break;
-                }
-                bodyTasks[planned.Type] = resolvedTask;
-
-                var manifest = await GetManifestAsync(planned.Type, cancellationToken);
-                bodyTimeouts[planned.Type] = manifest != null && manifest.DefaultTimeoutSeconds > 0
-                    ? Math.Clamp(manifest.DefaultTimeoutSeconds, 1, 600)
-                    : 30;
-                bodyNonExpressionParams[planned.Type] = NonExpressionParams(manifest);
-            }
-        }
-
-        if (setupError != null)
-        {
-            nodeState.Status = NodeStatus.Failed;
-            nodeState.ErrorMessage = setupError;
-
-            await PublishJournalEntryAsync(
-                instance,
-                JournalEventTypes.NodeExecutionFailed,
-                $"Node '{nodeId}' failed: {setupError}",
-                nodeId: nodeId,
-                data: CreateFailureJournalData(setupError, attemptId: null),
-                cancellationToken: cancellationToken);
-
-            await HandleNodeFailureAsync(instance, plan, nodeState, scheduledNodes, cancellationToken);
-            return;
-        }
-
-        var globalsSnapshot = new Dictionary<string, object>(instance.GlobalVariables);
-
-        var results = new object?[items.Count];
-        var itemErrors = new string?[items.Count];
-        var iterationOutputs = new Dictionary<NodeId, Dictionary<string, object>>?[items.Count];
-
-        using (var throttle = new SemaphoreSlim(maxParallelism))
-        {
-            // Runs the whole body subgraph for one item in an isolated, in-memory mini-executor.
-            // No DbContext, no journal, no shared NodeState — everything lives in localOutputs/localGlobals.
-            async Task<(object? Result, string? Error, Dictionary<NodeId, Dictionary<string, object>> Outputs)> RunBodyAsync(object? item, int index)
-            {
-                var localGlobals = new Dictionary<string, object>(globalsSnapshot);
-                var localOutputs = new Dictionary<NodeId, Dictionary<string, object>>();
-                var visited = new HashSet<NodeId>();
-                var localQueue = new Queue<NodeId>();
-                foreach (var target in startTargets)
-                {
-                    localQueue.Enqueue(target);
-                }
-
-                while (localQueue.Count > 0)
-                {
-                    var currentId = localQueue.Dequeue();
-                    if (currentId == nodeId || exitTargets.Contains(currentId) || !visited.Add(currentId))
-                    {
-                        continue;
-                    }
-                    if (!bodyNodeById.TryGetValue(currentId, out var planned))
-                    {
-                        continue;
-                    }
-
-                    var inputs = new Dictionary<string, object>(planned.Properties, StringComparer.OrdinalIgnoreCase);
-                    foreach (var edge in plan.Edges.Where(edge => edge.To == currentId))
-                    {
-                        if (edge.From == nodeId && edge.Output.Equals("start", StringComparison.OrdinalIgnoreCase))
-                        {
-                            inputs[edge.Input] = item!;
-                        }
-                        else if (localOutputs.TryGetValue(edge.From, out var bodyOutputs) &&
-                                 bodyOutputs.TryGetValue(edge.Output, out var bodyValue))
-                        {
-                            inputs[edge.Input] = bodyValue;
-                        }
-                        else
-                        {
-                            // A pre-loop predecessor: read its already-completed output (read-only).
-                            var predecessor = instance.NodeStates.FirstOrDefault(state => state.NodeId == edge.From);
-                            if (predecessor != null && predecessor.Status == NodeStatus.Completed &&
-                                predecessor.Outputs.TryGetValue(edge.Output, out var predValue))
-                            {
-                                inputs[edge.Input] = predValue;
-                            }
-                        }
-                    }
-
-                    if (startTargets.Contains(currentId))
-                    {
-                        inputs["item"] = item!;
-                        inputs["index"] = index;
-                    }
-
-                    var iterationState = new IterationState(localGlobals, localOutputs, instance);
-                    var nonExpr = bodyNonExpressionParams.TryGetValue(planned.Type, out var ne)
-                        ? ne
-                        : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    var evaluated = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var kvp in inputs)
-                    {
-                        bool resolve = !nonExpr.Contains(kvp.Key);
-                        evaluated[kvp.Key] = EvaluatePropertyValue(kvp.Value, iterationState, resolve)!;
-                    }
-
-                    var task = bodyTasks[planned.Type];
-                    var timeoutSeconds = bodyTimeouts.TryGetValue(planned.Type, out var to) ? to : 30;
-                    var context = new NodeExecutionContext(
-                        WorkflowId: instance.WorkflowDefinitionId,
-                        ExecutionId: instance.Id.Value,
-                        NodeId: currentId,
-                        Inputs: evaluated,
-                        GlobalVariables: localGlobals,
-                        State: iterationState);
-
-                    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-                    LegacyNodeResult itemResult;
-                    try
-                    {
-                        itemResult = await task.ExecuteAsync(context, linkedCts.Token);
-                    }
-                    catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                    {
-                        return (null, $"Item {index}: node '{currentId}' timed out after {timeoutSeconds}s.", localOutputs);
-                    }
-                    catch (Exception ex)
-                    {
-                        return (null, $"Item {index}: node '{currentId}': {ex.Message}", localOutputs);
-                    }
-
-                    // A parallel branch can't suspend the whole run, so a Delay here is honored INLINE
-                    // (bounded by the body timeout) rather than parking the execution.
-                    if (itemResult is LegacyNodeResult.Delay bodyDelay)
-                    {
-                        try
-                        {
-                            await Task.Delay(bodyDelay.DurationMs, linkedCts.Token);
-                            itemResult = new LegacyNodeResult.Success();
-                        }
-                        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                        {
-                            return (null, $"Item {index}: node '{currentId}' timed out after {timeoutSeconds}s.", localOutputs);
-                        }
-                    }
-
-                    if (itemResult is LegacyNodeResult.Failure failure)
-                    {
-                        return (null, $"Item {index}: node '{currentId}': {failure.ErrorMessage}", localOutputs);
-                    }
-                    if (itemResult is not LegacyNodeResult.Success success)
-                    {
-                        return (null, $"Item {index}: node '{currentId}' returned an unsupported result " +
-                            "(WaitForEvent is not allowed inside a parallel body).", localOutputs);
-                    }
-
-                    var outputs = success.Outputs ?? new Dictionary<string, object>();
-                    localOutputs[currentId] = outputs;
-
-                    string? selectedPort = null;
-                    if (planned.Type.Equals("condition", StringComparison.OrdinalIgnoreCase) &&
-                        outputs.TryGetValue("selectedPort", out var portObj) && portObj != null)
-                    {
-                        selectedPort = portObj as string ?? portObj.ToString();
-                    }
-
-                    foreach (var edge in plan.Edges.Where(edge => edge.From == currentId))
-                    {
-                        if (selectedPort != null && !edge.Output.Equals(selectedPort, StringComparison.OrdinalIgnoreCase))
-                        {
-                            continue;
-                        }
-                        if (edge.To == nodeId || exitTargets.Contains(edge.To))
-                        {
-                            continue;
-                        }
-                        localQueue.Enqueue(edge.To);
-                    }
-                }
-
-                // Per-item result = the value(s) the body fed back into the loop's 'end' input. One
-                // end branch yields a scalar; several converging branches (fan-in / join) yield a list.
-                var endValues = new List<object?>();
-                foreach (var edge in endEdges)
-                {
-                    if (localOutputs.TryGetValue(edge.From, out var endOutputs))
-                    {
-                        endValues.Add(endOutputs.TryGetValue(edge.Output, out var endValue) ? endValue : endOutputs);
-                    }
-                }
-                object? result = endValues.Count == 1 ? endValues[0]
-                    : endValues.Count > 1 ? endValues
-                    : null;
-                return (result, null, localOutputs);
-            }
-
-            async Task RunItemAsync(object? item, int index)
-            {
-                await throttle.WaitAsync(cancellationToken);
-                try
-                {
-                    var (result, error, outputs) = await RunBodyAsync(item, index);
-                    results[index] = result;
-                    itemErrors[index] = error;
-                    iterationOutputs[index] = outputs;
-                }
-                finally
-                {
-                    throttle.Release();
-                }
-            }
-
-            var itemTasks = new List<Task>(items.Count);
-            for (var i = 0; i < items.Count; i++)
-            {
-                itemTasks.Add(RunItemAsync(items[i], i));
-            }
-
-            await Task.WhenAll(itemTasks);
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var failedIndexes = new List<int>();
-        for (var i = 0; i < itemErrors.Length; i++)
-        {
-            if (itemErrors[i] != null)
-            {
-                failedIndexes.Add(i);
-                if (continueOnError)
-                {
-                    results[i] = new Dictionary<string, object> { ["error"] = itemErrors[i]! };
-                }
-            }
-        }
-
-        if (failedIndexes.Count > 0 && !continueOnError)
-        {
-            var firstError = itemErrors[failedIndexes[0]];
-            nodeState.Status = NodeStatus.Failed;
-            nodeState.ErrorMessage =
-                $"{failedIndexes.Count} of {items.Count} parallel item(s) failed. First error: {firstError}";
-
-            await PublishJournalEntryAsync(
-                instance,
-                JournalEventTypes.NodeExecutionFailed,
-                $"Node '{nodeId}' failed: {nodeState.ErrorMessage}",
-                nodeId: nodeId,
-                data: CreateFailureJournalData(nodeState.ErrorMessage, attemptId: null),
-                cancellationToken: cancellationToken);
-
-            await HandleNodeFailureAsync(instance, plan, nodeState, scheduledNodes, cancellationToken);
-            return;
-        }
-
-        // Best-effort observability: surface the body nodes' last-iteration outputs as completed
-        // NodeStates so the inspector/journal shows the body ran. Per-iteration states are not
-        // individually persisted (an N-item run would otherwise explode the state table).
-        var lastIterationOutputs = iterationOutputs.LastOrDefault(outputs => outputs != null);
-        if (lastIterationOutputs != null)
-        {
-            foreach (var (bodyNodeId, bodyOutputs) in lastIterationOutputs)
-            {
-                var bodyState = instance.NodeStates.FirstOrDefault(state => state.NodeId == bodyNodeId);
-                if (bodyState == null)
-                {
-                    bodyState = new NodeState
-                    {
-                        Id = Guid.NewGuid(),
-                        ExecutionInstanceId = instance.Id,
-                        NodeId = bodyNodeId,
-                        Status = NodeStatus.Pending,
-                        ExecutionCount = 0
-                    };
-                    instance.NodeStates.Add(bodyState);
-                }
-                bodyState.Status = NodeStatus.Completed;
-                bodyState.Outputs = new Dictionary<string, object>(bodyOutputs);
-                bodyState.ExecutionCount = items.Count;
-            }
-        }
-
-        var resultsList = results.ToList();
-        nodeState.Status = NodeStatus.Completed;
-        nodeState.ErrorMessage = null;
-        nodeState.Outputs = new Dictionary<string, object>
-        {
-            ["results"] = resultsList,
-            ["count"] = items.Count,
-            ["failedCount"] = failedIndexes.Count,
-            ["selectedPort"] = "success"
-        };
-
-        await PublishJournalEntryAsync(
-            instance,
-            JournalEventTypes.NodeExecutionCompleted,
-            $"Node '{nodeId}' processed {items.Count} item(s) with up to {maxParallelism} in parallel" +
-            (failedIndexes.Count > 0 ? $" ({failedIndexes.Count} failed, continued)." : "."),
-            nodeId: nodeId,
-            data: new Dictionary<string, object>(nodeState.Outputs),
-            cancellationToken: cancellationToken);
-
-        foreach (var edge in plan.Edges.Where(edge =>
-                     edge.From == nodeId && edge.Output.Equals("success", StringComparison.OrdinalIgnoreCase)))
-        {
-            scheduledNodes.Enqueue(edge.To);
-        }
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Normalizes a <c>collection</c> input (JSON string, JSON array, enumerable, or scalar) into a
-    /// concrete list of items. Mirrors the parsing the ForLoop node performs for its <c>foreach</c> mode.
-    /// </summary>
-    private static List<object?> MaterializeCollection(object? collection)
-    {
-        var items = new List<object?>();
-        if (collection == null)
-        {
-            return items;
-        }
-
-        switch (collection)
-        {
-            case string text:
-                var trimmed = text.Trim();
-                if (trimmed.StartsWith("[", StringComparison.Ordinal))
-                {
-                    try
-                    {
-                        return JsonSerializer.Deserialize<List<object?>>(trimmed) ?? new List<object?>();
-                    }
-                    catch
-                    {
-                        // Fall back to comma-separated values.
-                    }
-                }
-                foreach (var part in text.Split(','))
-                {
-                    items.Add(part.Trim());
-                }
-                return items;
-
-            case JsonElement element when element.ValueKind == JsonValueKind.Array:
-                return JsonSerializer.Deserialize<List<object?>>(element.GetRawText()) ?? new List<object?>();
-
-            case System.Collections.IEnumerable enumerable:
-                foreach (var entry in enumerable)
-                {
-                    items.Add(entry);
-                }
-                return items;
-
-            default:
-                items.Add(collection);
-                return items;
-        }
-    }
-
     private async Task HandleNodeFailureAsync(
         ExecutionInstance instance,
         ExecutionPlan plan,
@@ -1623,15 +1107,15 @@ public partial class WorkflowExecutor
         var plannedNode = plan.Nodes.FirstOrDefault(node => node.Id == nodeState.NodeId);
         if (plannedNode != null)
         {
-            var manifest = await GetManifestAsync(plannedNode.Type, cancellationToken);
-            if (manifest != null && await TryScheduleRetryAsync(instance, nodeState, manifest, cancellationToken))
+            var manifest = await _manifests.GetManifestAsync(plannedNode.Type, cancellationToken);
+            if (manifest != null && await _retryScheduler.TryScheduleRetryAsync(instance, nodeState, manifest, cancellationToken))
             {
                 scheduledNodes.Clear();
                 return;
             }
         }
 
-        await ClearRetryStateAsync(instance.Id, nodeState.NodeId, cancellationToken);
+        await _retryScheduler.ClearRetryStateAsync(instance.Id, nodeState.NodeId, cancellationToken);
 
         var failureEdges = plan.Edges.Where(e => e.From == nodeState.NodeId &&
             (e.Output.Equals("failure", StringComparison.OrdinalIgnoreCase) || e.Output.Equals("error", StringComparison.OrdinalIgnoreCase)))
@@ -1650,7 +1134,7 @@ public partial class WorkflowExecutor
             instance.Status = ExecutionStatus.Failed;
             instance.UpdatedAt = DateTimeOffset.UtcNow;
 
-            await PublishJournalEntryAsync(instance, JournalEventTypes.WorkflowFailed, $"Workflow execution failed at node '{nodeState.NodeId}'.", cancellationToken: cancellationToken);
+            await _journal.PublishAsync(instance, JournalEventTypes.WorkflowFailed, $"Workflow execution failed at node '{nodeState.NodeId}'.", cancellationToken: cancellationToken);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
@@ -1673,7 +1157,7 @@ public partial class WorkflowExecutor
         instance.Status = ExecutionStatus.Cancelled;
         instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-        await PublishJournalEntryAsync(
+        await _journal.PublishAsync(
             instance,
             "WorkflowCancelled",
             "Workflow execution was cancelled because its workflow was deactivated.",
@@ -1700,117 +1184,6 @@ public partial class WorkflowExecutor
         return new Dictionary<string, object>(sourceOutputs, StringComparer.OrdinalIgnoreCase);
     }
 
-    private async Task<NodePackageManifest?> GetManifestAsync(string nodeType, CancellationToken cancellationToken)
-    {
-        var manifest = await _compiler.ManifestProvider.GetManifestAsync(new NodePackageId(nodeType), cancellationToken);
-        if (manifest == null)
-        {
-            return null;
-        }
-
-        return manifest with
-        {
-            SideEffectKind = manifest.SideEffectKind ?? NodeSideEffectKind.NonIdempotentSideEffect,
-            RetryPolicy = manifest.RetryPolicy ?? new RetryPolicy()
-        };
-    }
-
-    private async Task<ImmutableArray<NodeId>> ResolveEntryNodesForTriggerOriginAsync(
-        ExecutionPlan plan,
-        ExecutionInstance instance,
-        CancellationToken cancellationToken)
-    {
-        var triggerOrigin = instance.TriggerOrigin;
-
-        // A device-event run carries the explicit entry nodes (the fired event pin's downstream nodes);
-        // begin there rather than at a compiled trigger so the device event drives exactly that wire.
-        if (triggerOrigin.Equals(ExternalSignalRunEnqueuer.DeviceEventTriggerOrigin, StringComparison.OrdinalIgnoreCase))
-        {
-            return ResolveDeviceEventEntryNodes(plan, instance);
-        }
-
-        var matchingEntryNodes = new List<NodeId>();
-        foreach (var entryNodeId in plan.EntryNodes)
-        {
-            var plannedNode = plan.Nodes.FirstOrDefault(node => node.Id == entryNodeId);
-            if (plannedNode is null)
-            {
-                continue;
-            }
-
-            var manifest = await GetManifestAsync(plannedNode.Type, cancellationToken);
-            if (manifest?.TriggerOnly != true)
-            {
-                continue;
-            }
-
-            if (IsTriggerCompatibleWithOrigin(plannedNode.Type, triggerOrigin))
-            {
-                matchingEntryNodes.Add(entryNodeId);
-            }
-        }
-
-        return matchingEntryNodes.Count > 0 ? matchingEntryNodes.ToImmutableArray() : plan.EntryNodes;
-    }
-
-    /// <summary>
-    /// Entry nodes for a device-event run: the explicit ids carried in globals (the fired event pin's
-    /// downstream nodes), kept only if they exist in the plan. No fallback to <c>plan.EntryNodes</c> —
-    /// an empty/stale set must start nothing, not run unrelated triggers.
-    /// </summary>
-    private static ImmutableArray<NodeId> ResolveDeviceEventEntryNodes(ExecutionPlan plan, ExecutionInstance instance)
-    {
-        if (instance.GlobalVariables is null
-            || !instance.GlobalVariables.TryGetValue(ExternalSignalRunEnqueuer.EntryNodesVariableKey, out var raw)
-            || raw is null)
-        {
-            return ImmutableArray<NodeId>.Empty;
-        }
-
-        var planNodeIds = plan.Nodes.Select(n => n.Id.Value).ToHashSet(StringComparer.Ordinal);
-        var entryNodes = new List<NodeId>();
-        foreach (var id in EnumerateEntryNodeIds(raw))
-        {
-            if (planNodeIds.Contains(id))
-            {
-                entryNodes.Add(NodeId.Create(id));
-            }
-        }
-        return entryNodes.ToImmutableArray();
-    }
-
-    // Globals round-trip through JSON, so the stored List<string> comes back as a JsonElement array on
-    // reload; accept both that and the in-memory list/enumerable shape.
-    private static IEnumerable<string> EnumerateEntryNodeIds(object raw)
-    {
-        switch (raw)
-        {
-            case JsonElement je when je.ValueKind == JsonValueKind.Array:
-                foreach (var el in je.EnumerateArray())
-                {
-                    if (el.ValueKind == JsonValueKind.String)
-                    {
-                        var s = el.GetString();
-                        if (!string.IsNullOrWhiteSpace(s)) yield return s!;
-                    }
-                }
-                break;
-            case IEnumerable<string> strings:
-                foreach (var s in strings)
-                {
-                    if (!string.IsNullOrWhiteSpace(s)) yield return s;
-                }
-                break;
-            case System.Collections.IEnumerable seq and not string:
-                foreach (var item in seq)
-                {
-                    var s = item?.ToString();
-                    if (!string.IsNullOrWhiteSpace(s)) yield return s!;
-                }
-                break;
-        }
-    }
-
     private async Task CompleteTriggerNodeAsync(
         ExecutionInstance instance,
         ExecutionPlan plan,
@@ -1823,10 +1196,10 @@ public partial class WorkflowExecutor
         nodeState.Status = NodeStatus.Completed;
         nodeState.ExecutionCount++;
         nodeState.ErrorMessage = null;
-        nodeState.Outputs = CreateTriggerOutputs(plannedNode.Type, instance);
+        nodeState.Outputs = TriggerEntryResolver.CreateTriggerOutputs(plannedNode.Type, instance);
         instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-        await PublishJournalEntryAsync(
+        await _journal.PublishAsync(
             instance,
             JournalEventTypes.NodeExecutionCompleted,
             $"Trigger node '{plannedNode.Id.Value}' activated.",
@@ -1841,72 +1214,4 @@ public partial class WorkflowExecutor
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
-
-    private static Dictionary<string, object> CreateTriggerOutputs(string nodeType, ExecutionInstance instance)
-    {
-        var outputs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-        if (nodeType.Equals("scheduler", StringComparison.OrdinalIgnoreCase))
-        {
-            outputs["triggeredAt"] = instance.CreatedAt;
-        }
-        else if (nodeType.Equals("pollingTrigger", StringComparison.OrdinalIgnoreCase))
-        {
-            if (instance.GlobalVariables is not null &&
-                instance.GlobalVariables.TryGetValue(TriggerPayloadKeys.Poll, out var payload) &&
-                payload is not null)
-            {
-                outputs["result"] = payload;
-            }
-        }
-        else if (nodeType.Equals("errorTrigger", StringComparison.OrdinalIgnoreCase))
-        {
-            if (instance.GlobalVariables is not null)
-            {
-                // The whole failure context on `result`, plus each field on its own output so it can be
-                // promoted to a draggable variable in the editor (resolves via nodeState.Outputs[field]).
-                if (instance.GlobalVariables.TryGetValue(TriggerPayloadKeys.Error, out var payload) &&
-                    payload is not null)
-                {
-                    outputs["result"] = payload;
-                }
-
-                foreach (var key in ErrorWorkflowRunEnqueuer.FieldKeys)
-                {
-                    if (instance.GlobalVariables.TryGetValue(key, out var fieldValue) && fieldValue is not null)
-                    {
-                        outputs[key] = fieldValue;
-                    }
-                }
-            }
-        }
-
-        return outputs;
-    }
-
-    private static bool IsTriggerCompatibleWithOrigin(string nodeType, string triggerOrigin)
-    {
-        if (triggerOrigin.Equals("schedule", StringComparison.OrdinalIgnoreCase))
-        {
-            return nodeType.Equals("scheduler", StringComparison.OrdinalIgnoreCase);
-        }
-
-        if (triggerOrigin.Equals("webhook", StringComparison.OrdinalIgnoreCase))
-        {
-            return nodeType.Equals("webhookTrigger", StringComparison.OrdinalIgnoreCase);
-        }
-
-        if (triggerOrigin.Equals("poll", StringComparison.OrdinalIgnoreCase))
-        {
-            return nodeType.Equals("pollingTrigger", StringComparison.OrdinalIgnoreCase);
-        }
-
-        if (triggerOrigin.Equals("error", StringComparison.OrdinalIgnoreCase))
-        {
-            return nodeType.Equals("errorTrigger", StringComparison.OrdinalIgnoreCase);
-        }
-
-        return nodeType.Equals("start", StringComparison.OrdinalIgnoreCase)
-            || nodeType.Equals("manualTrigger", StringComparison.OrdinalIgnoreCase);
-    }
-
 }
