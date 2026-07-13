@@ -109,16 +109,34 @@ builder.Services.AddScoped<ICredentialAccessor>(sp => sp.GetRequiredService<Cred
 builder.Services.AddSingleton<HttpEgressPolicyEvaluator>();
 builder.Services.AddTransient<HttpEgressPolicyHandler>();
 builder.Services.AddHttpClient("HttpNode")
-    .AddHttpMessageHandler<HttpEgressPolicyHandler>();
+    .AddHttpMessageHandler<HttpEgressPolicyHandler>()
+    // Primary handler validates every connection (DNS-aware) and pins the socket to a vetted address, so
+    // redirect hops and DNS-rebinding can't reach private/metadata IPs — see HttpEgressPolicyEvaluator.
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+    {
+        var evaluator = sp.GetRequiredService<HttpEgressPolicyEvaluator>();
+        return new System.Net.Http.SocketsHttpHandler
+        {
+            ConnectCallback = (context, ct) => evaluator.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, ct),
+        };
+    });
 // Dedicated client for reaching a server that presents a self-signed / untrusted certificate.
 // Used only when explicitly opted in (per-import flag, or a ServerConfig with
 // AllowInsecureCertificate). It still runs through the egress policy (SSRF/private-network rules
-// apply); it just skips TLS chain validation.
+// apply, including the DNS-aware connect check); it just skips TLS chain validation.
 builder.Services.AddHttpClient("InsecureHttp")
     .AddHttpMessageHandler<HttpEgressPolicyHandler>()
-    .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler
+    .ConfigurePrimaryHttpMessageHandler(sp =>
     {
-        ServerCertificateCustomValidationCallback = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+        var evaluator = sp.GetRequiredService<HttpEgressPolicyEvaluator>();
+        return new System.Net.Http.SocketsHttpHandler
+        {
+            ConnectCallback = (context, ct) => evaluator.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, ct),
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = (_, _, _, _) => true,
+            },
+        };
     });
 builder.Services.AddNodeEditor();
 builder.Services.AddSingleton<ICorrelationTokenCrypto, CorrelationTokenCrypto>();
@@ -222,13 +240,29 @@ builder.Services.AddOpenTelemetry()
             .AddHttpClientInstrumentation();
     });
 
+// CORS. When Cors:AllowedOrigins is configured, restrict to that allowlist (and allow credentials so a
+// legitimately cross-origin SPA can carry the session cookie). With no allowlist the SPA is same-origin
+// (prod wwwroot / dev Vite proxy) and needs no cross-origin access, so the default stays permissive but
+// WITHOUT credentials — AllowAnyOrigin forbids credentials, so an authenticated session can't be reused
+// cross-origin. Tighten by setting Cors:AllowedOrigins to your SPA origin(s).
+var corsAllowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        if (corsAllowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(corsAllowedOrigins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        }
     });
 });
 
@@ -331,6 +365,36 @@ if (authEnabled)
 {
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // CSRF defense-in-depth (opt-in): reject an authenticated, state-changing request whose Origin header
+    // is present but doesn't match this host or a configured CORS origin. Layered on top of the SameSite=Lax
+    // session cookie. Off by default because a reverse proxy can rewrite Host and cause false positives;
+    // enable with Security:EnforceSameOrigin=true on a direct-bound deployment.
+    if (builder.Configuration.GetValue("Security:EnforceSameOrigin", false))
+    {
+        app.Use(async (ctx, next) =>
+        {
+            var method = ctx.Request.Method;
+            var isUnsafe = HttpMethods.IsPost(method) || HttpMethods.IsPut(method)
+                || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
+            if (isUnsafe && ctx.User.Identity?.IsAuthenticated == true)
+            {
+                var origin = ctx.Request.Headers.Origin.ToString();
+                if (!string.IsNullOrEmpty(origin))
+                {
+                    var sameOrigin = string.Equals(origin, $"{ctx.Request.Scheme}://{ctx.Request.Host}", StringComparison.OrdinalIgnoreCase);
+                    var allowed = sameOrigin || corsAllowedOrigins.Any(o => string.Equals(o, origin, StringComparison.OrdinalIgnoreCase));
+                    if (!allowed)
+                    {
+                        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await ctx.Response.WriteAsJsonAsync(new { message = "Cross-origin state-changing request rejected." });
+                        return;
+                    }
+                }
+            }
+            await next(ctx);
+        });
+    }
 }
 
 // Ordered startup work: bring the SQLite schema up to date, verify the audit chain, heal legacy
