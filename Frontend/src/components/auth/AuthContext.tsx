@@ -18,8 +18,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setStatus(await api.getAuthStatus());
     } catch {
-      // If even the status probe fails (server unreachable), fall back to the login screen.
-      setStatus({ authenticated: false, username: null, userId: null, setupRequired: false });
+      // If even the status probe fails (server unreachable), fall back to the login screen (secure default).
+      setStatus({ enabled: true, authenticated: false, username: null, userId: null, setupRequired: false });
     }
   }, []);
 
