@@ -111,4 +111,72 @@ public sealed class AuthEndpointTests : IDisposable
         var response = await _client.PostAsJsonAsync("/api/executions", new { workflowDefinitionId = "does-not-exist" });
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Fact]
+    public async Task NonAdmin_cannot_manage_users_or_self_promote()
+    {
+        // Bootstrap the admin and, as admin, create a low-privilege "user" account.
+        (await _client.PostAsJsonAsync("/api/auth/setup", new { username = "admin", password = "password123" })).EnsureSuccessStatusCode();
+        (await _client.PostAsJsonAsync("/api/auth/users", new { username = "bob", password = "password123", role = "user" })).EnsureSuccessStatusCode();
+
+        // Sign out the admin and sign in as the low-privilege user.
+        (await _client.PostAsync("/api/auth/logout", null)).EnsureSuccessStatusCode();
+        (await _client.PostAsJsonAsync("/api/auth/login", new { username = "bob", password = "password123" })).EnsureSuccessStatusCode();
+
+        // C1: the user-management routes are now admin-gated. A non-admin cannot list, cannot create an
+        // admin for themselves (the privilege-escalation path), and cannot delete accounts.
+        Assert.Equal(HttpStatusCode.Forbidden, (await _client.GetAsync("/api/auth/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await _client.PostAsJsonAsync("/api/auth/users", new { username = "evil", password = "password123", role = "admin" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await _client.DeleteAsync("/api/auth/users/anything")).StatusCode);
+
+        // Privileged config mutations are likewise gated.
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await _client.PostAsJsonAsync("/api/runtime/arming", new { armed = true })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_can_manage_users()
+    {
+        (await _client.PostAsJsonAsync("/api/auth/setup", new { username = "admin", password = "password123" })).EnsureSuccessStatusCode();
+
+        var create = await _client.PostAsJsonAsync("/api/auth/users", new { username = "carol", password = "password123", role = "user" });
+        create.EnsureSuccessStatusCode();
+
+        var list = await _client.GetAsync("/api/auth/users");
+        list.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Webhook_secret_gates_the_anonymous_trigger()
+    {
+        (await _client.PostAsJsonAsync("/api/auth/setup", new { username = "admin", password = "password123" })).EnsureSuccessStatusCode();
+
+        // As admin, configure a webhook secret for a workflow id.
+        const string workflowId = "wf-secret-1";
+        (await _client.PutAsJsonAsync($"/api/workflows/{workflowId}/webhook-secret", new { secret = "s3cr3t-value" })).EnsureSuccessStatusCode();
+
+        // Anonymous trigger without / with a wrong secret is rejected (401), regardless of runtime state.
+        var missing = await _client.PostAsJsonAsync("/api/executions", new { workflowDefinitionId = workflowId });
+        Assert.Equal(HttpStatusCode.Unauthorized, missing.StatusCode);
+
+        var wrong = new HttpRequestMessage(HttpMethod.Post, "/api/executions")
+        {
+            Content = JsonContent.Create(new { workflowDefinitionId = workflowId }),
+        };
+        wrong.Headers.Add("X-Knotarium-Webhook-Secret", "not-it");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _client.SendAsync(wrong)).StatusCode);
+
+        // With the correct secret the request passes the auth gate (then hits arming/existence checks → not 401).
+        var right = new HttpRequestMessage(HttpMethod.Post, "/api/executions")
+        {
+            Content = JsonContent.Create(new { workflowDefinitionId = workflowId }),
+        };
+        right.Headers.Add("X-Knotarium-Webhook-Secret", "s3cr3t-value");
+        Assert.NotEqual(HttpStatusCode.Unauthorized, (await _client.SendAsync(right)).StatusCode);
+
+        // A workflow with no secret configured stays open (not 401).
+        var noSecret = await _client.PostAsJsonAsync("/api/executions", new { workflowDefinitionId = "wf-no-secret" });
+        Assert.NotEqual(HttpStatusCode.Unauthorized, noSecret.StatusCode);
+    }
 }

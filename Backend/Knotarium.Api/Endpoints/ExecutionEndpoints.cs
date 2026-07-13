@@ -25,8 +25,32 @@ public static class ExecutionEndpoints
 {
     public static void MapExecutionEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/executions", async (StartExecutionRequest request, IWorkflowStore workflowStore, ExecutionStarter executionStarter, ActiveWorkflowVersionService activeWorkflowVersionService, Knotarium.Api.Services.RuntimeArmingState armingState) =>
+        // Cap the anonymous webhook trigger's request body (attacker-controlled InputVariables). Kestrel
+        // enforces the limit during body read, so an oversized payload never gets fully buffered/parsed.
+        var webhookMaxBodyBytes = app.Configuration.GetValue("Security:WebhookMaxBodyBytes", 1_048_576L);
+
+        // Bound the executions list read so it can't load + serialize an unbounded result set (each row carries
+        // a GlobalVariables blob). Clients may page with ?skip=&take=; without take we return the most recent
+        // DefaultPageSize, and take is always clamped to MaxPageSize.
+        var defaultPageSize = app.Configuration.GetValue("Executions:DefaultPageSize", 500);
+        var maxPageSize = app.Configuration.GetValue("Executions:MaxPageSize", 2000);
+
+        app.MapPost("/api/executions", async (StartExecutionRequest request, HttpRequest httpRequest, IWorkflowStore workflowStore, ExecutionStarter executionStarter, ActiveWorkflowVersionService activeWorkflowVersionService, Knotarium.Api.Services.RuntimeArmingState armingState, Knotarium.Api.Services.WebhookSecretService webhookSecrets, CancellationToken cancellationToken) =>
         {
+            var workflowId = new WorkflowDefinitionId(request.WorkflowDefinitionId);
+
+            // Optional per-workflow webhook secret, checked FIRST so an unauthenticated caller gets 401
+            // regardless of runtime/arming state (never leak that state to an unauthorized client). When one
+            // is configured, the caller must present the raw secret in the X-Knotarium-Webhook-Secret header
+            // (constant-time compared). Workflows with no secret configured stay open, preserving the legacy
+            // machine-facing contract.
+            var presentedSecret = httpRequest.Headers[Knotarium.Api.Services.WebhookSecretService.HeaderName].FirstOrDefault();
+            var secretCheck = await webhookSecrets.VerifyAsync(request.WorkflowDefinitionId, presentedSecret, cancellationToken);
+            if (secretCheck == Knotarium.Api.Services.WebhookSecretCheck.Invalid)
+            {
+                return Results.Json(new { message = "Invalid or missing webhook secret." }, statusCode: StatusCodes.Status401Unauthorized);
+            }
+
             // Global kill-switch: external (webhook/automatic) triggers are paused while disarmed; only the
             // manual Run endpoint executes in that state.
             if (!armingState.IsArmed)
@@ -34,7 +58,6 @@ public static class ExecutionEndpoints
                 return Results.Conflict(new { message = "Runtime is disarmed. Arm the runtime to allow external triggers." });
             }
 
-            var workflowId = new WorkflowDefinitionId(request.WorkflowDefinitionId);
             var workflow = await workflowStore.GetAsync(workflowId);
             if (workflow == null)
             {
@@ -65,7 +88,18 @@ public static class ExecutionEndpoints
             }
 
             return Results.Accepted($"/api/executions/{outcome.Instance!.Id.Value}", outcome.Instance);
-        }).AllowAnonymous();   // machine-facing webhook/external trigger — gated by the arming switch + workflow-enabled state, not a user session
+        })
+        .AllowAnonymous()   // machine-facing webhook/external trigger — gated by the arming switch + workflow-enabled state (+ optional per-workflow secret), not a user session
+        .RequireRateLimiting(RateLimitPolicies.AnonymousMachine)
+        .AddEndpointFilter(async (efContext, next) =>
+        {
+            var sizeFeature = efContext.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false })
+            {
+                sizeFeature.MaxRequestBodySize = webhookMaxBodyBytes;
+            }
+            return await next(efContext);
+        });
 
         app.MapPost("/api/executions/resume", async (
             ResumeExecutionRequest request,
@@ -84,12 +118,16 @@ public static class ExecutionEndpoints
             return success
                 ? Results.Ok(new { message = "Workflow resume request registered." })
                 : Results.BadRequest(new { message = "Failed to resume execution." });
-        }).AllowAnonymous();   // machine-facing resume — authenticated by the per-run correlation token, not a user session
+        })
+        .AllowAnonymous()   // machine-facing resume — authenticated by the per-run correlation token, not a user session
+        .RequireRateLimiting(RateLimitPolicies.AnonymousMachine);
 
-        app.MapGet("/api/executions", async (AppDbContext db, string? status, string? search) =>
+        app.MapGet("/api/executions", async (AppDbContext db, string? status, string? search, int? skip, int? take) =>
         {
             var normalizedStatus = NormalizeExecutionStatusFilter(status);
             var normalizedSearch = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+            var pageSkip = Math.Max(0, skip ?? 0);
+            var pageTake = Math.Clamp(take ?? defaultPageSize, 1, maxPageSize);
 
             var query = db.ExecutionInstances
                 .AsNoTracking()
@@ -115,6 +153,8 @@ public static class ExecutionEndpoints
 
             var list = await query
                 .OrderByDescending(item => item.Execution.CreatedAt)
+                .Skip(pageSkip)
+                .Take(pageTake)
                 .ToListAsync();
 
             return Results.Ok(list.Select(item => new
@@ -126,7 +166,7 @@ public static class ExecutionEndpoints
                 createdAt = item.Execution.CreatedAt,
                 updatedAt = item.Execution.UpdatedAt,
                 triggerOrigin = item.Execution.TriggerOrigin,
-                globalVariables = item.Execution.GlobalVariables,
+                globalVariables = SensitiveDataRedactor.Redact(item.Execution.GlobalVariables),
                 workflowName = item.WorkflowName
             }));
         });
@@ -209,10 +249,13 @@ public static class ExecutionEndpoints
         {
             var execId = new ExecutionInstanceId(id);
             var instance = await db.ExecutionInstances
+                .AsNoTracking()
                 .Include(e => e.NodeStates)
                 .FirstOrDefaultAsync(e => e.Id == execId);
 
-            return instance != null ? Results.Ok(instance) : Results.NotFound();
+            if (instance is null) return Results.NotFound();
+            RedactInstanceForRead(instance);
+            return Results.Ok(instance);
         });
 
         // Latest run (with per-node states) for a workflow — powers the editor-side per-node I/O inspector,
@@ -221,12 +264,15 @@ public static class ExecutionEndpoints
         {
             var workflowId = new WorkflowDefinitionId(id);
             var instance = await db.ExecutionInstances
+                .AsNoTracking()
                 .Include(e => e.NodeStates)
                 .Where(e => e.WorkflowDefinitionId == workflowId)
                 .OrderByDescending(e => e.CreatedAt)
                 .FirstOrDefaultAsync();
 
-            return instance != null ? Results.Ok(instance) : Results.NoContent();
+            if (instance is null) return Results.NoContent();
+            RedactInstanceForRead(instance);
+            return Results.Ok(instance);
         });
 
         // Condition editor "Last run" value source (Phase 5): resolve the given operand refs against this
@@ -280,9 +326,15 @@ public static class ExecutionEndpoints
         {
             var execId = new ExecutionInstanceId(id);
             var journal = await db.JournalEntries
+                .AsNoTracking()
                 .Where(j => j.ExecutionInstanceId == execId)
                 .OrderBy(j => j.Timestamp)
                 .ToListAsync();
+
+            foreach (var entry in journal)
+            {
+                entry.Data = SensitiveDataRedactor.Redact(entry.Data);
+            }
 
             return Results.Ok(journal);
         });
@@ -432,6 +484,20 @@ public static class ExecutionEndpoints
                 ? Results.Ok(new { message = "Manual decision recorded successfully." })
                 : Results.BadRequest(new { message = "Failed to apply manual decision." });
         });
+    }
+
+    // Mask secret-looking values in the untyped run blobs before returning them over the read API. The full
+    // data stays in the database (replay/debugging), but a runtime-fetched or derived secret is never handed
+    // back to a dashboard client. Operates on AsNoTracking (detached) instances, so this never persists.
+    private static void RedactInstanceForRead(ExecutionInstance instance)
+    {
+        instance.GlobalVariables = SensitiveDataRedactor.Redact(instance.GlobalVariables);
+        foreach (var nodeState in instance.NodeStates)
+        {
+            nodeState.Inputs = SensitiveDataRedactor.Redact(nodeState.Inputs);
+            nodeState.Outputs = SensitiveDataRedactor.Redact(nodeState.Outputs);
+            nodeState.VariablesBefore = SensitiveDataRedactor.RedactJsonString(nodeState.VariablesBefore);
+        }
     }
 
     private static ExecutionStatus? NormalizeExecutionStatusFilter(string? status)

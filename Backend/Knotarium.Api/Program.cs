@@ -109,16 +109,34 @@ builder.Services.AddScoped<ICredentialAccessor>(sp => sp.GetRequiredService<Cred
 builder.Services.AddSingleton<HttpEgressPolicyEvaluator>();
 builder.Services.AddTransient<HttpEgressPolicyHandler>();
 builder.Services.AddHttpClient("HttpNode")
-    .AddHttpMessageHandler<HttpEgressPolicyHandler>();
+    .AddHttpMessageHandler<HttpEgressPolicyHandler>()
+    // Primary handler validates every connection (DNS-aware) and pins the socket to a vetted address, so
+    // redirect hops and DNS-rebinding can't reach private/metadata IPs — see HttpEgressPolicyEvaluator.
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+    {
+        var evaluator = sp.GetRequiredService<HttpEgressPolicyEvaluator>();
+        return new System.Net.Http.SocketsHttpHandler
+        {
+            ConnectCallback = (context, ct) => evaluator.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, ct),
+        };
+    });
 // Dedicated client for reaching a server that presents a self-signed / untrusted certificate.
 // Used only when explicitly opted in (per-import flag, or a ServerConfig with
 // AllowInsecureCertificate). It still runs through the egress policy (SSRF/private-network rules
-// apply); it just skips TLS chain validation.
+// apply, including the DNS-aware connect check); it just skips TLS chain validation.
 builder.Services.AddHttpClient("InsecureHttp")
     .AddHttpMessageHandler<HttpEgressPolicyHandler>()
-    .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler
+    .ConfigurePrimaryHttpMessageHandler(sp =>
     {
-        ServerCertificateCustomValidationCallback = System.Net.Http.HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+        var evaluator = sp.GetRequiredService<HttpEgressPolicyEvaluator>();
+        return new System.Net.Http.SocketsHttpHandler
+        {
+            ConnectCallback = (context, ct) => evaluator.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, ct),
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = (_, _, _, _) => true,
+            },
+        };
     });
 builder.Services.AddNodeEditor();
 builder.Services.AddSingleton<ICorrelationTokenCrypto, CorrelationTokenCrypto>();
@@ -192,6 +210,12 @@ builder.Services.AddHostedService<SchedulingWorker>();
 builder.Services.AddHostedService<PollingWorker>();
 // Bounds run-history growth: prunes old terminal runs (cascades to their journal + node states).
 builder.Services.AddHostedService<JournalRetentionWorker>();
+// Pauses arming (stops new runs) when free disk on the data volume falls below a threshold.
+builder.Services.AddHostedService(sp => new DiskSpaceGuardWorker(
+    sp.GetRequiredService<RuntimeArmingState>(),
+    builder.Configuration,
+    sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DiskSpaceGuardWorker>>(),
+    dataDir));
 
 // Built-in node tasks + node-task registry + shared Roslyn script compiler.
 builder.Services.AddBuiltInNodes();
@@ -216,21 +240,73 @@ builder.Services.AddOpenTelemetry()
             .AddHttpClientInstrumentation();
     });
 
+// CORS. When Cors:AllowedOrigins is configured, restrict to that allowlist (and allow credentials so a
+// legitimately cross-origin SPA can carry the session cookie). With no allowlist the SPA is same-origin
+// (prod wwwroot / dev Vite proxy) and needs no cross-origin access, so the default stays permissive but
+// WITHOUT credentials — AllowAnyOrigin forbids credentials, so an authenticated session can't be reused
+// cross-origin. Tighten by setting Cors:AllowedOrigins to your SPA origin(s).
+var corsAllowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        if (corsAllowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(corsAllowedOrigins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        }
     });
 });
+
+// Rate limiting for the abuse-prone surfaces: interactive login and the anonymous machine routes
+// (webhook trigger + resume). See RateLimitPolicies.
+builder.Services.AddKnotariumRateLimiting(builder.Configuration);
+
+// Optional per-workflow webhook secret guarding the anonymous POST /api/executions trigger.
+builder.Services.AddScoped<Knotarium.Api.Services.WebhookSecretService>();
 
 // Authentication (Gap 3, step 1): cookie-based login gating the management API. On by default; the
 // integration-test factory sets Auth:Enabled=false so unauthenticated endpoint tests keep working.
 // The SPA is same-origin (prod wwwroot; dev via the Vite /api proxy), so the session cookie flows
 // without cross-origin credential handling.
 var authEnabled = builder.Configuration.GetValue("Auth:Enabled", true);
+
+// In no-auth mode every endpoint (including the capability toggle + Inline Code) is anonymous, which is
+// only safe on a loopback-bound instance. Refuse to start if configuration binds a non-loopback address
+// without an explicit opt-in, so "Auth:Enabled=false" on 0.0.0.0 can't silently expose an unauthenticated
+// RCE surface to the LAN. Enforced outside Development (dev binds plain HTTP / device IPs freely); a warning
+// is logged in Development.
+if (!authEnabled)
+{
+    var nonLoopback = Knotarium.Api.Services.LoopbackBindingGuard.NonLoopbackBindings(builder.Configuration);
+    var overrideAllowed = builder.Configuration.GetValue(Knotarium.Api.Services.LoopbackBindingGuard.OverrideConfigKey, false);
+    if (nonLoopback.Count > 0 && !overrideAllowed)
+    {
+        var message =
+            "Authentication is disabled (Auth:Enabled=false) but the server is configured to bind a non-loopback " +
+            $"address ({string.Join(", ", nonLoopback)}). In no-auth mode every endpoint is anonymous, so this would " +
+            "expose an unauthenticated remote-code-execution surface. Bind loopback only (e.g. http://127.0.0.1:PORT), " +
+            "enable authentication (Auth:Enabled=true), or set " +
+            $"{Knotarium.Api.Services.LoopbackBindingGuard.OverrideConfigKey}=true to accept the risk (e.g. behind a trusted reverse proxy).";
+        if (builder.Environment.IsDevelopment())
+        {
+            Console.Error.WriteLine("[WARN] " + message);
+        }
+        else
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+}
+
 // Exposed so endpoints can enforce admin-only mutations (a no-op when auth is disabled).
 builder.Services.AddSingleton(new Knotarium.Api.Services.Auth.AuthOptions(authEnabled));
 builder.Services.AddScoped<UserService>();
@@ -242,6 +318,12 @@ if (authEnabled)
             options.Cookie.Name = "kg_auth";
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Lax;
+            // Never send the session cookie over cleartext HTTP in a real deployment. In Development the
+            // dev server / tests run plain HTTP, so relax to SameAsRequest there; everywhere else the
+            // cookie is HTTPS-only (defends the LAN self-hosted plain-HTTP case).
+            options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
             options.ExpireTimeSpan = TimeSpan.FromDays(7);
             options.SlidingExpiration = true;
             // This is an API, not an MVC app: answer 401/403 instead of redirecting to a login page.
@@ -260,6 +342,7 @@ if (authEnabled)
 var app = builder.Build();
 
 app.UseCors();
+app.UseRateLimiter();
 app.UseHttpsRedirection();
 
 // Serve the bundled single-page UI when a built `wwwroot` sits next to the executable
@@ -282,6 +365,36 @@ if (authEnabled)
 {
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // CSRF defense-in-depth (opt-in): reject an authenticated, state-changing request whose Origin header
+    // is present but doesn't match this host or a configured CORS origin. Layered on top of the SameSite=Lax
+    // session cookie. Off by default because a reverse proxy can rewrite Host and cause false positives;
+    // enable with Security:EnforceSameOrigin=true on a direct-bound deployment.
+    if (builder.Configuration.GetValue("Security:EnforceSameOrigin", false))
+    {
+        app.Use(async (ctx, next) =>
+        {
+            var method = ctx.Request.Method;
+            var isUnsafe = HttpMethods.IsPost(method) || HttpMethods.IsPut(method)
+                || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
+            if (isUnsafe && ctx.User.Identity?.IsAuthenticated == true)
+            {
+                var origin = ctx.Request.Headers.Origin.ToString();
+                if (!string.IsNullOrEmpty(origin))
+                {
+                    var sameOrigin = string.Equals(origin, $"{ctx.Request.Scheme}://{ctx.Request.Host}", StringComparison.OrdinalIgnoreCase);
+                    var allowed = sameOrigin || corsAllowedOrigins.Any(o => string.Equals(o, origin, StringComparison.OrdinalIgnoreCase));
+                    if (!allowed)
+                    {
+                        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await ctx.Response.WriteAsJsonAsync(new { message = "Cross-origin state-changing request rejected." });
+                        return;
+                    }
+                }
+            }
+            await next(ctx);
+        });
+    }
 }
 
 // Ordered startup work: bring the SQLite schema up to date, verify the audit chain, heal legacy
@@ -334,6 +447,7 @@ app.MapAdminBackupEndpoints();
 app.MapWorkflowTriggerEndpoints();
 app.MapRuntimeSettingsEndpoints();
 app.MapExecutionEndpoints();
+app.MapWebhookSecretEndpoints();
 app.MapCredentialEndpoints();
 app.MapNotificationChannelEndpoints();
 app.MapHostEndpoints();
