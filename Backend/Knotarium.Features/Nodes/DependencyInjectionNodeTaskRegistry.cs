@@ -18,6 +18,25 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
         _serviceProvider = serviceProvider;
     }
 
+    private ILogger Logger =>
+        _serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<DependencyInjectionNodeTaskRegistry>()
+        ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<DependencyInjectionNodeTaskRegistry>.Instance;
+
+    // Resolve a required collaborator, logging a warning if it is missing and a stand-in is used. The
+    // stand-ins exist only for barebone test hosts; in a real host these are always registered, so a
+    // fallback firing there is a misconfiguration worth surfacing (e.g. the HTTP stand-in bypasses the
+    // egress policy) rather than swallowing silently.
+    private T ResolveOrFallback<T>(Func<T> fallback, string what) where T : class
+    {
+        var resolved = _serviceProvider.GetService<T>();
+        if (resolved is not null)
+        {
+            return resolved;
+        }
+        Logger.LogWarning("Node-task registry falling back to a stand-in {What}; expected it to be registered.", what);
+        return fallback();
+    }
+
     public INodeTask? GetTask(string nodeType)
     {
         var type = nodeType.ToLowerInvariant() switch
@@ -58,9 +77,9 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
             var registered = executorRegistry?.GetLatest(new NodePackageId(nodeType));
             if (registered != null)
             {
-                var httpClientFactory = _serviceProvider.GetService<IHttpClientFactory>() ?? new TaskHttpClientFactory();
-                var credentialAccessor = _serviceProvider.GetService<ICredentialAccessor>() ?? new TaskCredentialAccessor();
-                var loggerFactory = _serviceProvider.GetService<ILoggerFactory>() ?? new LoggerFactory();
+                var httpClientFactory = ResolveOrFallback<IHttpClientFactory>(() => new TaskHttpClientFactory(), "IHttpClientFactory");
+                var credentialAccessor = ResolveOrFallback<ICredentialAccessor>(() => new TaskCredentialAccessor(), "ICredentialAccessor");
+                var loggerFactory = ResolveOrFallback<ILoggerFactory>(() => new LoggerFactory(), "ILoggerFactory");
 
                 // In-process external-signal provider (supplied by a binary host plugin), if loaded —
                 // lets reactive nodes dispatch/subscribe without an out-of-process hop.
@@ -74,9 +93,12 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
                     externalSignals);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Registry unavailable (e.g. minimal test host) — fall through to the database path.
+            // Unexpected: a registered binary-package registry threw while resolving. Fall through to the
+            // database path but record it — this is not the benign "service absent" case (a null registry is
+            // handled by the null-conditional above without throwing).
+            Logger.LogWarning(ex, "Binary node-package resolution failed for node type '{NodeType}'.", nodeType);
         }
 
         // Try to resolve custom package from the database via the read seam.
@@ -89,9 +111,9 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
                 var exists = packageStore.Exists(packageId);
                 if (exists)
                 {
-                    var httpClientFactory = _serviceProvider.GetService<IHttpClientFactory>() ?? new TaskHttpClientFactory();
-                    var credentialAccessor = _serviceProvider.GetService<ICredentialAccessor>() ?? new TaskCredentialAccessor();
-                    var loggerFactory = _serviceProvider.GetService<ILoggerFactory>() ?? new LoggerFactory();
+                    var httpClientFactory = ResolveOrFallback<IHttpClientFactory>(() => new TaskHttpClientFactory(), "IHttpClientFactory");
+                    var credentialAccessor = ResolveOrFallback<ICredentialAccessor>(() => new TaskCredentialAccessor(), "ICredentialAccessor");
+                    var loggerFactory = ResolveOrFallback<ILoggerFactory>(() => new LoggerFactory(), "ILoggerFactory");
 
                     return new DynamicCustomNodeTask(
                         nodeType,
@@ -107,9 +129,11 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback for missing context or database access issues during mock test environments
+            // Database/package-store access failed while probing for a custom node. Return null (node type
+            // is treated as unknown) but record it so a real store failure isn't hidden.
+            Logger.LogWarning(ex, "Database node-package resolution failed for node type '{NodeType}'.", nodeType);
         }
 
         return null;
