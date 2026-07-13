@@ -156,7 +156,7 @@ public static class ExecutionEndpoints
                 createdAt = item.Execution.CreatedAt,
                 updatedAt = item.Execution.UpdatedAt,
                 triggerOrigin = item.Execution.TriggerOrigin,
-                globalVariables = item.Execution.GlobalVariables,
+                globalVariables = SensitiveDataRedactor.Redact(item.Execution.GlobalVariables),
                 workflowName = item.WorkflowName
             }));
         });
@@ -239,10 +239,13 @@ public static class ExecutionEndpoints
         {
             var execId = new ExecutionInstanceId(id);
             var instance = await db.ExecutionInstances
+                .AsNoTracking()
                 .Include(e => e.NodeStates)
                 .FirstOrDefaultAsync(e => e.Id == execId);
 
-            return instance != null ? Results.Ok(instance) : Results.NotFound();
+            if (instance is null) return Results.NotFound();
+            RedactInstanceForRead(instance);
+            return Results.Ok(instance);
         });
 
         // Latest run (with per-node states) for a workflow — powers the editor-side per-node I/O inspector,
@@ -251,12 +254,15 @@ public static class ExecutionEndpoints
         {
             var workflowId = new WorkflowDefinitionId(id);
             var instance = await db.ExecutionInstances
+                .AsNoTracking()
                 .Include(e => e.NodeStates)
                 .Where(e => e.WorkflowDefinitionId == workflowId)
                 .OrderByDescending(e => e.CreatedAt)
                 .FirstOrDefaultAsync();
 
-            return instance != null ? Results.Ok(instance) : Results.NoContent();
+            if (instance is null) return Results.NoContent();
+            RedactInstanceForRead(instance);
+            return Results.Ok(instance);
         });
 
         // Condition editor "Last run" value source (Phase 5): resolve the given operand refs against this
@@ -310,9 +316,15 @@ public static class ExecutionEndpoints
         {
             var execId = new ExecutionInstanceId(id);
             var journal = await db.JournalEntries
+                .AsNoTracking()
                 .Where(j => j.ExecutionInstanceId == execId)
                 .OrderBy(j => j.Timestamp)
                 .ToListAsync();
+
+            foreach (var entry in journal)
+            {
+                entry.Data = SensitiveDataRedactor.Redact(entry.Data);
+            }
 
             return Results.Ok(journal);
         });
@@ -462,6 +474,20 @@ public static class ExecutionEndpoints
                 ? Results.Ok(new { message = "Manual decision recorded successfully." })
                 : Results.BadRequest(new { message = "Failed to apply manual decision." });
         });
+    }
+
+    // Mask secret-looking values in the untyped run blobs before returning them over the read API. The full
+    // data stays in the database (replay/debugging), but a runtime-fetched or derived secret is never handed
+    // back to a dashboard client. Operates on AsNoTracking (detached) instances, so this never persists.
+    private static void RedactInstanceForRead(ExecutionInstance instance)
+    {
+        instance.GlobalVariables = SensitiveDataRedactor.Redact(instance.GlobalVariables);
+        foreach (var nodeState in instance.NodeStates)
+        {
+            nodeState.Inputs = SensitiveDataRedactor.Redact(nodeState.Inputs);
+            nodeState.Outputs = SensitiveDataRedactor.Redact(nodeState.Outputs);
+            nodeState.VariablesBefore = SensitiveDataRedactor.RedactJsonString(nodeState.VariablesBefore);
+        }
     }
 
     private static ExecutionStatus? NormalizeExecutionStatusFilter(string? status)
