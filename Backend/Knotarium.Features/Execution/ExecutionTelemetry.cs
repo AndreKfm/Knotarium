@@ -24,8 +24,13 @@ public sealed class ExecutionTelemetry : IOutboundHttpTelemetry, IDisposable
     private readonly Counter<long> _executionsCompleted;
     private readonly Counter<long> _executionsFailed;
     private readonly Counter<long> _journalWrites;
+    private readonly Counter<long> _runsRejected;
     private readonly Histogram<double> _nodeExecutionDurationSeconds;
     private readonly Histogram<double> _journalWriteLatencySeconds;
+    private readonly Histogram<long> _journalBatchFlushSize;
+    private readonly Histogram<double> _journalBatchFlushLatencySeconds;
+
+    private Func<int>? _queueDepthProvider;
 
     private long _runningExecutions;
 
@@ -37,13 +42,23 @@ public sealed class ExecutionTelemetry : IOutboundHttpTelemetry, IDisposable
         _executionsCompleted = _meter.CreateCounter<long>("executions_completed_total");
         _executionsFailed = _meter.CreateCounter<long>("executions_failed_total");
         _journalWrites = _meter.CreateCounter<long>("journal_writes_total");
+        _runsRejected = _meter.CreateCounter<long>("runs_rejected_total");
         _nodeExecutionDurationSeconds = _meter.CreateHistogram<double>("node_execution_duration_seconds", unit: "s");
         _journalWriteLatencySeconds = _meter.CreateHistogram<double>("journal_write_latency_seconds", unit: "s");
+        _journalBatchFlushSize = _meter.CreateHistogram<long>("journal_batch_flush_size");
+        _journalBatchFlushLatencySeconds = _meter.CreateHistogram<double>("journal_batch_flush_latency_seconds", unit: "s");
 
         _meter.CreateObservableGauge<long>(
             "running_executions",
             () => new[] { new Measurement<long>(Interlocked.Read(ref _runningExecutions)) });
+
+        _meter.CreateObservableGauge<long>(
+            "execution_queue_depth",
+            () => new[] { new Measurement<long>(_queueDepthProvider?.Invoke() ?? 0) });
     }
+
+    /// <summary>Wire the live queue-depth source (the execution queue) once both singletons exist.</summary>
+    public void RegisterQueueDepthProvider(Func<int> provider) => _queueDepthProvider = provider;
 
     public ExecutionTelemetry(IServiceScopeFactory scopeFactory)
         : this()
@@ -90,6 +105,23 @@ public sealed class ExecutionTelemetry : IOutboundHttpTelemetry, IDisposable
         _journalWrites.Add(1);
         _journalWriteLatencySeconds.Record(elapsed.TotalSeconds);
     }
+
+    /// <summary>A bulk journal write of <paramref name="count"/> rows in one call.</summary>
+    public void RecordJournalWrites(int count, TimeSpan elapsed)
+    {
+        _journalWrites.Add(count);
+        _journalWriteLatencySeconds.Record(elapsed.TotalSeconds);
+    }
+
+    /// <summary>One buffered-journal flush: how many rows it carried and how long the commit took.</summary>
+    public void RecordJournalBatchFlush(int size, TimeSpan elapsed)
+    {
+        _journalBatchFlushSize.Record(size);
+        _journalBatchFlushLatencySeconds.Record(elapsed.TotalSeconds);
+    }
+
+    /// <summary>A run-start request rejected because the execution queue was at its depth cap.</summary>
+    public void RecordRunRejected() => _runsRejected.Add(1);
 
     public Activity? StartWorkflowActivity(ExecutionInstance instance, string phase)
     {
