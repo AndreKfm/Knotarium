@@ -1,18 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Knotarium.Core.Contracts;
 using Knotarium.Core.Domain;
-using Knotarium.Features.Compiler;
 using Knotarium.Infrastructure.Persistence;
-using Knotarium.Infrastructure.Security;
 
 namespace Knotarium.Features.Execution;
 
@@ -44,7 +38,7 @@ public partial class WorkflowExecutor
             instance.WorkflowVersionId = new WorkflowVersionId(payload.WorkflowVersionId.Value);
         }
 
-        var plan = await LoadExecutionPlanAsync(instance, cancellationToken);
+        var plan = await _planLoader.LoadAsync(instance, cancellationToken);
         if (plan is null)
         {
             return;
@@ -80,7 +74,7 @@ public partial class WorkflowExecutor
         instance.Status = ExecutionStatus.Running;
         instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-        await PublishJournalEntryAsync(
+        await _journal.PublishAsync(
             instance,
             "NodeResumed",
             $"Node '{waitingNode.NodeId}' resumed from work item '{workItem.Id}'.",
@@ -103,7 +97,7 @@ public partial class WorkflowExecutor
             instance.Status = ExecutionStatus.Completed;
             instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-            await PublishJournalEntryAsync(instance, JournalEventTypes.WorkflowCompleted, "Workflow run completed successfully.", cancellationToken: cancellationToken);
+            await _journal.PublishAsync(instance, JournalEventTypes.WorkflowCompleted, "Workflow run completed successfully.", cancellationToken: cancellationToken);
             _telemetry.RecordExecutionCompleted();
 
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -140,7 +134,7 @@ public partial class WorkflowExecutor
             instance.WorkflowVersionId = new WorkflowVersionId(payload.WorkflowVersionId.Value);
         }
 
-        var plan = await LoadExecutionPlanAsync(instance, cancellationToken);
+        var plan = await _planLoader.LoadAsync(instance, cancellationToken);
         if (plan is null)
         {
             return;
@@ -157,7 +151,7 @@ public partial class WorkflowExecutor
         instance.Status = ExecutionStatus.Running;
         instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-        await PublishJournalEntryAsync(
+        await _journal.PublishAsync(
             instance,
             "NodeRetryStarted",
             $"Retry attempt {payload.AttemptNumber} started for node '{retryNode.NodeId}'.",
@@ -209,7 +203,7 @@ public partial class WorkflowExecutor
             instance.WorkflowVersionId = new WorkflowVersionId(payload.WorkflowVersionId.Value);
         }
 
-        var plan = await LoadExecutionPlanAsync(instance, cancellationToken);
+        var plan = await _planLoader.LoadAsync(instance, cancellationToken);
         if (plan is null)
         {
             return;
@@ -239,7 +233,7 @@ public partial class WorkflowExecutor
         instance.Status = ExecutionStatus.Running;
         instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-        await PublishJournalEntryAsync(
+        await _journal.PublishAsync(
             instance,
             "ReplayStarted",
             $"Replay started from node '{fromNodeId.Value}'" +
@@ -273,7 +267,7 @@ public partial class WorkflowExecutor
             ?? throw new InvalidOperationException($"Execution work item '{workItem.Id}' payload is invalid.");
 
         if (string.IsNullOrWhiteSpace(payload.NodeId) ||
-            !TryNormalizeManualDecision(payload.Decision, out var decision))
+            !ManualDecisions.TryNormalize(payload.Decision, out var decision))
         {
             throw new InvalidOperationException($"Execution work item '{workItem.Id}' is missing manual decision metadata.");
         }
@@ -289,7 +283,7 @@ public partial class WorkflowExecutor
             instance.WorkflowVersionId = new WorkflowVersionId(payload.WorkflowVersionId.Value);
         }
 
-        var plan = await LoadExecutionPlanAsync(instance, cancellationToken);
+        var plan = await _planLoader.LoadAsync(instance, cancellationToken);
         if (plan is null)
         {
             return;
@@ -313,7 +307,7 @@ public partial class WorkflowExecutor
                 $"Execution '{instance.Id.Value}' cannot apply manual decision to node '{manualNode.NodeId.Value}' from status '{manualNode.Status}'.");
         }
 
-        var pendingAttemptId = FindPendingAttemptId(instance.JournalEntries, manualNode.NodeId);
+        var pendingAttemptId = ExecutionJournalData.FindPendingAttemptId(instance.JournalEntries, manualNode.NodeId);
         if (!string.IsNullOrWhiteSpace(payload.ExpectedAttemptId) &&
             !string.Equals(payload.ExpectedAttemptId, pendingAttemptId, StringComparison.OrdinalIgnoreCase))
         {
@@ -321,7 +315,7 @@ public partial class WorkflowExecutor
         }
 
         var scheduledNodes = new Queue<NodeId>();
-        var attemptData = CreateAttemptData(payload.Reason, pendingAttemptId);
+        var attemptData = ExecutionJournalData.CreateAttemptData(payload.Reason, pendingAttemptId);
 
         switch (decision)
         {
@@ -330,7 +324,7 @@ public partial class WorkflowExecutor
                 manualNode.ErrorMessage = null;
                 manualNode.Outputs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionFailed,
                     $"Manual retry accepted for node '{manualNode.NodeId.Value}'. Previous interrupted attempt closed.",
@@ -359,7 +353,7 @@ public partial class WorkflowExecutor
                     ["skipped"] = true
                 };
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionCompleted,
                     $"Node '{manualNode.NodeId.Value}' was manually skipped by an operator.",
@@ -386,11 +380,11 @@ public partial class WorkflowExecutor
                     ? "Operator marked node as failed."
                     : payload.Reason;
 
-                var failureData = CreateAttemptData(payload.Reason, pendingAttemptId);
+                var failureData = ExecutionJournalData.CreateAttemptData(payload.Reason, pendingAttemptId);
                 failureData["error"] = manualNode.ErrorMessage;
                 failureData["manualDecision"] = "Fail";
 
-                await PublishJournalEntryAsync(
+                await _journal.PublishAsync(
                     instance,
                     JournalEventTypes.NodeExecutionFailed,
                     $"Node '{manualNode.NodeId.Value}' was manually failed by an operator.",
@@ -424,81 +418,11 @@ public partial class WorkflowExecutor
             instance.Status = ExecutionStatus.Completed;
             instance.UpdatedAt = _timeProvider.GetUtcNow();
 
-            await PublishJournalEntryAsync(instance, JournalEventTypes.WorkflowCompleted, "Workflow run completed successfully.", cancellationToken: cancellationToken);
+            await _journal.PublishAsync(instance, JournalEventTypes.WorkflowCompleted, "Workflow run completed successfully.", cancellationToken: cancellationToken);
             _telemetry.RecordExecutionCompleted();
 
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
-    }
-
-    private async Task<ExecutionPlan?> LoadExecutionPlanAsync(ExecutionInstance instance, CancellationToken cancellationToken)
-    {
-        var workflow = await _dbContext.WorkflowDefinitions
-            .FirstOrDefaultAsync(definition => definition.Id == instance.WorkflowDefinitionId, cancellationToken);
-
-        WorkflowDefinition? definition;
-        if (instance.WorkflowVersionId.HasValue)
-        {
-            var workflowVersion = await _dbContext.WorkflowVersions
-                .FirstOrDefaultAsync(version => version.Id == instance.WorkflowVersionId.Value, cancellationToken);
-
-            if (workflowVersion == null)
-            {
-                instance.Status = ExecutionStatus.Failed;
-                instance.UpdatedAt = _timeProvider.GetUtcNow();
-                await PublishJournalEntryAsync(
-                    instance,
-                    JournalEventTypes.WorkflowFailed,
-                    $"Workflow version '{instance.WorkflowVersionId.Value.Value}' not found.",
-                    cancellationToken: cancellationToken);
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                return null;
-            }
-
-            definition = new WorkflowDefinition(
-                instance.WorkflowDefinitionId,
-                workflow?.Name ?? instance.WorkflowDefinitionId.Value,
-                workflowVersion.Nodes,
-                workflowVersion.Edges);
-        }
-        else
-        {
-            definition = workflow;
-        }
-
-        if (definition == null)
-        {
-            instance.Status = ExecutionStatus.Failed;
-            instance.UpdatedAt = _timeProvider.GetUtcNow();
-            await PublishJournalEntryAsync(
-                instance,
-                JournalEventTypes.WorkflowFailed,
-                $"Workflow definition '{instance.WorkflowDefinitionId}' not found.",
-                cancellationToken: cancellationToken);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            return null;
-        }
-
-        var compilationResult = await _compiler.CompileAsync(definition, cancellationToken);
-        if (!compilationResult.IsSuccess || compilationResult.Plan == null)
-        {
-            instance.Status = ExecutionStatus.Failed;
-            instance.UpdatedAt = _timeProvider.GetUtcNow();
-            await PublishJournalEntryAsync(
-                instance,
-                JournalEventTypes.WorkflowFailed,
-                "Workflow failed compilation before execution.",
-                data: compilationResult.Diagnostics
-                    .GroupBy(diagnostic => diagnostic.Code)
-                    .ToDictionary(
-                        group => group.Key,
-                        group => (object)string.Join("; ", group.Select(diagnostic => $"{diagnostic.Severity}: {diagnostic.Message} (Node: {diagnostic.NodeId})"))),
-                cancellationToken: cancellationToken);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            return null;
-        }
-
-        return compilationResult.Plan;
     }
 
     private static void RehydrateGlobalVariables(ExecutionInstance instance, IReadOnlyDictionary<string, JsonElement> variables)
@@ -539,5 +463,4 @@ public partial class WorkflowExecutor
 
         return outputs;
     }
-
 }
