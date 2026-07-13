@@ -8,6 +8,17 @@ const BRANCH_NODE_TYPES = new Set([
   'condition', 'httprequest', 'transform', 'merge', 'switch', 'scheduler', 'forloop', 'parallelforeach',
 ]);
 
+/**
+ * True if the definition carries at least one saved node position. Position-less definitions (built-in
+ * gallery examples, freshly imported/generated graphs) are auto-laid-out on load instead of trusting the
+ * stored coordinates. Shared by the mapper's own fallback and the editor's post-measure auto-tidy.
+ */
+export function definitionHasSavedPositions(definition: WorkflowDefinition): boolean {
+  return (definition.nodes || []).some(
+    (n) => typeof (n.properties?._metadata as { x?: number } | undefined)?.x === 'number',
+  );
+}
+
 function isBranchNodeType(nodeType: string | undefined): boolean {
   if (!nodeType) return false;
   const t = nodeType.toLowerCase();
@@ -116,9 +127,7 @@ export const schemaMapper = {
     // graphs), lay it out with the same dagre algorithm as the editor "Tidy" button instead of the naive
     // per-index fallback — otherwise the graph opens as a zig-zag that has to be tidied by hand. Only kicks in
     // when nothing was placed, so a user's saved layout is never overridden.
-    const hasSavedLayout = (definition.nodes || []).some(
-      (n) => typeof (n.properties?._metadata as { x?: number } | undefined)?.x === 'number',
-    );
+    const hasSavedLayout = definitionHasSavedPositions(definition);
     if (!hasSavedLayout && nodes.length > 0) {
       const layout = computeNestedAutoLayout(
         nodes.map((n) => ({
