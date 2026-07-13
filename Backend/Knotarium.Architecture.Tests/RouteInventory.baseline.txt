@@ -11,6 +11,7 @@ Delete /api/workflow-groups/{id}
 Delete /api/workflows/archived/all
 Delete /api/workflows/{id}
 Delete /api/workflows/{id}/permanent
+Delete /api/workflows/{id}/webhook-secret
 Get /api/ai/generate/{jobId}
 Get /api/auth/status
 Get /api/auth/users
@@ -55,6 +56,7 @@ Get /api/workflows/{id}/latest-execution
 Get /api/workflows/{id}/schedules
 Get /api/workflows/{id}/versions
 Get /api/workflows/{id}/versions/{versionId:guid}
+Get /api/workflows/{id}/webhook-secret
 Post /api/admin/backup
 Post /api/admin/backup/inspect
 Post /api/admin/restore
@@ -122,3 +124,4 @@ Put /api/settings/error-workflow
 Put /api/settings/file-access
 Put /api/workflow-groups
 Put /api/workflows/{id}
+Put /api/workflows/{id}/webhook-secret

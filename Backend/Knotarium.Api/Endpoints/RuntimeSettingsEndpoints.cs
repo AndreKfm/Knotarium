@@ -21,8 +21,11 @@ public static class RuntimeSettingsEndpoints
         app.MapGet("/api/runtime/arming", (RuntimeArmingState armingState) =>
             Results.Ok(new { armed = armingState.IsArmed }));
 
-        app.MapPost("/api/runtime/arming", (SetArmingRequest request, RuntimeArmingState armingState) =>
+        app.MapPost("/api/runtime/arming", (SetArmingRequest request, RuntimeArmingState armingState, AuthOptions auth, ClaimsPrincipal user) =>
         {
+            // Arming is the master switch that enables anonymous webhook/external triggers, so flipping it
+            // is an admin action (a no-op gate when auth is disabled).
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             armingState.SetArmed(request.Armed);
             return Results.Ok(new { armed = armingState.IsArmed });
         });
@@ -32,8 +35,9 @@ public static class RuntimeSettingsEndpoints
         app.MapGet("/api/settings/error-workflow", async (GlobalSettingsService settings, CancellationToken ct) =>
             Results.Ok(new { workflowId = await settings.GetDefaultErrorWorkflowIdAsync(ct) }));
 
-        app.MapPut("/api/settings/error-workflow", async (SetErrorWorkflowRequest request, GlobalSettingsService settings, CancellationToken ct) =>
+        app.MapPut("/api/settings/error-workflow", async (SetErrorWorkflowRequest request, GlobalSettingsService settings, AuthOptions auth, ClaimsPrincipal user, CancellationToken ct) =>
         {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             await settings.SetDefaultErrorWorkflowIdAsync(request.WorkflowId, ct);
             return Results.Ok(new { workflowId = await settings.GetDefaultErrorWorkflowIdAsync(ct) });
         });

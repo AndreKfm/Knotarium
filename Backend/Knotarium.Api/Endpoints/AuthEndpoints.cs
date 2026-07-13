@@ -14,8 +14,10 @@ namespace Knotarium.Api;
 /// <summary>
 /// Authentication + user-management endpoints (Gap 3, step 1). Cookie-based sessions. The bootstrap
 /// endpoints (status/setup/login) are anonymous so an unconfigured instance can create its first admin
-/// and users can sign in; everything else requires the fallback auth policy. Role-based restrictions on
-/// the user-management routes come with the later RBAC step.
+/// and users can sign in; everything else requires the fallback auth policy. The user-management routes
+/// (list/create/delete users) additionally require the admin role — without that gate any authenticated
+/// user could create an admin account for themselves and escalate to full control (capability toggle →
+/// Inline Code → RCE). change-password is self-service (it only ever targets the caller's own account).
 /// </summary>
 public static class AuthEndpoints
 {
@@ -66,7 +68,7 @@ public static class AuthEndpoints
             }
             await SignInAsync(ctx, user);
             return Results.Ok(new { username = user.Username });
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Login);
 
         app.MapPost("/api/auth/logout", async (HttpContext ctx) =>
         {
@@ -74,14 +76,18 @@ public static class AuthEndpoints
             return Results.Ok(new { });
         });
 
-        app.MapGet("/api/auth/users", async (UserService users) =>
+        app.MapGet("/api/auth/users", async (UserService users, AuthOptions auth, ClaimsPrincipal caller) =>
         {
+            if (auth.RequireAdmin(caller) is { } denied) return denied;
             var list = await users.ListAsync();
             return Results.Ok(list.Select(u => new { id = u.Id, username = u.Username, role = u.Role, createdAt = u.CreatedAt }));
         });
 
-        app.MapPost("/api/auth/users", async (CreateUserRequest request, UserService users) =>
+        app.MapPost("/api/auth/users", async (CreateUserRequest request, UserService users, AuthOptions auth, ClaimsPrincipal caller) =>
         {
+            // Admin-only: creating accounts (and honoring the client-supplied role) is a privileged action.
+            // Without this gate a low-privilege user could POST {role:"admin"} and self-promote.
+            if (auth.RequireAdmin(caller) is { } denied) return denied;
             try
             {
                 var user = await users.CreateAsync(request.Username, request.Password, string.IsNullOrWhiteSpace(request.Role) ? "user" : request.Role!);
@@ -97,8 +103,9 @@ public static class AuthEndpoints
             }
         });
 
-        app.MapDelete("/api/auth/users/{id}", async (string id, HttpContext ctx, UserService users) =>
+        app.MapDelete("/api/auth/users/{id}", async (string id, HttpContext ctx, UserService users, AuthOptions auth, ClaimsPrincipal caller) =>
         {
+            if (auth.RequireAdmin(caller) is { } denied) return denied;
             // Guard against self-lockout mid-session.
             if (ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value == id)
             {
