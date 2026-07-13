@@ -55,7 +55,7 @@ public class FileNodeTaskTests : IDisposable
     private static Dictionary<string, object?> Result(LegacyNodeResult result)
     {
         var success = Assert.IsType<LegacyNodeResult.Success>(result);
-        return (Dictionary<string, object>)success.Outputs!["result"];
+        return (Dictionary<string, object?>)success.Outputs!["result"]!;
     }
 
     [Fact]

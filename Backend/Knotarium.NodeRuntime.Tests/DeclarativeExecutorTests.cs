@@ -159,6 +159,7 @@ public class DeclarativeExecutorTests
         Assert.NotNull(result.Payload);
 
         var payloadDict = JsonSerializer.Deserialize<Dictionary<string, string>>(result.Payload.Value.GetRawText());
+        Assert.NotNull(payloadDict);
         Assert.Equal("Hello from Logger", payloadDict["result"]);
     }
 

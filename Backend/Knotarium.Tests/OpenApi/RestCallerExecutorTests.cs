@@ -350,7 +350,7 @@ public class RestCallerExecutorTests
     public async Task Execute_PostWithBody_SetsContentType()
     {
         var spec = BuildSpec("api4", method: "POST", pathTemplate: "/pets",
-            requestBody: new ApiRequestBody(true, new[] { "application/json" }, null));
+            requestBody: new ApiRequestBody(true, new[] { "application/json" }, null!));
         var serverCfg       = MakeServerConfig(baseUrl: "https://api.example.com");
         string? contentType = null;
 

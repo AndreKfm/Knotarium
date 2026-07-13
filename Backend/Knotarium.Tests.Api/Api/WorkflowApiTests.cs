@@ -709,7 +709,7 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
         var activeVersion = await activeVersionResponse.Content.ReadFromJsonAsync<ActiveWorkflowVersion>();
         Assert.NotNull(activeVersion);
         Assert.Equal(workflowId.Value, activeVersion.WorkflowDefinitionId.Value);
-        Assert.NotNull(activeVersion.WorkflowVersionId);
+        Assert.NotEqual(default, activeVersion.WorkflowVersionId);
     }
 
     [Fact]
