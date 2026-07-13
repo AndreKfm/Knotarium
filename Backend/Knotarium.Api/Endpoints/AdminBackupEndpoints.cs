@@ -22,8 +22,12 @@ public static class AdminBackupEndpoints
         app.MapPost("/api/admin/backup", async (
             CreateBackupRequest request,
             Knotarium.Features.Backup.BackupService backupService,
+            Knotarium.Api.Services.Auth.AuthOptions auth,
+            System.Security.Claims.ClaimsPrincipal user,
             CancellationToken cancellationToken) =>
         {
+            // A full-instance backup contains every secret in re-encryptable form — admin only.
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             if (request is null)
             {
                 return Results.BadRequest(new { message = "A request body is required." });
@@ -56,8 +60,11 @@ public static class AdminBackupEndpoints
         app.MapPost("/api/admin/backup/inspect", async (
             HttpRequest request,
             Knotarium.Features.Backup.BackupService backupService,
+            Knotarium.Api.Services.Auth.AuthOptions auth,
+            System.Security.Claims.ClaimsPrincipal user,
             CancellationToken cancellationToken) =>
         {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             if (!request.HasFormContentType)
             {
                 return Results.BadRequest(new { message = "Request must be multipart form-data with a 'backup' file and 'passphrase'." });
@@ -100,8 +107,11 @@ public static class AdminBackupEndpoints
         app.MapPost("/api/admin/restore", async (
             HttpRequest request,
             Knotarium.Features.Backup.BackupService backupService,
+            Knotarium.Api.Services.Auth.AuthOptions auth,
+            System.Security.Claims.ClaimsPrincipal user,
             CancellationToken cancellationToken) =>
         {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             if (!request.HasFormContentType)
             {
                 return Results.BadRequest(new { message = "Request must be multipart form-data with a 'backup' file, 'passphrase', and 'confirm'." });

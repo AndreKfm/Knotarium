@@ -41,6 +41,7 @@ public sealed class UserService
         {
             throw new ArgumentException("Password must be at least 8 characters.");
         }
+        var normalizedRole = NormalizeRole(role);
         if (await _db.Users.AnyAsync(u => u.Username == normalized, ct))
         {
             throw new InvalidOperationException("A user with that name already exists.");
@@ -51,7 +52,7 @@ public sealed class UserService
         {
             Id = Guid.NewGuid().ToString("N"),
             Username = normalized,
-            Role = string.IsNullOrWhiteSpace(role) ? "admin" : role,
+            Role = normalizedRole,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -125,4 +126,28 @@ public sealed class UserService
     }
 
     private static string Normalize(string username) => (username ?? string.Empty).Trim().ToLowerInvariant();
+
+    /// <summary>The roles the system recognizes. "admin" holds every privileged mutation gate.</summary>
+    public const string AdminRole = "admin";
+    public const string UserRole = "user";
+
+    /// <summary>
+    /// Constrain the assigned role to a known value. A blank role keeps the historical "admin" default
+    /// (used by first-run setup and the config seed, which intentionally create an admin); any other
+    /// value must be one of the recognized roles, so a caller can't persist an arbitrary role string.
+    /// </summary>
+    private static string NormalizeRole(string role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return AdminRole;
+        }
+        var trimmed = role.Trim().ToLowerInvariant();
+        return trimmed switch
+        {
+            AdminRole => AdminRole,
+            UserRole => UserRole,
+            _ => throw new ArgumentException($"Unknown role '{role}'. Allowed roles: {AdminRole}, {UserRole}.")
+        };
+    }
 }

@@ -25,8 +25,26 @@ public static class ExecutionEndpoints
 {
     public static void MapExecutionEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/executions", async (StartExecutionRequest request, IWorkflowStore workflowStore, ExecutionStarter executionStarter, ActiveWorkflowVersionService activeWorkflowVersionService, Knotarium.Api.Services.RuntimeArmingState armingState) =>
+        // Cap the anonymous webhook trigger's request body (attacker-controlled InputVariables). Kestrel
+        // enforces the limit during body read, so an oversized payload never gets fully buffered/parsed.
+        var webhookMaxBodyBytes = app.Configuration.GetValue("Security:WebhookMaxBodyBytes", 1_048_576L);
+
+        app.MapPost("/api/executions", async (StartExecutionRequest request, HttpRequest httpRequest, IWorkflowStore workflowStore, ExecutionStarter executionStarter, ActiveWorkflowVersionService activeWorkflowVersionService, Knotarium.Api.Services.RuntimeArmingState armingState, Knotarium.Api.Services.WebhookSecretService webhookSecrets, CancellationToken cancellationToken) =>
         {
+            var workflowId = new WorkflowDefinitionId(request.WorkflowDefinitionId);
+
+            // Optional per-workflow webhook secret, checked FIRST so an unauthenticated caller gets 401
+            // regardless of runtime/arming state (never leak that state to an unauthorized client). When one
+            // is configured, the caller must present the raw secret in the X-Knotarium-Webhook-Secret header
+            // (constant-time compared). Workflows with no secret configured stay open, preserving the legacy
+            // machine-facing contract.
+            var presentedSecret = httpRequest.Headers[Knotarium.Api.Services.WebhookSecretService.HeaderName].FirstOrDefault();
+            var secretCheck = await webhookSecrets.VerifyAsync(request.WorkflowDefinitionId, presentedSecret, cancellationToken);
+            if (secretCheck == Knotarium.Api.Services.WebhookSecretCheck.Invalid)
+            {
+                return Results.Json(new { message = "Invalid or missing webhook secret." }, statusCode: StatusCodes.Status401Unauthorized);
+            }
+
             // Global kill-switch: external (webhook/automatic) triggers are paused while disarmed; only the
             // manual Run endpoint executes in that state.
             if (!armingState.IsArmed)
@@ -34,7 +52,6 @@ public static class ExecutionEndpoints
                 return Results.Conflict(new { message = "Runtime is disarmed. Arm the runtime to allow external triggers." });
             }
 
-            var workflowId = new WorkflowDefinitionId(request.WorkflowDefinitionId);
             var workflow = await workflowStore.GetAsync(workflowId);
             if (workflow == null)
             {
@@ -65,7 +82,18 @@ public static class ExecutionEndpoints
             }
 
             return Results.Accepted($"/api/executions/{outcome.Instance!.Id.Value}", outcome.Instance);
-        }).AllowAnonymous();   // machine-facing webhook/external trigger — gated by the arming switch + workflow-enabled state, not a user session
+        })
+        .AllowAnonymous()   // machine-facing webhook/external trigger — gated by the arming switch + workflow-enabled state (+ optional per-workflow secret), not a user session
+        .RequireRateLimiting(RateLimitPolicies.AnonymousMachine)
+        .AddEndpointFilter(async (efContext, next) =>
+        {
+            var sizeFeature = efContext.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false })
+            {
+                sizeFeature.MaxRequestBodySize = webhookMaxBodyBytes;
+            }
+            return await next(efContext);
+        });
 
         app.MapPost("/api/executions/resume", async (
             ResumeExecutionRequest request,
@@ -84,7 +112,9 @@ public static class ExecutionEndpoints
             return success
                 ? Results.Ok(new { message = "Workflow resume request registered." })
                 : Results.BadRequest(new { message = "Failed to resume execution." });
-        }).AllowAnonymous();   // machine-facing resume — authenticated by the per-run correlation token, not a user session
+        })
+        .AllowAnonymous()   // machine-facing resume — authenticated by the per-run correlation token, not a user session
+        .RequireRateLimiting(RateLimitPolicies.AnonymousMachine);
 
         app.MapGet("/api/executions", async (AppDbContext db, string? status, string? search) =>
         {

@@ -32,8 +32,10 @@ public static class CredentialEndpoints
             return Results.Ok(maskedList);
         });
 
-        app.MapPost("/api/credentials", async (CreateCredentialRequest request, AppDbContext db, ICredentialCipher cipher) =>
+        app.MapPost("/api/credentials", async (CreateCredentialRequest request, AppDbContext db, ICredentialCipher cipher, Knotarium.Api.Services.Auth.AuthOptions auth, System.Security.Claims.ClaimsPrincipal user) =>
         {
+            // Writing a credential (a plaintext secret at the boundary) is an admin action.
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             if (string.IsNullOrWhiteSpace(request.Id) || string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Value))
             {
                 return Results.BadRequest(new { message = "Id, Name, and Value are required" });
@@ -80,8 +82,9 @@ public static class CredentialEndpoints
             }
         });
 
-        app.MapDelete("/api/credentials/{id}", async (string id, AppDbContext db) =>
+        app.MapDelete("/api/credentials/{id}", async (string id, AppDbContext db, Knotarium.Api.Services.Auth.AuthOptions auth, System.Security.Claims.ClaimsPrincipal user) =>
         {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             var cred = await db.Credentials.FindAsync(id);
             if (cred == null)
             {

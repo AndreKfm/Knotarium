@@ -226,11 +226,47 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Rate limiting for the abuse-prone surfaces: interactive login and the anonymous machine routes
+// (webhook trigger + resume). See RateLimitPolicies.
+builder.Services.AddKnotariumRateLimiting(builder.Configuration);
+
+// Optional per-workflow webhook secret guarding the anonymous POST /api/executions trigger.
+builder.Services.AddScoped<Knotarium.Api.Services.WebhookSecretService>();
+
 // Authentication (Gap 3, step 1): cookie-based login gating the management API. On by default; the
 // integration-test factory sets Auth:Enabled=false so unauthenticated endpoint tests keep working.
 // The SPA is same-origin (prod wwwroot; dev via the Vite /api proxy), so the session cookie flows
 // without cross-origin credential handling.
 var authEnabled = builder.Configuration.GetValue("Auth:Enabled", true);
+
+// In no-auth mode every endpoint (including the capability toggle + Inline Code) is anonymous, which is
+// only safe on a loopback-bound instance. Refuse to start if configuration binds a non-loopback address
+// without an explicit opt-in, so "Auth:Enabled=false" on 0.0.0.0 can't silently expose an unauthenticated
+// RCE surface to the LAN. Enforced outside Development (dev binds plain HTTP / device IPs freely); a warning
+// is logged in Development.
+if (!authEnabled)
+{
+    var nonLoopback = Knotarium.Api.Services.LoopbackBindingGuard.NonLoopbackBindings(builder.Configuration);
+    var overrideAllowed = builder.Configuration.GetValue(Knotarium.Api.Services.LoopbackBindingGuard.OverrideConfigKey, false);
+    if (nonLoopback.Count > 0 && !overrideAllowed)
+    {
+        var message =
+            "Authentication is disabled (Auth:Enabled=false) but the server is configured to bind a non-loopback " +
+            $"address ({string.Join(", ", nonLoopback)}). In no-auth mode every endpoint is anonymous, so this would " +
+            "expose an unauthenticated remote-code-execution surface. Bind loopback only (e.g. http://127.0.0.1:PORT), " +
+            "enable authentication (Auth:Enabled=true), or set " +
+            $"{Knotarium.Api.Services.LoopbackBindingGuard.OverrideConfigKey}=true to accept the risk (e.g. behind a trusted reverse proxy).";
+        if (builder.Environment.IsDevelopment())
+        {
+            Console.Error.WriteLine("[WARN] " + message);
+        }
+        else
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+}
+
 // Exposed so endpoints can enforce admin-only mutations (a no-op when auth is disabled).
 builder.Services.AddSingleton(new Knotarium.Api.Services.Auth.AuthOptions(authEnabled));
 builder.Services.AddScoped<UserService>();
@@ -242,6 +278,12 @@ if (authEnabled)
             options.Cookie.Name = "kg_auth";
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Lax;
+            // Never send the session cookie over cleartext HTTP in a real deployment. In Development the
+            // dev server / tests run plain HTTP, so relax to SameAsRequest there; everywhere else the
+            // cookie is HTTPS-only (defends the LAN self-hosted plain-HTTP case).
+            options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
             options.ExpireTimeSpan = TimeSpan.FromDays(7);
             options.SlidingExpiration = true;
             // This is an API, not an MVC app: answer 401/403 instead of redirecting to a login page.
@@ -260,6 +302,7 @@ if (authEnabled)
 var app = builder.Build();
 
 app.UseCors();
+app.UseRateLimiter();
 app.UseHttpsRedirection();
 
 // Serve the bundled single-page UI when a built `wwwroot` sits next to the executable
@@ -334,6 +377,7 @@ app.MapAdminBackupEndpoints();
 app.MapWorkflowTriggerEndpoints();
 app.MapRuntimeSettingsEndpoints();
 app.MapExecutionEndpoints();
+app.MapWebhookSecretEndpoints();
 app.MapCredentialEndpoints();
 app.MapNotificationChannelEndpoints();
 app.MapHostEndpoints();
