@@ -22,12 +22,15 @@ public static class AuthEndpoints
     public static void MapAuthEndpoints(this WebApplication app)
     {
         // Whether login is needed and whether the instance still needs its first admin.
-        app.MapGet("/api/auth/status", async (HttpContext ctx, UserService users) =>
+        app.MapGet("/api/auth/status", async (HttpContext ctx, UserService users, AuthOptions authOptions) =>
         {
-            var setupRequired = await users.CountAsync() == 0;
+            // When auth is disabled (single-operator / no-auth mode) there is no login and no first-run setup:
+            // every endpoint is already anonymous, so the client must not gate the app behind a sign-in.
+            var setupRequired = authOptions.Enabled && (await users.CountAsync() == 0);
             var authenticated = ctx.User.Identity?.IsAuthenticated == true;
             return Results.Ok(new
             {
+                enabled = authOptions.Enabled,
                 authenticated,
                 username = authenticated ? ctx.User.Identity!.Name : null,
                 userId = authenticated ? ctx.User.FindFirst(ClaimTypes.NameIdentifier)?.Value : null,
