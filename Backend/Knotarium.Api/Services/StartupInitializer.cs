@@ -62,6 +62,10 @@ public static class StartupInitializer
 
             try
             {
+                // Switch the file to WAL once (persists in the file header, so every later EF/journal-writer
+                // connection inherits it): readers don't block the single writer, and appends are cheaper.
+                Knotarium.Infrastructure.Persistence.SqlitePragmas.EnableWal(connection);
+
                 using var command = connection.CreateCommand();
                 command.CommandText = "PRAGMA table_info('ExecutionInstances');";
 

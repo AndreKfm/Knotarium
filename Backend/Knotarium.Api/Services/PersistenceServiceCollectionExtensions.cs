@@ -55,10 +55,13 @@ public static class PersistenceServiceCollectionExtensions
             provider.Configure(options, dbConnectionString);
         });
 
-        // Register high-speed journal writer
+        // Register high-speed journal writer. The SQLite writer is given the SAME resolved connection string
+        // as EF (not re-read from raw config) so it always targets EF's database file — otherwise a productive
+        // build, where EF's file is anchored in the shared data directory, would silently write the journal to a
+        // different (relative) file, and the startup WAL switch would not cover the writer's file.
         if (string.Equals(dbProviderName, "SQLite", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddSingleton<SqliteExecutionJournalWriter>();
+            services.AddSingleton(new SqliteExecutionJournalWriter(dbConnectionString));
         }
         else
         {
