@@ -1,11 +1,23 @@
 import type { Node as RFNode, Edge as RFEdge } from '@xyflow/react';
 import type { WorkflowDefinition, NodeDefinition, EdgeDefinition } from '../types';
 import { orderParentsBeforeChildren } from '../node-editor/loopContainment';
+import { computeNestedAutoLayout } from '../node-editor/autoLayout';
 
 // Branch nodes expose semantic output ports (success/error, true/false, cases, …) and keep them.
 const BRANCH_NODE_TYPES = new Set([
   'condition', 'httprequest', 'transform', 'merge', 'switch', 'scheduler', 'forloop', 'parallelforeach',
 ]);
+
+/**
+ * True if the definition carries at least one saved node position. Position-less definitions (built-in
+ * gallery examples, freshly imported/generated graphs) are auto-laid-out on load instead of trusting the
+ * stored coordinates. Shared by the mapper's own fallback and the editor's post-measure auto-tidy.
+ */
+export function definitionHasSavedPositions(definition: WorkflowDefinition): boolean {
+  return (definition.nodes || []).some(
+    (n) => typeof (n.properties?._metadata as { x?: number } | undefined)?.x === 'number',
+  );
+}
 
 function isBranchNodeType(nodeType: string | undefined): boolean {
   if (!nodeType) return false;
@@ -110,6 +122,36 @@ export const schemaMapper = {
       targetHandle: (!edge.input || edge.input === 'default') ? 'in' : edge.input,
       animated: false,
     }));
+
+    // If the definition carries NO saved positions (built-in gallery examples, freshly imported/generated
+    // graphs), lay it out with the same dagre algorithm as the editor "Tidy" button instead of the naive
+    // per-index fallback — otherwise the graph opens as a zig-zag that has to be tidied by hand. Only kicks in
+    // when nothing was placed, so a user's saved layout is never overridden.
+    const hasSavedLayout = definitionHasSavedPositions(definition);
+    if (!hasSavedLayout && nodes.length > 0) {
+      const layout = computeNestedAutoLayout(
+        nodes.map((n) => ({
+          id: n.id,
+          type: n.type,
+          parentId: n.parentId,
+          width: typeof n.style?.width === 'number' ? n.style.width : undefined,
+          height: typeof n.style?.height === 'number' ? n.style.height : undefined,
+        })),
+        edges.map((e) => ({ source: e.source, target: e.target })),
+        { direction: 'LR' },
+      );
+      const posById = new Map(layout.map((p) => [p.id, p]));
+      for (const node of nodes) {
+        const p = posById.get(node.id);
+        if (!p) continue;
+        node.position = { x: p.x, y: p.y };
+        // computeNestedAutoLayout returns a fitted box for container nodes; adopt it so loop/subflow
+        // bodies don't overflow their frame.
+        if (typeof p.width === 'number' && typeof p.height === 'number') {
+          node.style = { ...node.style, width: p.width, height: p.height };
+        }
+      }
+    }
 
     // React Flow silently drops a nested node's containment if the child appears before its parent in the
     // array — the child then pops OUT of its loop/group container. Guarantee parent-before-child order so a

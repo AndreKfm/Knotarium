@@ -71,6 +71,7 @@ vi.mock('../utils/schemaMapper', () => ({
     toReactFlow: () => ({ nodes: loadedGraph.nodes, edges: loadedGraph.edges }),
     toBackend: (_id: string, name: string, nodes: any[], edges: any[]) => ({ name, nodes, edges }),
   },
+  definitionHasSavedPositions: () => true,
 }));
 
 vi.mock('../utils/api', () => ({
@@ -123,6 +124,7 @@ vi.mock('@xyflow/react', async () => {
       getZoom: () => 1,
     }),
     useStoreApi: () => ({ setState: vi.fn(), getState: () => ({}) }),
+    useNodesInitialized: () => false,
     useConnection: (selector?: (c: { inProgress: boolean }) => unknown) =>
       selector ? selector({ inProgress: false }) : { inProgress: false },
     useNodeConnections: () => [],
