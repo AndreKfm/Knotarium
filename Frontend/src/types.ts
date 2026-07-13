@@ -41,6 +41,8 @@ export interface WorkflowMetadata {
 
 // ── Authentication ───────────────────────────────────────────────────────────
 export interface AuthStatus {
+  /** False when the server runs in no-auth / single-operator mode (Auth:Enabled=false): no login at all. */
+  enabled: boolean;
   authenticated: boolean;
   username: string | null;
   userId: string | null;
