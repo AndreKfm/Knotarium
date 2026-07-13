@@ -152,6 +152,83 @@ public class CrashRecoveryTests : IDisposable
         Assert.Contains(instance.JournalEntries, entry => entry.EventType == JournalEventTypes.ManualDecisionRecorded);
     }
 
+    [Fact]
+    public async Task FailOrphanedRunningRunsAsync_MarksStrandedRunningRunsFailed()
+    {
+        await using var context = await CreateContextAsync();
+
+        var orphanId = ExecutionInstanceId.New();
+        var completedId = ExecutionInstanceId.New();
+        context.ExecutionInstances.Add(new ExecutionInstance
+        {
+            Id = orphanId,
+            WorkflowDefinitionId = WorkflowDefinitionId.New(),
+            Status = ExecutionStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        context.ExecutionInstances.Add(new ExecutionInstance
+        {
+            Id = completedId,
+            WorkflowDefinitionId = WorkflowDefinitionId.New(),
+            Status = ExecutionStatus.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await context.SaveChangesAsync();
+
+        var recovered = await new RecoveryService(context).FailOrphanedRunningRunsAsync();
+
+        await using var verify = new AppDbContext(_dbContextOptions);
+        Assert.Equal(1, recovered);
+        Assert.Equal(ExecutionStatus.Failed, (await verify.ExecutionInstances.SingleAsync(e => e.Id == orphanId)).Status);
+        Assert.Equal(ExecutionStatus.Completed, (await verify.ExecutionInstances.SingleAsync(e => e.Id == completedId)).Status);
+    }
+
+    [Fact]
+    public async Task ReclaimStuckWorkItemsAsync_ResetsRunningItemsOfLiveRunsToPending()
+    {
+        await using var context = await CreateContextAsync();
+
+        var liveRunId = ExecutionInstanceId.New();
+        var deadRunId = ExecutionInstanceId.New();
+        context.ExecutionInstances.AddRange(
+            new ExecutionInstance { Id = liveRunId, WorkflowDefinitionId = WorkflowDefinitionId.New(), Status = ExecutionStatus.Suspended, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow },
+            new ExecutionInstance { Id = deadRunId, WorkflowDefinitionId = WorkflowDefinitionId.New(), Status = ExecutionStatus.Failed, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow });
+
+        var liveItemId = Guid.NewGuid();
+        var deadItemId = Guid.NewGuid();
+        context.ExecutionWorkItems.AddRange(
+            new ExecutionWorkItem { Id = liveItemId, ExecutionInstanceId = liveRunId, Type = "Resume", Payload = "{}", Status = WorkItemStatus.Running, CreatedAtUtc = DateTimeOffset.UtcNow },
+            new ExecutionWorkItem { Id = deadItemId, ExecutionInstanceId = deadRunId, Type = "Resume", Payload = "{}", Status = WorkItemStatus.Running, CreatedAtUtc = DateTimeOffset.UtcNow });
+        await context.SaveChangesAsync();
+
+        var reclaimed = await new RecoveryService(context).ReclaimStuckWorkItemsAsync();
+
+        await using var verify = new AppDbContext(_dbContextOptions);
+        Assert.Equal(1, reclaimed);
+        Assert.Equal(WorkItemStatus.Pending, (await verify.ExecutionWorkItems.SingleAsync(w => w.Id == liveItemId)).Status);
+        // A work item belonging to an already-terminal run is left alone (not revived).
+        Assert.Equal(WorkItemStatus.Running, (await verify.ExecutionWorkItems.SingleAsync(w => w.Id == deadItemId)).Status);
+    }
+
+    [Fact]
+    public async Task GetPendingRunIdsAsync_ReturnsOnlyPendingRuns()
+    {
+        await using var context = await CreateContextAsync();
+
+        var pendingId = ExecutionInstanceId.New();
+        context.ExecutionInstances.AddRange(
+            new ExecutionInstance { Id = pendingId, WorkflowDefinitionId = WorkflowDefinitionId.New(), Status = ExecutionStatus.Pending, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow },
+            new ExecutionInstance { Id = ExecutionInstanceId.New(), WorkflowDefinitionId = WorkflowDefinitionId.New(), Status = ExecutionStatus.Running, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow });
+        await context.SaveChangesAsync();
+
+        var pending = await new RecoveryService(context).GetPendingRunIdsAsync();
+
+        Assert.Single(pending);
+        Assert.Equal(pendingId, pending[0]);
+    }
+
     private async Task<AppDbContext> CreateContextAsync()
     {
         var context = new AppDbContext(_dbContextOptions);

@@ -192,6 +192,12 @@ builder.Services.AddHostedService<SchedulingWorker>();
 builder.Services.AddHostedService<PollingWorker>();
 // Bounds run-history growth: prunes old terminal runs (cascades to their journal + node states).
 builder.Services.AddHostedService<JournalRetentionWorker>();
+// Pauses arming (stops new runs) when free disk on the data volume falls below a threshold.
+builder.Services.AddHostedService(sp => new DiskSpaceGuardWorker(
+    sp.GetRequiredService<RuntimeArmingState>(),
+    builder.Configuration,
+    sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DiskSpaceGuardWorker>>(),
+    dataDir));
 
 // Built-in node tasks + node-task registry + shared Roslyn script compiler.
 builder.Services.AddBuiltInNodes();
