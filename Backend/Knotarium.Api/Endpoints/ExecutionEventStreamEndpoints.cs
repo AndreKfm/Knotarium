@@ -43,6 +43,16 @@ public static class ExecutionEventStreamEndpoints
                 }
             }
 
+            // Reserve a bounded subscriber slot before writing any SSE headers, so we can cleanly answer 503
+            // when the global live-subscriber cap is reached instead of accepting an unbounded connection.
+            var channel = publisher.TrySubscribe(execId);
+            if (channel is null)
+            {
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                await context.Response.WriteAsJsonAsync(new { message = "Live event subscriber limit reached; retry shortly." });
+                return;
+            }
+
             context.Response.ContentType = "text/event-stream";
             context.Response.Headers.CacheControl = "no-cache";
             context.Response.Headers.Connection = "keep-alive";
@@ -72,9 +82,8 @@ public static class ExecutionEventStreamEndpoints
                 entry.Timestamp < lastTimestamp
                 || (entry.Timestamp == lastTimestamp && seenEntryIdsAtLastTimestamp.Contains(entry.Id));
 
-            // Subscribe before catch-up so live entries produced during the DB read are buffered, not dropped.
-            var channel = Channel.CreateUnbounded<ExecutionJournal>();
-            publisher.Subscribe(execId, channel);
+            // Channel is already subscribed above (before headers) so live entries produced during the
+            // catch-up DB read are buffered, not dropped.
             try
             {
                 // If the client is resuming, anchor the cursor at the referenced entry so catch-up only

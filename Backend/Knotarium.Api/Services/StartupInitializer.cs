@@ -66,6 +66,20 @@ public static class StartupInitializer
                 // connection inherits it): readers don't block the single writer, and appends are cheaper.
                 Knotarium.Infrastructure.Persistence.SqlitePragmas.EnableWal(connection);
 
+                // Convert the file to incremental auto-vacuum (one-time VACUUM) so deleted rows can return
+                // disk to the OS. Best-effort: a VACUUM needs free space and exclusive access, so if it can't
+                // run right now, log and continue — retention still bounds logical growth and the next startup
+                // retries the conversion. Never block startup on a disk-reclaim optimization.
+                try
+                {
+                    Knotarium.Infrastructure.Persistence.SqlitePragmas.EnsureIncrementalAutoVacuum(connection);
+                }
+                catch (Exception vacuumEx)
+                {
+                    Console.Error.WriteLine(
+                        "[WARN] Could not enable incremental auto-vacuum (will retry next startup): " + vacuumEx.Message);
+                }
+
                 using var command = connection.CreateCommand();
                 command.CommandText = "PRAGMA table_info('ExecutionInstances');";
 
@@ -539,6 +553,17 @@ public static class StartupInitializer
                     LastError TEXT NULL,
                     FOREIGN KEY(WorkflowDefinitionId) REFERENCES WorkflowDefinitions(Id) ON DELETE CASCADE
                 );
+            ");
+
+            // Indexes for the two central poll loops, which scan for active triggers due to fire/poll. Without
+            // these, each 10s evaluation is a full table scan of Schedules / PollingTriggers.
+            db.Database.ExecuteSqlRaw(@"
+                CREATE INDEX IF NOT EXISTS IX_Schedules_IsActive_NextFireAtUtc
+                ON Schedules (IsActive, NextFireAtUtc);
+            ");
+            db.Database.ExecuteSqlRaw(@"
+                CREATE INDEX IF NOT EXISTS IX_PollingTriggers_IsActive_NextPollAtUtc
+                ON PollingTriggers (IsActive, NextPollAtUtc);
             ");
 
             db.Database.ExecuteSqlRaw(@"

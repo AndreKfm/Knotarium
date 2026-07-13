@@ -53,13 +53,9 @@ public static class TemplateEndpoints
                 var fileName = $"{slug}-{result.Manifest.TemplateVersion}{Knotarium.Features.Templates.TemplateFormat.Extension}";
                 return Results.File(result.Bytes, Knotarium.Features.Templates.TemplateFormat.ContentType, fileName);
             }
-            catch (Knotarium.Features.Templates.TemplateExportException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
-            }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -85,9 +81,9 @@ public static class TemplateEndpoints
                     privilegedNodes = result.PrivilegedNodes,
                 });
             }
-            catch (Knotarium.Features.Templates.TemplateArchiveException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
+                return mapped;
             }
         });
 
@@ -121,17 +117,9 @@ public static class TemplateEndpoints
                 var result = await installService.InstallAsync(bytes!, bindings, workflowName, parameterValues, cancellationToken);
                 return Results.Ok(result);
             }
-            catch (Knotarium.Features.Templates.TemplateArchiveException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
-            }
-            catch (Knotarium.Features.Templates.TemplateBindingException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
-            }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -166,13 +154,9 @@ public static class TemplateEndpoints
                     edges = payload.Content.Edges,
                 });
             }
-            catch (Knotarium.Features.Templates.TemplateArchiveException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
-            }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -215,9 +199,9 @@ public static class TemplateEndpoints
                     edges = payload.Content.Edges,
                 });
             }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -273,17 +257,9 @@ public static class TemplateEndpoints
                 var result = await installService.InstallAsync(bytes, bindings, workflowName, parameterValues, cancellationToken);
                 return Results.Ok(result);
             }
-            catch (Knotarium.Features.Templates.TemplateArchiveException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
-            }
-            catch (Knotarium.Features.Templates.TemplateBindingException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
-            }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -307,13 +283,9 @@ public static class TemplateEndpoints
                     ? Results.NotFound(new { message = "No version available to save for this workflow." })
                     : Results.Ok(saved);
             }
-            catch (Knotarium.Features.Templates.TemplateExportException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
-            }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -334,9 +306,9 @@ public static class TemplateEndpoints
                 var saved = await library.SaveArchiveAsync(bytes!, cancellationToken);
                 return Results.Ok(saved);
             }
-            catch (Knotarium.Features.Templates.TemplateArchiveException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
+                return mapped;
             }
         });
 
@@ -379,9 +351,9 @@ public static class TemplateEndpoints
                     edges = payload.Content.Edges,
                 });
             }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -426,17 +398,9 @@ public static class TemplateEndpoints
                 var result = await installService.InstallAsync(bytes, bindings, workflowName, parameterValues, cancellationToken);
                 return Results.Ok(result);
             }
-            catch (Knotarium.Features.Templates.TemplateArchiveException ex)
+            catch (System.Exception ex) when (MapTemplateException(ex) is { } mapped)
             {
-                return Results.BadRequest(new { message = ex.Message });
-            }
-            catch (Knotarium.Features.Templates.TemplateBindingException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
-            }
-            catch (Knotarium.Features.Templates.TemplateParameterException ex)
-            {
-                return Results.BadRequest(new { message = ex.Message, errors = ex.Errors });
+                return mapped;
             }
         });
 
@@ -454,6 +418,19 @@ public static class TemplateEndpoints
 
     // Reads the uploaded .kgtpl file from a multipart 'template' field into bytes; returns an error message
     // (and null bytes) when the request shape is wrong. The form is cached, so callers may re-read it for bindings.
+    // Maps the known template-portability exceptions to their HTTP result (all 400; binding/parameter
+    // failures also carry a field-level errors list), replacing the many repeated per-exception catch blocks.
+    // Returns null for an unmapped exception so the caller's filter lets it propagate (surfaces as 500),
+    // exactly as the original per-type catches did.
+    private static IResult? MapTemplateException(System.Exception exception) => exception switch
+    {
+        Knotarium.Features.Templates.TemplateBindingException ex => Results.BadRequest(new { message = ex.Message, errors = ex.Errors }),
+        Knotarium.Features.Templates.TemplateParameterException ex => Results.BadRequest(new { message = ex.Message, errors = ex.Errors }),
+        Knotarium.Features.Templates.TemplateArchiveException ex => Results.BadRequest(new { message = ex.Message }),
+        Knotarium.Features.Templates.TemplateExportException ex => Results.BadRequest(new { message = ex.Message }),
+        _ => null,
+    };
+
     private static async Task<(byte[]? Bytes, string? Error)> ReadTemplateUploadAsync(HttpRequest request, CancellationToken cancellationToken)
     {
         if (!request.HasFormContentType)

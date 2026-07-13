@@ -17,6 +17,10 @@ namespace Knotarium.Features.Notifications;
 /// </summary>
 public class FailureAlertWorker : BackgroundService
 {
+    // Bounded retry: transient dispatch failures (e.g. a momentary DB read error) are re-queued with a
+    // short backoff up to this many total attempts, then dropped so a poison item can't loop forever.
+    private const int MaxDeliveryAttempts = 3;
+
     private readonly FailureAlertQueue _queue;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<FailureAlertWorker> _logger;
@@ -37,10 +41,10 @@ public class FailureAlertWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            ExecutionInstanceId executionId;
+            FailureAlertItem item;
             try
             {
-                executionId = await _queue.DequeueAsync(stoppingToken);
+                item = await _queue.DequeueAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -49,16 +53,50 @@ public class FailureAlertWorker : BackgroundService
 
             try
             {
-                await DispatchAsync(executionId, stoppingToken);
+                await DispatchAsync(item.ExecutionId, stoppingToken);
             }
             catch (Exception ex)
             {
-                // Last-resort guard: alerting must never crash the worker loop.
-                _logger.LogError(ex, "Failed to dispatch failure alert for execution {ExecutionId}.", executionId);
+                // Last-resort guard: alerting must never crash the worker loop. Retry transient failures a
+                // bounded number of times with backoff before giving up, so an alert isn't silently dropped
+                // on the first hiccup.
+                _logger.LogError(ex, "Failed to dispatch failure alert for execution {ExecutionId} (attempt {Attempt}).", item.ExecutionId, item.Attempt + 1);
+                ScheduleRetry(item, stoppingToken);
             }
         }
 
         _logger.LogInformation("Failure Alert Worker stopped.");
+    }
+
+    private void ScheduleRetry(FailureAlertItem item, CancellationToken stoppingToken)
+    {
+        var nextAttempt = item.Attempt + 1;
+        if (nextAttempt >= MaxDeliveryAttempts)
+        {
+            _logger.LogError(
+                "Giving up on failure alert for execution {ExecutionId} after {Attempts} attempt(s).",
+                item.ExecutionId, MaxDeliveryAttempts);
+            return;
+        }
+
+        var backoff = TimeSpan.FromSeconds(Math.Min(30, 5 * nextAttempt));
+        // Fire-and-forget delayed re-queue so the drain loop isn't blocked; wrapped so nothing escapes.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(backoff, stoppingToken);
+                _queue.Requeue(item with { Attempt = nextAttempt });
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // Shutting down — drop the retry.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to schedule failure-alert retry for execution {ExecutionId}.", item.ExecutionId);
+            }
+        }, stoppingToken);
     }
 
     private async Task DispatchAsync(ExecutionInstanceId executionId, CancellationToken cancellationToken)
