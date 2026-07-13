@@ -80,7 +80,22 @@ public static class PersistenceServiceCollectionExtensions
                 ? (IExecutionJournalWriter)sp.GetRequiredService<SqliteExecutionJournalWriter>()
                 : sp.GetRequiredService<PostgresExecutionJournalWriter>();
 
-            return new InstrumentedExecutionJournalWriter(inner, telemetry);
+            IExecutionJournalWriter writer = new InstrumentedExecutionJournalWriter(inner, telemetry);
+
+            // Outermost layer: buffer + multi-row-flush the highest-volume write path so concurrent runs
+            // don't turn every node event into its own SQLite write-lock acquisition. Container-owned, so
+            // its IAsyncDisposable drain runs at host shutdown (after hosted services stop).
+            var executionOptions = sp.GetRequiredService<Knotarium.Features.Execution.ExecutionOptions>();
+            if (executionOptions.JournalBatchingEnabled)
+            {
+                writer = new Knotarium.Features.Execution.BatchingExecutionJournalWriter(
+                    writer,
+                    executionOptions,
+                    telemetry,
+                    sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Knotarium.Features.Execution.BatchingExecutionJournalWriter>>());
+            }
+
+            return writer;
         });
 
         return services;

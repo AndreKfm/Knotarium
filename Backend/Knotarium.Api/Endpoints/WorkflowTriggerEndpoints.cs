@@ -96,6 +96,12 @@ public static class WorkflowTriggerEndpoints
             var runtimeWorkflow = new WorkflowDefinition(workflow.Id, workflow.Name, activeVersion.Nodes, activeVersion.Edges);
 
             var outcome = await executionStarter.StartAsync(runtimeWorkflow, activeVersion.Id, "manual");
+            if (outcome.IsQueueFull)
+            {
+                return Results.Json(
+                    new { message = $"Execution queue is at capacity ({outcome.QueueDepthLimit} pending runs). Retry later." },
+                    statusCode: StatusCodes.Status429TooManyRequests);
+            }
             if (!outcome.IsStarted)
             {
                 return Results.BadRequest(new
@@ -219,6 +225,12 @@ public static class WorkflowTriggerEndpoints
             }
 
             var outcome = await executionStarter.StartAsync(runtimeWorkflow, activeVersion.Id, "schedule");
+            if (outcome.IsQueueFull)
+            {
+                return Results.Json(
+                    new { message = $"Execution queue is at capacity ({outcome.QueueDepthLimit} pending runs). Retry later." },
+                    statusCode: StatusCodes.Status429TooManyRequests);
+            }
             if (!outcome.IsStarted)
             {
                 return Results.BadRequest(new

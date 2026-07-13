@@ -25,4 +25,15 @@ public sealed class InstrumentedExecutionJournalWriter : IExecutionJournalWriter
 
         _telemetry.RecordJournalWriteLatency(sw.Elapsed);
     }
+
+    // Must forward to the inner writer's bulk path — the interface's default implementation would fall
+    // back to row-by-row WriteAsync and silently undo the batching layered above this decorator.
+    public async Task WriteBatchAsync(System.Collections.Generic.IReadOnlyList<ExecutionJournal> entries)
+    {
+        var sw = Stopwatch.StartNew();
+        await _inner.WriteBatchAsync(entries);
+        sw.Stop();
+
+        _telemetry.RecordJournalWrites(entries.Count, sw.Elapsed);
+    }
 }
