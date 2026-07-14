@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   AlertTriangle, Bell, Calendar, Code2, FileText, Forward, Hourglass, Megaphone,
-  MousePointerClick, Play, Puzzle, RadioTower, RefreshCw, Router, Send, Square, Variable, Zap,
+  MousePointerClick, Play, Puzzle, RadioTower, RefreshCw, Router, Send, Sparkles, Square, Variable, Zap,
 } from 'lucide-react';
 
 // Node palette icons: each node type gets a characteristic glyph; the tile is tinted by category, so
@@ -9,18 +9,19 @@ import {
 // from the design mockup; the rest use matching thin-stroke line icons. Unknown / imported types fall back
 // to a neutral glyph that is still category-tinted, so a third-party node is never invisible.
 
-export type NodeCategoryKey = 'Trigger' | 'Logic' | 'Data' | 'Network' | 'Utility';
+export type NodeCategoryKey = 'Trigger' | 'Logic' | 'Data' | 'Network' | 'Ai' | 'Utility';
 
 export const NODE_CATEGORY_STYLE: Record<NodeCategoryKey, { color: string; bg: string; border: string }> = {
   Trigger: { color: '#34d399', bg: 'rgba(52,211,153,0.12)', border: 'rgba(52,211,153,0.32)' },
   Logic: { color: '#a99bff', bg: 'rgba(124,108,240,0.14)', border: 'rgba(124,108,240,0.34)' },
   Data: { color: '#f0b429', bg: 'rgba(240,180,41,0.12)', border: 'rgba(240,180,41,0.32)' },
   Network: { color: '#22d3ee', bg: 'rgba(34,211,238,0.12)', border: 'rgba(34,211,238,0.32)' },
+  Ai: { color: '#f472b6', bg: 'rgba(244,114,182,0.12)', border: 'rgba(244,114,182,0.32)' },
   Utility: { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.30)' },
 };
 
 function normalizeCategoryKey(category: string): NodeCategoryKey {
-  return (['Trigger', 'Logic', 'Data', 'Network', 'Utility'] as const).includes(category as NodeCategoryKey)
+  return (['Trigger', 'Logic', 'Data', 'Network', 'Ai', 'Utility'] as const).includes(category as NodeCategoryKey)
     ? (category as NodeCategoryKey)
     : 'Utility';
 }
@@ -79,6 +80,7 @@ const NODE_TO_LUCIDE: Record<string, typeof Play> = {
   setVariable: Variable,
   setVariables: Variable,
   sendNotification: Bell,
+  aiPrompt: Sparkles,
 };
 
 function resolveGlyph(nodeId: string, glyphSize: number): ReactNode {

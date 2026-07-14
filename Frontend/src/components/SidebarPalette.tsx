@@ -34,10 +34,10 @@ interface PaletteNodeItem {
   searchText: string;
 }
 
-type PaletteCategory = 'Trigger' | 'Logic' | 'Data' | 'Network' | 'Utility';
+type PaletteCategory = 'Trigger' | 'Logic' | 'Data' | 'Network' | 'Ai' | 'Utility';
 type PaletteSection = 'RecentPinned' | PaletteCategory | 'Advanced';
 
-const orderedCategories: PaletteCategory[] = ['Trigger', 'Logic', 'Data', 'Network', 'Utility'];
+const orderedCategories: PaletteCategory[] = ['Trigger', 'Logic', 'Data', 'Network', 'Ai', 'Utility'];
 
 // Editor-only annotation node types are inserted from the canvas toolbar (a note button,
 // "group selection"), never dragged from the palette — so hide them here even though the
@@ -74,6 +74,8 @@ function normalizeCategory(category: string | null | undefined): PaletteCategory
     case 'integration':
     case 'network':
       return 'Network';
+    case 'ai':
+      return 'Ai';
     case 'utility':
     default:
       return 'Utility';
@@ -154,6 +156,7 @@ function SidebarPaletteImpl({ availableNodes, onAddNode, onDragStart, onImportOp
     Logic: [],
     Data: [],
     Network: [],
+    Ai: [],
     Utility: [],
   });
 

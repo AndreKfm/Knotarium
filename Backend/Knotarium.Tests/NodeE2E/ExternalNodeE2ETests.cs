@@ -267,4 +267,57 @@ public class ExternalNodeE2ETests
         Assert.Equal(NodeStatus.Failed, run.Node.Status);
         Assert.Empty(harness.SentNotifications);
     }
+
+    // --- aiPrompt ---
+
+    [Fact]
+    public async Task AiPrompt_text_mode_emits_the_model_reply_on_result()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("Bonjour");
+
+        var run = await harness.RunNodeAsync("aiPrompt", new Dictionary<string, object>
+        {
+            ["prompt"] = "Translate 'Hello' to French.",
+        });
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal(NodeStatus.Completed, run.Node.Status);
+        Assert.Equal("Bonjour", run.Node.Outputs["result"].ToString());
+        Assert.True(run.Ran("end-1"));
+        var request = Assert.Single(harness.ChatRequests);
+        Assert.Equal("Translate 'Hello' to French.", request.UserMessage);
+    }
+
+    [Fact]
+    public async Task AiPrompt_json_mode_emits_the_parsed_object_on_result()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("""{ "sentiment": "positive", "confidence": 0.9 }""");
+
+        var run = await harness.RunNodeAsync("aiPrompt", new Dictionary<string, object>
+        {
+            ["prompt"] = "Classify the sentiment.",
+            ["jsonSchema"] = """{ "type": "object", "properties": { "sentiment": { "type": "string" } } }""",
+        });
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal(NodeStatus.Completed, run.Node.Status);
+        var result = JsonSerializer.SerializeToElement(run.Node.Outputs["result"]);
+        Assert.Equal("positive", result.GetProperty("sentiment").GetString());
+    }
+
+    [Fact]
+    public async Task AiPrompt_without_a_prompt_fails_the_run_before_calling_the_model()
+    {
+        using var harness = new NodeE2EHarness();
+
+        // 'prompt' is a required manifest parameter, so the run fails at compile/validation
+        // time — the node never executes and no model call is made.
+        var run = await harness.RunNodeAsync("aiPrompt", new Dictionary<string, object>());
+
+        Assert.Equal(ExecutionStatus.Failed, run.Status);
+        Assert.False(run.Ran("end-1"));
+        Assert.Empty(harness.ChatRequests);
+    }
 }

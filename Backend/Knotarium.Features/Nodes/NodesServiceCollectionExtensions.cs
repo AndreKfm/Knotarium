@@ -26,6 +26,10 @@ public static class NodesServiceCollectionExtensions
         // overridden by the settings-backed store in AddSettings.
         services.TryAddSingleton<ICapabilityPolicy, DeniedCapabilityPolicy>();
 
+        // Chat completion for the AI prompt node. Defaults to a not-configured stub (fail closed);
+        // overridden by the real service in AddAiGeneration.
+        services.TryAddSingleton<Knotarium.Core.Contracts.Ai.IChatCompletionService, UnconfiguredChatCompletionService>();
+
         services.AddTransient<StartNodeTask>();
         services.AddTransient<ConditionNodeTask>();
         services.AddTransient<SetVariableNodeTask>();
@@ -45,6 +49,7 @@ public static class NodesServiceCollectionExtensions
         services.AddTransient<SmtpSendNodeTask>();
         services.AddTransient<ImapFetchNodeTask>();
         services.AddTransient<MqPublishNodeTask>();
+        services.AddTransient<AiPromptNodeTask>();
 
         // Shared Roslyn compiler for inline-code + custom-package C# (owns a process-wide compile cache).
         services.AddSingleton<CSharpScriptCompiler>();

@@ -42,6 +42,7 @@ public sealed class NodeE2EHarness : IDisposable
     private readonly StubSecretResolver _secrets = new();
     private readonly MutableCapabilityPolicy _capabilities = new();
     private readonly StubHttpHandler _httpHandler = new();
+    private readonly StubChatCompletionService _chat = new();
     private readonly StubNotificationChannelStore _channels = new();
     private readonly RecordingNotificationDispatcher _dispatcher = new();
     private readonly List<OptionItem> _resources = new();
@@ -67,9 +68,10 @@ public sealed class NodeE2EHarness : IDisposable
         services.AddLogging();
 
         // Register the permissive test policies BEFORE AddBuiltInNodes so its TryAdd secure-defaults
-        // (deny-all file access, all capabilities off) do not win.
+        // (deny-all file access, all capabilities off, not-configured chat completion) do not win.
         services.AddSingleton<IFileAccessPolicyProvider>(new PermissiveFileAccessPolicyProvider(WorkDir));
         services.AddSingleton<ICapabilityPolicy>(_capabilities);
+        services.AddSingleton<Knotarium.Core.Contracts.Ai.IChatCompletionService>(_chat);
 
         services.AddBuiltInNodes();
 
@@ -116,6 +118,16 @@ public sealed class NodeE2EHarness : IDisposable
         _httpHandler.Configure(status, body);
         return this;
     }
+
+    /// <summary>Set the canned reply the stubbed chat-completion service returns to the AI prompt node.</summary>
+    public NodeE2EHarness WithChatReply(string reply)
+    {
+        _chat.Configure(reply);
+        return this;
+    }
+
+    /// <summary>Chat-completion requests the AI prompt node issued, for assertions.</summary>
+    public IReadOnlyList<Knotarium.Core.Contracts.Ai.ChatCompletionRequest> ChatRequests => _chat.Requests;
 
     /// <summary>Register a notification channel the Send Notification node can resolve.</summary>
     public NodeE2EHarness WithNotificationChannel(NotificationChannel channel)
@@ -281,6 +293,18 @@ public sealed class NodeE2EHarness : IDisposable
             => Task.FromResult(_secrets.TryGetValue(secretRef, out var v) ? v : null);
         public Task<string?> GetSecretAsync(string credentialRef, CancellationToken cancellationToken = default)
             => ResolveAsync(credentialRef, cancellationToken);
+    }
+
+    private sealed class StubChatCompletionService : Knotarium.Core.Contracts.Ai.IChatCompletionService
+    {
+        private string _reply = "stub reply";
+        public List<Knotarium.Core.Contracts.Ai.ChatCompletionRequest> Requests { get; } = new();
+        public void Configure(string reply) => _reply = reply;
+        public Task<string> CompleteAsync(Knotarium.Core.Contracts.Ai.ChatCompletionRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(_reply);
+        }
     }
 
     private sealed class StubHttpHandler : HttpMessageHandler

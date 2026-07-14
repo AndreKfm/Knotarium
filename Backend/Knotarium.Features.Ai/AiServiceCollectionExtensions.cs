@@ -33,6 +33,10 @@ public static class AiServiceCollectionExtensions
         services.AddSingleton<ILlmChatProvider, GeminiChatProvider>();
         services.AddScoped<IWorkflowGenerator, LlmWorkflowGenerator>();
         services.AddScoped<WorkflowGenerationOrchestrator>();
+
+        // Runtime chat completion for AI nodes (aiPrompt). Registered here — BEFORE AddBuiltInNodes runs
+        // in the host — so the node slice's TryAdd not-configured fallback never wins in a real host.
+        services.AddScoped<IChatCompletionService, ChatCompletionService>();
         return services;
     }
 }
