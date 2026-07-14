@@ -381,6 +381,74 @@ public class ExternalNodeE2ETests
         Assert.False(run.Ran("log-spam"));
     }
 
+    // --- aiVerify ---
+
+    [Fact]
+    public async Task AiVerify_routes_the_contradicted_branch_and_ignores_the_others()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("""
+            { "claims": [ { "claim": "The camera supports AV1.", "status": "contradicted",
+              "evidence": [ { "sourceId": "source-1", "passageId": "line-2", "supportsClaim": false } ] } ] }
+            """);
+
+        var verify = new NodeDefinition(NodeId.Create("verify-1"), "aiVerify", new Dictionary<string, object>
+        {
+            ["content"] = "The camera supports AV1.",
+            ["sources"] = "The camera records H.264/H.265 only. It does not support AV1.",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logVerified = new NodeDefinition(NodeId.Create("log-verified"), "log", new Dictionary<string, object> { ["message"] = "ok" });
+        var logContradicted = new NodeDefinition(NodeId.Create("log-contradicted"), "log", new Dictionary<string, object> { ["message"] = "bad" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", verify.Id, "in"),
+            new EdgeDefinition("e-verified", verify.Id, "verified", logVerified.Id, "in"),
+            new EdgeDefinition("e-contradicted", verify.Id, "contradicted", logContradicted.Id, "in"),
+            new EdgeDefinition("e-end", logContradicted.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, verify, logVerified, logContradicted, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("contradicted", run.State("verify-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-contradicted"));
+        Assert.False(run.Ran("log-verified"));
+        Assert.True(run.Ran("end-1"));
+    }
+
+    [Fact]
+    public async Task AiVerify_downgrades_unbacked_verified_to_unsupported_and_routes_there()
+    {
+        using var harness = new NodeE2EHarness();
+        // Model claims verified but cites no supporting evidence — the deterministic gate downgrades it.
+        harness.WithChatReply("""{ "claims": [ { "claim": "unbacked", "status": "verified", "evidence": [] } ] }""");
+
+        var verify = new NodeDefinition(NodeId.Create("verify-1"), "aiVerify", new Dictionary<string, object>
+        {
+            ["content"] = "some claim",
+            ["sources"] = "unrelated reference text",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logUnsupported = new NodeDefinition(NodeId.Create("log-unsupported"), "log", new Dictionary<string, object> { ["message"] = "u" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", verify.Id, "in"),
+            new EdgeDefinition("e-unsupported", verify.Id, "unsupported", logUnsupported.Id, "in"),
+            new EdgeDefinition("e-end", logUnsupported.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, verify, logUnsupported, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("unsupported", run.State("verify-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-unsupported"));
+    }
+
     [Fact]
     public async Task AiPrompt_without_a_prompt_fails_the_run_before_calling_the_model()
     {

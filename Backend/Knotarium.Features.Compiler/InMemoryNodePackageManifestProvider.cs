@@ -352,6 +352,39 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
             new List<OutputDefinition>()
         ));
 
+        // 6j. AI Verify node — evidence gate. Checks the content's factual claims against the supplied
+        // sources claim-by-claim and routes the run by the overall verdict. Four FIXED branch outputs
+        // (declared here so socket validation works normally, unlike aiRouter's dynamic ports). The
+        // verdict itself is deterministic code over the model's structured claim JSON (see
+        // AiVerifyNodeTask): no supporting evidence downgrades to unsupported; the worst per-claim
+        // status wins. Emits the full audited record on `result`.
+        Register(new NodePackageManifest(
+            new NodePackageId("aiVerify"),
+            "1.0.0",
+            "AI Verify",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("content", "string", true, true, Description: "The text/AI output whose factual claims should be verified. Reference upstream data with {{ }}."),
+                new("sources", "string", true, true, Description: "Reference material to check against. Plain text, or a JSON array of {id, content} for per-source citations."),
+                new("instructions", "string", false, true, Description: "Optional extra guidance for the verification (domain rules, what counts as material)."),
+                new("model", "string", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>
+            {
+                new("verified"),
+                new("unsupported"),
+                new("contradicted"),
+                new("uncertain"),
+            }
+        ));
+
         // 7. SetVariable node manifest
         Register(new NodePackageManifest(
             new NodePackageId("setVariable"),
