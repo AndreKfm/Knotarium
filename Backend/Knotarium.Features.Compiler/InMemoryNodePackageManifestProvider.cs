@@ -325,15 +325,16 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
             }
         ));
 
-        // 6i. AI Classify node — routes the run down one of the node's configured category branches
-        // (selectedPort convention). Categories are per-node config, so NO outputs are declared here:
-        // an output-less manifest makes the compiler skip socket validation (same escape hatch the
-        // device pins use via their own type check), and the editor derives the handles from the
-        // 'categories' property plus the always-present 'otherwise' fallback branch.
+        // 6i. AI Router node — uses the configured LLM to evaluate the input and route the run down one
+        // of the node's configured category branches (selectedPort convention). Categories are per-node
+        // config, so NO outputs are declared here: an output-less manifest makes the compiler skip socket
+        // validation (same escape hatch the device pins use via their own type check), and the editor
+        // derives the handles from the 'categories' property plus the always-present 'otherwise' fallback.
+        // Description keeps "classify/categorize" wording so palette search still finds it by those terms.
         Register(new NodePackageManifest(
-            new NodePackageId("aiClassify"),
+            new NodePackageId("aiRouter"),
             "1.0.0",
-            "AI Classify",
+            "AI Router",
             "AI",
             NodeTier.Declarative,
             NodeSideEffectKind.IdempotentSideEffect,
@@ -342,9 +343,9 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
             new List<string> { "network" },
             new List<ParameterDefinition>
             {
-                new("input", "string", true, true, Description: "The text/data to classify. Reference upstream data with {{ }}."),
+                new("input", "string", true, true, Description: "The text/data to evaluate and route (classify/categorize). Reference upstream data with {{ }}."),
                 new("categories", "string", true, false, Description: "Category labels, comma- or newline-separated. Each label becomes an output branch, plus an 'otherwise' fallback."),
-                new("instructions", "string", false, true, Description: "Optional extra guidance for the classifier."),
+                new("instructions", "string", false, true, Description: "Optional extra guidance for the routing decision."),
                 new("model", "string", false, false, Description: "Override the configured model for this node only."),
                 new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
             },

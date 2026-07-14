@@ -27,8 +27,8 @@
         }
       },
       {
-        "Id": "classify-1",
-        "Type": "aiClassify",
+        "Id": "router-1",
+        "Type": "aiRouter",
         "Properties": {
           "input": "{{ $variables.customerMessage }}",
           "categories": "Complaint, Question, Praise",
@@ -54,7 +54,7 @@
         "Id": "log-other",
         "Type": "log",
         "Properties": {
-          "message": "Routed as '{{ $node.classify-1.output.category }}' (raw model answer: {{ $node.classify-1.output.reply }}) — no draft needed for this branch."
+          "message": "Routed as '{{ $node.router-1.output.category }}' (raw model answer: {{ $node.router-1.output.reply }}) — no draft needed for this branch."
         }
       },
       { "Id": "end-1", "Type": "end", "Properties": {} }
@@ -62,11 +62,11 @@
     "Edges": [
       { "Id": "e1", "From": "start-1", "Output": "result", "To": "setvar-1", "Input": "in" },
       { "Id": "e2", "From": "setvar-1", "Output": "result", "To": "extract-1", "Input": "in" },
-      { "Id": "e3", "From": "extract-1", "Output": "result", "To": "classify-1", "Input": "in" },
-      { "Id": "e4", "From": "classify-1", "Output": "Complaint", "To": "draft-1", "Input": "in" },
-      { "Id": "e5", "From": "classify-1", "Output": "Question", "To": "log-other", "Input": "in" },
-      { "Id": "e6", "From": "classify-1", "Output": "Praise", "To": "log-other", "Input": "in" },
-      { "Id": "e7", "From": "classify-1", "Output": "otherwise", "To": "log-other", "Input": "in" },
+      { "Id": "e3", "From": "extract-1", "Output": "result", "To": "router-1", "Input": "in" },
+      { "Id": "e4", "From": "router-1", "Output": "Complaint", "To": "draft-1", "Input": "in" },
+      { "Id": "e5", "From": "router-1", "Output": "Question", "To": "log-other", "Input": "in" },
+      { "Id": "e6", "From": "router-1", "Output": "Praise", "To": "log-other", "Input": "in" },
+      { "Id": "e7", "From": "router-1", "Output": "otherwise", "To": "log-other", "Input": "in" },
       { "Id": "e8", "From": "draft-1", "Output": "result", "To": "log-draft", "Input": "in" },
       { "Id": "e9", "From": "log-draft", "Output": "result", "To": "end-1", "Input": "in" },
       { "Id": "e10", "From": "log-other", "Output": "result", "To": "end-1", "Input": "in" }

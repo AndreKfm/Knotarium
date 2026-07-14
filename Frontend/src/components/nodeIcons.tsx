@@ -81,7 +81,7 @@ const NODE_TO_LUCIDE: Record<string, typeof Play> = {
   setVariables: Variable,
   sendNotification: Bell,
   aiPrompt: Sparkles,
-  aiClassify: Split,
+  aiRouter: Split,
 };
 
 function resolveGlyph(nodeId: string, glyphSize: number): ReactNode {

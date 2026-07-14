@@ -10,7 +10,7 @@ using Xunit;
 
 namespace Knotarium.Tests.Nodes;
 
-public class AiClassifyNodeTaskTests
+public class AiRouterNodeTaskTests
 {
     private sealed class ScriptedChat : IChatCompletionService
     {
@@ -42,7 +42,7 @@ public class AiClassifyNodeTaskTests
     [Fact]
     public async Task MissingInput_Fails()
     {
-        var task = new AiClassifyNodeTask(new ScriptedChat("unused"));
+        var task = new AiRouterNodeTask(new ScriptedChat("unused"));
         var result = await task.ExecuteAsync(Context(new() { ["categories"] = "a, b" }), CancellationToken.None);
 
         var failure = Assert.IsType<LegacyNodeResult.Failure>(result);
@@ -62,7 +62,7 @@ public class AiClassifyNodeTaskTests
             inputs["categories"] = categories;
         }
 
-        var task = new AiClassifyNodeTask(new ScriptedChat("unused"));
+        var task = new AiRouterNodeTask(new ScriptedChat("unused"));
         var result = await task.ExecuteAsync(Context(inputs), CancellationToken.None);
 
         var failure = Assert.IsType<LegacyNodeResult.Failure>(result);
@@ -74,7 +74,7 @@ public class AiClassifyNodeTaskTests
     {
         // Model answers lowercase with a period; the configured spelling is what the edges use.
         var chat = new ScriptedChat("billing.");
-        var task = new AiClassifyNodeTask(chat);
+        var task = new AiRouterNodeTask(chat);
 
         var result = await task.ExecuteAsync(Context(BaseInputs()), CancellationToken.None);
 
@@ -92,7 +92,7 @@ public class AiClassifyNodeTaskTests
     public async Task QuotedReply_StillMatches()
     {
         var chat = new ScriptedChat("\"Spam\"");
-        var task = new AiClassifyNodeTask(chat);
+        var task = new AiRouterNodeTask(chat);
 
         var result = await task.ExecuteAsync(Context(BaseInputs()), CancellationToken.None);
 
@@ -104,7 +104,7 @@ public class AiClassifyNodeTaskTests
     public async Task OffListReply_RetriesOnce_ThenMatches()
     {
         var chat = new ScriptedChat("this looks like an invoice complaint", "Billing");
-        var task = new AiClassifyNodeTask(chat);
+        var task = new AiRouterNodeTask(chat);
 
         var result = await task.ExecuteAsync(Context(BaseInputs()), CancellationToken.None);
 
@@ -118,12 +118,12 @@ public class AiClassifyNodeTaskTests
     public async Task OffListTwice_RoutesOtherwise_WithoutFailing()
     {
         var chat = new ScriptedChat("no idea", "still no idea");
-        var task = new AiClassifyNodeTask(chat);
+        var task = new AiRouterNodeTask(chat);
 
         var result = await task.ExecuteAsync(Context(BaseInputs()), CancellationToken.None);
 
         var success = Assert.IsType<LegacyNodeResult.Success>(result);
-        Assert.Equal(AiClassifyNodeTask.OtherwisePort, success.Outputs!["selectedPort"]);
+        Assert.Equal(AiRouterNodeTask.OtherwisePort, success.Outputs!["selectedPort"]);
         Assert.Equal(string.Empty, success.Outputs!["category"]);
         Assert.Equal("still no idea", success.Outputs!["reply"]);
     }
@@ -132,7 +132,7 @@ public class AiClassifyNodeTaskTests
     public async Task Instructions_And_Overrides_ArePassedThrough()
     {
         var chat = new ScriptedChat("Support");
-        var task = new AiClassifyNodeTask(chat);
+        var task = new AiRouterNodeTask(chat);
 
         var inputs = BaseInputs();
         inputs["instructions"] = "Prefer Support when a human reply is needed.";
@@ -150,11 +150,11 @@ public class AiClassifyNodeTaskTests
     [Fact]
     public async Task ProviderError_BecomesNodeFailure()
     {
-        var task = new AiClassifyNodeTask(new UnconfiguredChatCompletionService());
+        var task = new AiRouterNodeTask(new UnconfiguredChatCompletionService());
         var result = await task.ExecuteAsync(Context(BaseInputs()), CancellationToken.None);
 
         var failure = Assert.IsType<LegacyNodeResult.Failure>(result);
-        Assert.Contains("AI classify failed", failure.ErrorMessage);
+        Assert.Contains("AI Router failed", failure.ErrorMessage);
         Assert.Contains("not configured", failure.ErrorMessage);
     }
 
@@ -165,6 +165,6 @@ public class AiClassifyNodeTaskTests
     [InlineData("", new string[0])]
     public void ParseCategories_SplitsTrimsAndDedupes(string raw, string[] expected)
     {
-        Assert.Equal(expected, AiClassifyNodeTask.ParseCategories(raw));
+        Assert.Equal(expected, AiRouterNodeTask.ParseCategories(raw));
     }
 }
