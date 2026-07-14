@@ -307,6 +307,80 @@ public class ExternalNodeE2ETests
         Assert.Equal("positive", result.GetProperty("sentiment").GetString());
     }
 
+    // --- aiClassify ---
+
+    [Fact]
+    public async Task AiClassify_routes_only_the_matched_category_branch()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("Spam");
+
+        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiClassify", new Dictionary<string, object>
+        {
+            ["input"] = "Cheap watches, buy now!!!",
+            ["categories"] = "Billing, Spam",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logBilling = new NodeDefinition(NodeId.Create("log-billing"), "log", new Dictionary<string, object> { ["message"] = "billing" });
+        var logSpam = new NodeDefinition(NodeId.Create("log-spam"), "log", new Dictionary<string, object> { ["message"] = "spam" });
+        var logOtherwise = new NodeDefinition(NodeId.Create("log-otherwise"), "log", new Dictionary<string, object> { ["message"] = "otherwise" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", classify.Id, "in"),
+            new EdgeDefinition("e-billing", classify.Id, "Billing", logBilling.Id, "in"),
+            new EdgeDefinition("e-spam", classify.Id, "Spam", logSpam.Id, "in"),
+            new EdgeDefinition("e-otherwise", classify.Id, "otherwise", logOtherwise.Id, "in"),
+            new EdgeDefinition("e-end", logSpam.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(
+            new[] { start, classify, logBilling, logSpam, logOtherwise, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal(NodeStatus.Completed, run.State("classify-1").Status);
+        Assert.Equal("Spam", run.State("classify-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-spam"));
+        Assert.False(run.Ran("log-billing"));
+        Assert.False(run.Ran("log-otherwise"));
+        Assert.True(run.Ran("end-1"));
+    }
+
+    [Fact]
+    public async Task AiClassify_off_list_reply_routes_the_otherwise_branch()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("no idea what this is");
+
+        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiClassify", new Dictionary<string, object>
+        {
+            ["input"] = "gibberish",
+            ["categories"] = "Billing, Spam",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logSpam = new NodeDefinition(NodeId.Create("log-spam"), "log", new Dictionary<string, object> { ["message"] = "spam" });
+        var logOtherwise = new NodeDefinition(NodeId.Create("log-otherwise"), "log", new Dictionary<string, object> { ["message"] = "otherwise" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", classify.Id, "in"),
+            new EdgeDefinition("e-spam", classify.Id, "Spam", logSpam.Id, "in"),
+            new EdgeDefinition("e-otherwise", classify.Id, "otherwise", logOtherwise.Id, "in"),
+            new EdgeDefinition("e-end", logOtherwise.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, classify, logSpam, logOtherwise, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("otherwise", run.State("classify-1").Outputs["selectedPort"].ToString());
+        // Off-list means the classifier got its one repair pass before falling back.
+        Assert.Equal(2, harness.ChatRequests.Count);
+        Assert.True(run.Ran("log-otherwise"));
+        Assert.False(run.Ran("log-spam"));
+    }
+
     [Fact]
     public async Task AiPrompt_without_a_prompt_fails_the_run_before_calling_the_model()
     {

@@ -60,6 +60,7 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
             "imapfetch" => typeof(ImapFetchNodeTask),
             "mqpublish" => typeof(MqPublishNodeTask),
             "aiprompt" => typeof(AiPromptNodeTask),
+            "aiclassify" => typeof(AiClassifyNodeTask),
             "end" => typeof(EndNodeTask),
             _ => null
         };

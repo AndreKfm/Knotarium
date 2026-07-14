@@ -6,6 +6,7 @@ import { getTypeColor, getNodeIcon, renderPropertiesSummary, getStatusBadge, isL
 import { SubflowLanes, type SubflowInterface } from './SubflowLanes';
 import { ExternalDeviceLanes } from './ExternalDeviceLanes';
 import { readDeviceSurface } from '../node-editor/externalDevicePins';
+import { aiClassifyOutputHandles } from '../node-editor/aiClassifyPorts';
 import { useSubflowOpenStore } from '../stores/useSubflowOpenStore';
 import { canRenameNode, applyNodeRename } from '../node-editor/nodeRename';
 
@@ -309,6 +310,14 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
     : ['result'];
   const primaryOutputHandle = outputHandles[0];
   const statusBadge = getStatusBadge(execStatus);
+
+  // AI Classify node: one branch handle per configured category label plus the 'otherwise'
+  // fallback — derived from the node's own properties (see aiClassifyPorts.ts), not the manifest,
+  // so the handles follow the config live while editing.
+  const isAiClassify = type === 'aiClassify';
+  const aiClassifyHandles = isAiClassify
+    ? aiClassifyOutputHandles(data?.properties as Record<string, unknown> | undefined)
+    : [];
 
   // External device node: pins are derived from the selected events/actions (not static ports).
   // Pure inbound surface — events AND incoming actions are both source pins (right). See externalDevicePins.ts.
@@ -947,6 +956,43 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
+      {isAiClassify && (
+        <>
+          {aiClassifyHandles.map((handle, index) => {
+            // Distribute the branch handles evenly down the right edge; the trailing
+            // 'otherwise' fallback renders muted so real categories stand out.
+            const top = `${Math.round(((index + 1) / (aiClassifyHandles.length + 1)) * 100)}%`;
+            const isOtherwise = index === aiClassifyHandles.length - 1;
+            const color = isOtherwise ? 'var(--text-muted, #6b7280)' : 'var(--color-accent)';
+            return (
+              <span key={handle}>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id={handle}
+                  style={{ top, background: color, borderColor: color, ...glowFor(handle) }}
+                  {...portA11yProps(`${displayName} ${handle} branch output`)}
+                />
+                <span style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: `calc(${top} - 7px)`,
+                  fontSize: '0.6rem',
+                  fontWeight: 800,
+                  color,
+                  maxWidth: '45%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {handle}
+                </span>
+              </span>
+            );
+          })}
+        </>
+      )}
+
       {type === 'httpRequest' && (
         <>
           {/* Success Port */}
@@ -1096,7 +1142,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && !isContainer && type !== 'end' && !isExternalDevice && (
+      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && !isContainer && type !== 'end' && !isExternalDevice && !isAiClassify && (
         <Handle
           type="source"
           position={Position.Right}

@@ -325,6 +325,32 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
             }
         ));
 
+        // 6i. AI Classify node — routes the run down one of the node's configured category branches
+        // (selectedPort convention). Categories are per-node config, so NO outputs are declared here:
+        // an output-less manifest makes the compiler skip socket validation (same escape hatch the
+        // device pins use via their own type check), and the editor derives the handles from the
+        // 'categories' property plus the always-present 'otherwise' fallback branch.
+        Register(new NodePackageManifest(
+            new NodePackageId("aiClassify"),
+            "1.0.0",
+            "AI Classify",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("input", "string", true, true, Description: "The text/data to classify. Reference upstream data with {{ }}."),
+                new("categories", "string", true, false, Description: "Category labels, comma- or newline-separated. Each label becomes an output branch, plus an 'otherwise' fallback."),
+                new("instructions", "string", false, true, Description: "Optional extra guidance for the classifier."),
+                new("model", "string", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>()
+        ));
+
         // 7. SetVariable node manifest
         Register(new NodePackageManifest(
             new NodePackageId("setVariable"),
