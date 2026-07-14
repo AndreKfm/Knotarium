@@ -20,7 +20,19 @@ public static class ExecutionServiceCollectionExtensions
 {
     public static IServiceCollection AddExecution(this IServiceCollection services)
     {
-        services.AddSingleton<WorkflowExecutionQueue>();
+        // Clamped run-level knobs (concurrency, queue cap, journal batching), bound from the host's
+        // configuration at first resolve so AddExecution keeps its parameterless call shape.
+        services.AddSingleton(sp => ExecutionOptions.FromConfiguration(
+            sp.GetService<Microsoft.Extensions.Configuration.IConfiguration>()));
+        services.AddSingleton<ExecutionRuntimeMonitor>();
+        services.AddSingleton(sp =>
+        {
+            var queue = new WorkflowExecutionQueue(sp.GetRequiredService<ExecutionOptions>());
+            // Late-bind the metrics gauge to the live queue (telemetry is registered by the host's
+            // persistence wiring; absent in slim test containers).
+            sp.GetService<ExecutionTelemetry>()?.RegisterQueueDepthProvider(() => queue.Depth);
+            return queue;
+        });
         // Alias the producer seam to the same singleton so run-starting slices (Polling, Schedules)
         // enqueue through IWorkflowExecutionQueue without depending on the Execution slice.
         services.AddSingleton<IWorkflowExecutionQueue>(sp => sp.GetRequiredService<WorkflowExecutionQueue>());

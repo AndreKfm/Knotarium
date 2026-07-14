@@ -23,7 +23,9 @@ namespace Knotarium.Features.Execution;
 public sealed class ExecutionStarter(
     AppDbContext dbContext,
     WorkflowCompiler compiler,
-    WorkflowExecutionQueue queue)
+    WorkflowExecutionQueue queue,
+    ExecutionRuntimeMonitor? monitor = null,
+    ExecutionTelemetry? telemetry = null)
 {
     /// <summary>
     /// Compiles <paramref name="runtimeWorkflow"/> and, on success, persists and queues a Pending run
@@ -36,6 +38,15 @@ public sealed class ExecutionStarter(
         Dictionary<string, object>? globalVariables = null,
         CancellationToken cancellationToken = default)
     {
+        // Backpressure: reject BEFORE compiling or persisting anything, so a rejected start leaves no
+        // Pending run behind (a persisted-but-unqueued run would sit until the next restart's recovery).
+        if (queue.IsFull)
+        {
+            monitor?.StartRejected();
+            telemetry?.RecordRunRejected();
+            return ExecutionStartOutcome.QueueFull(queue.MaxDepth);
+        }
+
         var compilation = await compiler.CompileAsync(runtimeWorkflow, cancellationToken).ConfigureAwait(false);
         if (!compilation.IsSuccess || compilation.Plan is null)
         {
@@ -63,19 +74,27 @@ public sealed class ExecutionStarter(
 }
 
 /// <summary>
-/// Result of <see cref="ExecutionStarter.StartAsync"/>: either a queued <see cref="ExecutionInstance"/>
-/// (<see cref="IsStarted"/> is <see langword="true"/>) or the compilation diagnostics that blocked it.
+/// Result of <see cref="ExecutionStarter.StartAsync"/>: a queued <see cref="ExecutionInstance"/>
+/// (<see cref="IsStarted"/>), the compilation diagnostics that blocked it, or a queue-at-capacity
+/// rejection (<see cref="IsQueueFull"/> — the caller should answer 429).
 /// </summary>
 public sealed record ExecutionStartOutcome(
     ExecutionInstance? Instance,
-    ImmutableArray<CompilationDiagnostic> Diagnostics)
+    ImmutableArray<CompilationDiagnostic> Diagnostics,
+    int? QueueDepthLimit = null)
 {
     /// <summary>Whether a run was compiled, persisted and queued.</summary>
     public bool IsStarted => Instance is not null;
+
+    /// <summary>Whether the start was rejected because the execution queue reached its depth cap.</summary>
+    public bool IsQueueFull => QueueDepthLimit.HasValue;
 
     internal static ExecutionStartOutcome Started(ExecutionInstance instance) =>
         new(instance, ImmutableArray<CompilationDiagnostic>.Empty);
 
     internal static ExecutionStartOutcome CompilationFailed(ImmutableArray<CompilationDiagnostic> diagnostics) =>
         new(null, diagnostics);
+
+    internal static ExecutionStartOutcome QueueFull(int depthLimit) =>
+        new(null, ImmutableArray<CompilationDiagnostic>.Empty, depthLimit);
 }
