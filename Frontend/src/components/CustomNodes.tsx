@@ -22,6 +22,10 @@ export function getNodeDataOutputs(nodeType: string, properties?: Record<string,
   if (type === 'airouter') {
     return ['category', 'reply'];
   }
+  if (type === 'aidiff') {
+    // changeType = overall verdict, materialChanges = the meaningful diffs, result = full record.
+    return ['changeType', 'materialChanges', 'result'];
+  }
   if (type.startsWith('openapi.') || type === 'restcaller') {
     return ['body', 'statusCode'];
   }
@@ -1068,6 +1072,30 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
+      {type === 'aiDiff' && (
+        <>
+          {/* Semantic-diff verdict branches — fixed vocabulary. Material = attention, none = success. */}
+          {([
+            ['material', 'var(--color-warning)', 'MATERIAL', '25%'],
+            ['cosmetic', 'var(--text-muted, #6b7280)', 'COSMETIC', '50%'],
+            ['none', 'var(--color-success)', 'NO CHANGE', '75%'],
+          ] as const).map(([id, color, label, top]) => (
+            <span key={id}>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={id}
+                style={{ top, background: color, borderColor: color, ...glowFor(id) }}
+                {...portA11yProps(`${displayName} ${id} branch output`)}
+              />
+              <span style={{ position: 'absolute', right: '12px', top: `calc(${top} - 8px)`, fontSize: '0.6rem', fontWeight: 800, color }}>
+                {label}
+              </span>
+            </span>
+          ))}
+        </>
+      )}
+
       {isContainer && (
         <>
           {/* Inner-Left 'start' Port Notch Tab */}
@@ -1179,7 +1207,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && type !== 'aiVerify' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && (
+      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && type !== 'aiVerify' && type !== 'aiDiff' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && (
         <Handle
           type="source"
           position={Position.Right}

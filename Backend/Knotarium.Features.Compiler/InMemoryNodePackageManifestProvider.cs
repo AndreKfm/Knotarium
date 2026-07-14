@@ -385,6 +385,37 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
             }
         ));
 
+        // 6k. AI Semantic Diff node — compares two document versions by meaning and routes by whether
+        // anything material changed. Three FIXED branch outputs (declared here for normal socket
+        // validation). The verdict is deterministic code over the model's structured diff JSON (see
+        // AiDiffNodeTask): identical inputs short-circuit to 'none' with no LLM call; any material change
+        // → 'material'; changes-but-only-cosmetic → 'cosmetic'. Emits the full change record on `result`.
+        Register(new NodePackageManifest(
+            new NodePackageId("aiDiff"),
+            "1.0.0",
+            "AI Semantic Diff",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("previous", "string", true, true, Description: "The previous version of the document. Reference upstream data with {{ }}."),
+                new("current", "string", true, true, Description: "The current version to compare against the previous one."),
+                new("instructions", "string", false, true, Description: "Optional guidance on what counts as a material change for your domain."),
+                new("model", "string", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>
+            {
+                new("material"),
+                new("cosmetic"),
+                new("none"),
+            }
+        ));
+
         // 7. SetVariable node manifest
         Register(new NodePackageManifest(
             new NodePackageId("setVariable"),

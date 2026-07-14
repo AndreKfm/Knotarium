@@ -62,6 +62,7 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
             "aiprompt" => typeof(AiPromptNodeTask),
             "airouter" => typeof(AiRouterNodeTask),
             "aiverify" => typeof(AiVerifyNodeTask),
+            "aidiff" => typeof(AiDiffNodeTask),
             "end" => typeof(EndNodeTask),
             _ => null
         };
