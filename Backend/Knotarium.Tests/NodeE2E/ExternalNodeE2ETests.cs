@@ -449,6 +449,74 @@ public class ExternalNodeE2ETests
         Assert.True(run.Ran("log-unsupported"));
     }
 
+    // --- aiDiff ---
+
+    [Fact]
+    public async Task AiDiff_material_change_routes_the_material_branch()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("""
+            { "materialChanges": [ { "type": "deadline_changed", "old": "30 September", "new": "15 August", "impact": "high" } ],
+              "ignoredChanges": [] }
+            """);
+
+        var diff = new NodeDefinition(NodeId.Create("diff-1"), "aiDiff", new Dictionary<string, object>
+        {
+            ["previous"] = "Deliver by 30 September.",
+            ["current"] = "Deliver by 15 August.",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logMaterial = new NodeDefinition(NodeId.Create("log-material"), "log", new Dictionary<string, object> { ["message"] = "m" });
+        var logNone = new NodeDefinition(NodeId.Create("log-none"), "log", new Dictionary<string, object> { ["message"] = "n" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", diff.Id, "in"),
+            new EdgeDefinition("e-material", diff.Id, "material", logMaterial.Id, "in"),
+            new EdgeDefinition("e-none", diff.Id, "none", logNone.Id, "in"),
+            new EdgeDefinition("e-end", logMaterial.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, diff, logMaterial, logNone, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("material", run.State("diff-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-material"));
+        Assert.False(run.Ran("log-none"));
+        Assert.True(run.Ran("end-1"));
+    }
+
+    [Fact]
+    public async Task AiDiff_identical_documents_route_none_without_a_model_call()
+    {
+        using var harness = new NodeE2EHarness();
+        // No chat reply configured; the deterministic short-circuit must route 'none' without calling it.
+
+        var diff = new NodeDefinition(NodeId.Create("diff-1"), "aiDiff", new Dictionary<string, object>
+        {
+            ["previous"] = "Unchanged policy text.",
+            ["current"] = "Unchanged policy text.",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logNone = new NodeDefinition(NodeId.Create("log-none"), "log", new Dictionary<string, object> { ["message"] = "n" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", diff.Id, "in"),
+            new EdgeDefinition("e-none", diff.Id, "none", logNone.Id, "in"),
+            new EdgeDefinition("e-end", logNone.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, diff, logNone, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("none", run.State("diff-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-none"));
+        Assert.Empty(harness.ChatRequests);
+    }
+
     [Fact]
     public async Task AiPrompt_without_a_prompt_fails_the_run_before_calling_the_model()
     {

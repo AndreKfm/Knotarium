@@ -52,6 +52,7 @@ public static class NodesServiceCollectionExtensions
         services.AddTransient<AiPromptNodeTask>();
         services.AddTransient<AiRouterNodeTask>();
         services.AddTransient<AiVerifyNodeTask>();
+        services.AddTransient<AiDiffNodeTask>();
 
         // Shared Roslyn compiler for inline-code + custom-package C# (owns a process-wide compile cache).
         services.AddSingleton<CSharpScriptCompiler>();

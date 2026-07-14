@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   AlertTriangle, Bell, Calendar, Code2, FileText, Forward, Hourglass, Megaphone,
-  MousePointerClick, Play, Puzzle, RadioTower, RefreshCw, Router, Send, ShieldCheck, Sparkles, Split, Square, Variable, Zap,
+  FileDiff, MousePointerClick, Play, Puzzle, RadioTower, RefreshCw, Router, Send, ShieldCheck, Sparkles, Split, Square, Variable, Zap,
 } from 'lucide-react';
 
 // Node palette icons: each node type gets a characteristic glyph; the tile is tinted by category, so
@@ -83,6 +83,7 @@ const NODE_TO_LUCIDE: Record<string, typeof Play> = {
   aiPrompt: Sparkles,
   aiRouter: Split,
   aiVerify: ShieldCheck,
+  aiDiff: FileDiff,
 };
 
 function resolveGlyph(nodeId: string, glyphSize: number): ReactNode {
