@@ -297,6 +297,34 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
             }
         ));
 
+        // 6h. AI Prompt node — one LLM call over the incoming data (classify / extract / summarize /
+        // draft). Uses the instance-wide AI provider config; optional per-node model/token overrides.
+        // Idempotent: the call has no external side effect, so automatic retry after a transport
+        // failure is safe (the reply may differ, which a workflow using AI must tolerate anyway).
+        Register(new NodePackageManifest(
+            new NodePackageId("aiPrompt"),
+            "1.0.0",
+            "AI Prompt",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("prompt", "string", true, true, Description: "The task for the model. Reference upstream data with {{ }}."),
+                new("systemPrompt", "string", false, true, Description: "Optional role/instructions; a safe default is applied when empty."),
+                new("jsonSchema", "string", false, false, Description: "Optional JSON schema; when set, the node emits a parsed object conforming to it instead of raw text."),
+                new("model", "string", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>
+            {
+                new("result", "any"),
+            }
+        ));
+
         // 7. SetVariable node manifest
         Register(new NodePackageManifest(
             new NodePackageId("setVariable"),
