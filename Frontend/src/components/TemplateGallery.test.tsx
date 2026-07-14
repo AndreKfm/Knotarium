@@ -68,4 +68,13 @@ describe('TemplateGallery', () => {
     await waitFor(() => expect(api.installGalleryTemplate).toHaveBeenCalledWith('tpl_starter-hello-world', {}, 'Hello World', {}));
     expect(await screen.findByRole('status')).toHaveTextContent(/Imported “Hello World”/);
   });
+
+  it('opens the new workflow in the editor when a navigation handler is provided', async () => {
+    const onOpenWorkflow = vi.fn();
+    render(<TemplateGallery onOpenWorkflow={onOpenWorkflow} />);
+    await screen.findByText('Hello World');
+    fireEvent.click(screen.getByRole('button', { name: 'Use Hello World' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create workflow from Hello World' }));
+    await waitFor(() => expect(onOpenWorkflow).toHaveBeenCalledWith('new-id'));
+  });
 });
