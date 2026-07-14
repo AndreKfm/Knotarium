@@ -51,6 +51,7 @@ public static class NodesServiceCollectionExtensions
         services.AddTransient<MqPublishNodeTask>();
         services.AddTransient<AiPromptNodeTask>();
         services.AddTransient<AiRouterNodeTask>();
+        services.AddTransient<AiVerifyNodeTask>();
 
         // Shared Roslyn compiler for inline-code + custom-package C# (owns a process-wide compile cache).
         services.AddSingleton<CSharpScriptCompiler>();

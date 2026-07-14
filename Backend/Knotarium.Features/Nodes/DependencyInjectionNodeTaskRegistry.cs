@@ -61,6 +61,7 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
             "mqpublish" => typeof(MqPublishNodeTask),
             "aiprompt" => typeof(AiPromptNodeTask),
             "airouter" => typeof(AiRouterNodeTask),
+            "aiverify" => typeof(AiVerifyNodeTask),
             "end" => typeof(EndNodeTask),
             _ => null
         };

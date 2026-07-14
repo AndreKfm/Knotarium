@@ -15,6 +15,13 @@ export function getNodeDataOutputs(nodeType: string, properties?: Record<string,
   if (type === 'httprequest') {
     return ['body', 'statusCode', 'isSuccess'];
   }
+  if (type === 'aiverify') {
+    // status = overall verdict, result = full audited record, claims = per-claim breakdown.
+    return ['status', 'result', 'claims'];
+  }
+  if (type === 'airouter') {
+    return ['category', 'reply'];
+  }
   if (type.startsWith('openapi.') || type === 'restcaller') {
     return ['body', 'statusCode'];
   }
@@ -1035,6 +1042,32 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
+      {type === 'aiVerify' && (
+        <>
+          {/* Evidence-gate verdict branches — fixed vocabulary, evenly spaced down the right edge.
+              Verified = success green, Contradicted = error red, Unsupported/Uncertain = muted. */}
+          {([
+            ['verified', 'var(--color-success)', 'VERIFIED', '20%'],
+            ['unsupported', 'var(--color-warning)', 'UNSUPPORTED', '40%'],
+            ['contradicted', 'var(--color-error)', 'CONTRADICTED', '60%'],
+            ['uncertain', 'var(--text-muted, #6b7280)', 'UNCERTAIN', '80%'],
+          ] as const).map(([id, color, label, top]) => (
+            <span key={id}>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={id}
+                style={{ top, background: color, borderColor: color, ...glowFor(id) }}
+                {...portA11yProps(`${displayName} ${id} branch output`)}
+              />
+              <span style={{ position: 'absolute', right: '12px', top: `calc(${top} - 8px)`, fontSize: '0.6rem', fontWeight: 800, color }}>
+                {label}
+              </span>
+            </span>
+          ))}
+        </>
+      )}
+
       {isContainer && (
         <>
           {/* Inner-Left 'start' Port Notch Tab */}
@@ -1146,7 +1179,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && (
+      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && type !== 'aiVerify' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && (
         <Handle
           type="source"
           position={Position.Right}
