@@ -189,6 +189,14 @@ public sealed class HttpEgressPolicyEvaluator
 
     private static bool IsPrivateOrLoopback(IPAddress ipAddress)
     {
+        // Unwrap IPv4-mapped IPv6 (e.g. ::ffff:169.254.169.254) so the IPv4 rules below
+        // apply. Without this, an attacker-controlled AAAA record can smuggle a private /
+        // loopback / metadata address past the IPv6 branch, which does not classify it.
+        if (ipAddress.IsIPv4MappedToIPv6)
+        {
+            ipAddress = ipAddress.MapToIPv4();
+        }
+
         if (IPAddress.IsLoopback(ipAddress))
         {
             return true;
