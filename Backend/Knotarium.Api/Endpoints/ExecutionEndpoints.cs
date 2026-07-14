@@ -78,6 +78,12 @@ public static class ExecutionEndpoints
             var runtimeWorkflow = new WorkflowDefinition(workflow.Id, workflow.Name, activeVersion.Nodes, activeVersion.Edges);
 
             var outcome = await executionStarter.StartAsync(runtimeWorkflow, activeVersion.Id, "webhook", request.InputVariables);
+            if (outcome.IsQueueFull)
+            {
+                return Results.Json(
+                    new { message = $"Execution queue is at capacity ({outcome.QueueDepthLimit} pending runs). Retry later." },
+                    statusCode: StatusCodes.Status429TooManyRequests);
+            }
             if (!outcome.IsStarted)
             {
                 return Results.BadRequest(new

@@ -30,6 +30,28 @@ public static class RuntimeSettingsEndpoints
             return Results.Ok(new { armed = armingState.IsArmed });
         });
 
+        // --- Read-only run-level execution runtime (active concurrency limit, queue, journal batching) ---
+        // Operator visibility for Execution:* configuration knobs; changing them requires a restart.
+
+        app.MapGet("/api/runtime/execution", (
+            Knotarium.Features.Execution.ExecutionOptions options,
+            Knotarium.Features.Execution.WorkflowExecutionQueue queue,
+            Knotarium.Features.Execution.ExecutionRuntimeMonitor monitor) =>
+            Results.Ok(new
+            {
+                maxConcurrentRuns = options.MaxConcurrentRuns,
+                inFlightRuns = monitor.InFlightRuns,
+                queueDepth = queue.Depth,
+                maxQueueDepth = queue.MaxDepth,
+                rejectedStarts = monitor.RejectedStarts,
+                journalBatching = new
+                {
+                    enabled = options.JournalBatchingEnabled,
+                    maxBatchSize = options.JournalBatchMaxSize,
+                    maxDelayMilliseconds = options.JournalBatchMaxDelayMilliseconds
+                }
+            }));
+
         // --- Global default error workflow (run whenever any workflow fails) ---
 
         app.MapGet("/api/settings/error-workflow", async (GlobalSettingsService settings, CancellationToken ct) =>

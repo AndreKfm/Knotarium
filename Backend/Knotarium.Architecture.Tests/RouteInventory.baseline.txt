@@ -33,6 +33,7 @@ Get /api/openapi/specs/{id}/operations/{operationId}
 Get /api/openapi/specs/{id}/operations/{operationId}/locator-suggestions
 Get /api/openapi/specs/{id}/versions
 Get /api/runtime/arming
+Get /api/runtime/execution
 Get /api/server-configs
 Get /api/server-configs/{id}
 Get /api/settings/ai-provider
