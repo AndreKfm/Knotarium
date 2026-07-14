@@ -307,15 +307,15 @@ public class ExternalNodeE2ETests
         Assert.Equal("positive", result.GetProperty("sentiment").GetString());
     }
 
-    // --- aiClassify ---
+    // --- aiRouter ---
 
     [Fact]
-    public async Task AiClassify_routes_only_the_matched_category_branch()
+    public async Task AiRouter_routes_only_the_matched_category_branch()
     {
         using var harness = new NodeE2EHarness();
         harness.WithChatReply("Spam");
 
-        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiClassify", new Dictionary<string, object>
+        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiRouter", new Dictionary<string, object>
         {
             ["input"] = "Cheap watches, buy now!!!",
             ["categories"] = "Billing, Spam",
@@ -348,12 +348,12 @@ public class ExternalNodeE2ETests
     }
 
     [Fact]
-    public async Task AiClassify_off_list_reply_routes_the_otherwise_branch()
+    public async Task AiRouter_off_list_reply_routes_the_otherwise_branch()
     {
         using var harness = new NodeE2EHarness();
         harness.WithChatReply("no idea what this is");
 
-        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiClassify", new Dictionary<string, object>
+        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiRouter", new Dictionary<string, object>
         {
             ["input"] = "gibberish",
             ["categories"] = "Billing, Spam",

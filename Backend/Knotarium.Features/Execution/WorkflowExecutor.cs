@@ -1221,5 +1221,5 @@ public partial class WorkflowExecutor
         nodeType.Equals("condition", StringComparison.OrdinalIgnoreCase) ||
         nodeType.Equals("forLoop", StringComparison.OrdinalIgnoreCase) ||
         nodeType.Equals("parallelForEach", StringComparison.OrdinalIgnoreCase) ||
-        nodeType.Equals("aiClassify", StringComparison.OrdinalIgnoreCase);
+        nodeType.Equals("aiRouter", StringComparison.OrdinalIgnoreCase);
 }

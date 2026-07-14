@@ -6,7 +6,7 @@ import { getTypeColor, getNodeIcon, renderPropertiesSummary, getStatusBadge, isL
 import { SubflowLanes, type SubflowInterface } from './SubflowLanes';
 import { ExternalDeviceLanes } from './ExternalDeviceLanes';
 import { readDeviceSurface } from '../node-editor/externalDevicePins';
-import { aiClassifyOutputHandles } from '../node-editor/aiClassifyPorts';
+import { aiRouterOutputHandles } from '../node-editor/aiRouterPorts';
 import { useSubflowOpenStore } from '../stores/useSubflowOpenStore';
 import { canRenameNode, applyNodeRename } from '../node-editor/nodeRename';
 
@@ -312,11 +312,11 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
   const statusBadge = getStatusBadge(execStatus);
 
   // AI Classify node: one branch handle per configured category label plus the 'otherwise'
-  // fallback — derived from the node's own properties (see aiClassifyPorts.ts), not the manifest,
+  // fallback — derived from the node's own properties (see aiRouterPorts.ts), not the manifest,
   // so the handles follow the config live while editing.
-  const isAiClassify = type === 'aiClassify';
-  const aiClassifyHandles = isAiClassify
-    ? aiClassifyOutputHandles(data?.properties as Record<string, unknown> | undefined)
+  const isAiRouter = type === 'aiRouter';
+  const aiRouterHandles = isAiRouter
+    ? aiRouterOutputHandles(data?.properties as Record<string, unknown> | undefined)
     : [];
 
   // External device node: pins are derived from the selected events/actions (not static ports).
@@ -960,13 +960,13 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {isAiClassify && (
+      {isAiRouter && (
         <>
-          {aiClassifyHandles.map((handle, index) => {
+          {aiRouterHandles.map((handle, index) => {
             // Distribute the branch handles evenly down the right edge; the trailing
             // 'otherwise' fallback renders muted so real categories stand out.
-            const top = `${Math.round(((index + 1) / (aiClassifyHandles.length + 1)) * 100)}%`;
-            const isOtherwise = index === aiClassifyHandles.length - 1;
+            const top = `${Math.round(((index + 1) / (aiRouterHandles.length + 1)) * 100)}%`;
+            const isOtherwise = index === aiRouterHandles.length - 1;
             const color = isOtherwise ? 'var(--text-muted, #6b7280)' : 'var(--color-accent)';
             return (
               <span key={handle}>
@@ -1146,7 +1146,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && !isContainer && type !== 'end' && !isExternalDevice && !isAiClassify && (
+      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && (
         <Handle
           type="source"
           position={Position.Right}

@@ -9,37 +9,37 @@ using Knotarium.Core.Contracts.Ai;
 namespace Knotarium.Features.Nodes;
 
 /// <summary>
-/// Classifies the incoming data into one of the node's configured category labels and routes the run
-/// down that category's branch (via the <c>selectedPort</c> convention, like Condition/HttpRequest).
+/// Uses the configured language model to evaluate the incoming data and route the run down the
+/// best-matching category branch (via the <c>selectedPort</c> convention, like Condition/HttpRequest).
 /// The model is instructed to answer with exactly one label; a reply outside the label set gets ONE
 /// retry with feedback, and if it still doesn't match, the run routes to the always-present
-/// <c>otherwise</c> branch instead of failing — misclassification is a routing concern, not an error.
+/// <c>otherwise</c> branch instead of failing — a wrong route is a routing concern, not an error.
 /// Categories are per-node config, so the manifest declares no outputs (the compiler skips socket
 /// validation for output-less manifests) and the editor derives the handles from the property.
 /// Emits <c>category</c> (matched label, empty on otherwise) and <c>reply</c> (raw model text).
 /// </summary>
-public class AiClassifyNodeTask : INodeTask
+public class AiRouterNodeTask : INodeTask
 {
-    /// <summary>The fallback branch every classify node has, taken when no label matches.</summary>
+    /// <summary>The fallback branch every AI Router node has, taken when no label matches.</summary>
     internal const string OtherwisePort = "otherwise";
 
     private readonly IChatCompletionService _chat;
 
-    public AiClassifyNodeTask(IChatCompletionService chat) => _chat = chat;
+    public AiRouterNodeTask(IChatCompletionService chat) => _chat = chat;
 
     public async Task<LegacyNodeResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken)
     {
         var input = Input(context, "input");
         if (string.IsNullOrWhiteSpace(input))
         {
-            return new LegacyNodeResult.Failure("AI classify failed: missing required 'input'.");
+            return new LegacyNodeResult.Failure("AI Router failed: missing required 'input'.");
         }
 
         var categories = ParseCategories(Input(context, "categories"));
         if (categories.Count < 2)
         {
             return new LegacyNodeResult.Failure(
-                "AI classify failed: 'categories' needs at least two labels (comma- or newline-separated).");
+                "AI Router failed: 'categories' needs at least two labels (comma- or newline-separated).");
         }
 
         var instructions = Input(context, "instructions");
@@ -83,14 +83,14 @@ public class AiClassifyNodeTask : INodeTask
         }
         catch (Exception ex)
         {
-            return new LegacyNodeResult.Failure($"AI classify failed: {ex.Message}");
+            return new LegacyNodeResult.Failure($"AI Router failed: {ex.Message}");
         }
     }
 
     /// <summary>
     /// Splits the configured labels on commas/semicolons/newlines, trims, drops empties and
     /// case-insensitive duplicates (keeping the first spelling). The editor's port derivation
-    /// (aiClassifyPorts.ts) must mirror these rules so canvas handles equal runtime ports.
+    /// (aiRouterPorts.ts) must mirror these rules so canvas handles equal runtime ports.
     /// </summary>
     internal static List<string> ParseCategories(string? raw)
     {

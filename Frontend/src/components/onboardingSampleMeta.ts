@@ -75,7 +75,7 @@ export const SAMPLE_META: Record<string, SampleMeta> = {
     category: 'ai', icon: 'ai', tag: 'AI · TRIAGE',
     flow: [
       { label: 'AI Extract', icon: 'ai', cat: 'ai' },
-      { label: 'AI Classify', icon: 'ai', cat: 'ai' },
+      { label: 'AI Router', icon: 'ai', cat: 'ai' },
       { label: 'AI Draft', icon: 'ai', cat: 'ai' },
     ],
   },
