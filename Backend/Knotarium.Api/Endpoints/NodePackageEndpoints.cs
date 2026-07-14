@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Knotarium.Api.Services.Auth;
 using Knotarium.Core.Contracts;
 using Knotarium.Core.Domain;
 using Knotarium.Features.NodeEditor;
@@ -29,13 +31,17 @@ public static class NodePackageEndpoints
         app.MapGet("/api/node-packages", async (DbNodePackageManifestProvider manifestProvider, CancellationToken cancellationToken) =>
             Results.Ok(await manifestProvider.GetNodePackagesAsync(cancellationToken)));
 
-        app.MapPost("/api/node-packages/install", async (HttpRequest request, AppDbContext db) =>
+        // install/publish add a code-execution supply-chain surface (compiled custom nodes run in-process),
+        // so they are admin-gated like the other privileged mutations — a no-op when auth is disabled.
+        app.MapPost("/api/node-packages/install", async (HttpRequest request, AppDbContext db, AuthOptions auth, ClaimsPrincipal user) =>
         {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             return await InstallNodePackageAsync(request, db, request.HttpContext.RequestServices.GetRequiredService<IConfiguration>(), enforcePublishGate: false, gate: null);
         });
 
-        app.MapPost("/api/node-packages/publish", async (HttpRequest request, AppDbContext db, INodeEditorSessionGate gate) =>
+        app.MapPost("/api/node-packages/publish", async (HttpRequest request, AppDbContext db, INodeEditorSessionGate gate, AuthOptions auth, ClaimsPrincipal user) =>
         {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
             return await InstallNodePackageAsync(request, db, request.HttpContext.RequestServices.GetRequiredService<IConfiguration>(), enforcePublishGate: true, gate);
         });
     }
