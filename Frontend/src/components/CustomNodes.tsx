@@ -500,6 +500,10 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
       style={{
         width: isContainer ? '100%' : undefined,
         height: isContainer ? '100%' : undefined,
+        // Cap a normal node's width so long config values (e.g. a Set Variable holding a paragraph)
+        // wrap and grow the card DOWNWARD instead of stretching it across the canvas. Containers are
+        // user-resizable, so they opt out.
+        maxWidth: isContainer ? undefined : 340,
         borderWidth: (selected || isDragOver || isProducerActive) ? '2px' : '1.5px',
         borderColor: isDragOver ? 'var(--color-accent)' : selected ? 'var(--color-accent)' : undefined,
         boxShadow: isDragOver
