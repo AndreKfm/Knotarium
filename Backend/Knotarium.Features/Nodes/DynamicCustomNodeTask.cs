@@ -23,6 +23,7 @@ public class DynamicCustomNodeTask : INodeTask
     private readonly IServerConfigStore? _serverConfigStore;
     private readonly IOAuthTokenCache? _oAuthTokenCache;
     private readonly IOpenApiInterpreterExecutorFactory? _interpreterFactory;
+    private readonly ICapabilityPolicy? _capabilities;
     private readonly CSharpScriptCompiler _compiler = new();
 
     public DynamicCustomNodeTask(
@@ -34,7 +35,8 @@ public class DynamicCustomNodeTask : INodeTask
         IOpenApiSpecStore? openApiSpecStore = null,
         IServerConfigStore? serverConfigStore = null,
         IOAuthTokenCache? oAuthTokenCache = null,
-        IOpenApiInterpreterExecutorFactory? interpreterFactory = null)
+        IOpenApiInterpreterExecutorFactory? interpreterFactory = null,
+        ICapabilityPolicy? capabilities = null)
     {
         _nodeType            = nodeType;
         _packageStore        = packageStore;
@@ -45,6 +47,7 @@ public class DynamicCustomNodeTask : INodeTask
         _serverConfigStore   = serverConfigStore;
         _oAuthTokenCache     = oAuthTokenCache;
         _interpreterFactory  = interpreterFactory;
+        _capabilities        = capabilities;
     }
 
     public async Task<LegacyNodeResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken)
@@ -101,6 +104,17 @@ public class DynamicCustomNodeTask : INodeTask
         }
         else
         {
+            // Compiled tier runs arbitrary C# in-process (CSharpScriptCompiler is not sandboxed), so it is
+            // gated by the same 'code execution' capability as the inline-code node. Deny-by-default: the
+            // install-time signature gate governs *what* can be installed; this governs whether the operator
+            // has opted in to running compiled code at all. Fail closed if no policy is wired.
+            if (_capabilities is null
+                || !await _capabilities.IsEnabledAsync(NodeCapabilities.CodeExecution, cancellationToken))
+            {
+                return new LegacyNodeResult.Failure(
+                    $"Custom node '{_nodeType}' runs compiled code, which is disabled: the 'code execution' capability is off. An administrator can enable it under Settings → Capabilities.");
+            }
+
             // Compiled tier: compile (or fetch from cache) via the shared Roslyn compiler.
             try
             {

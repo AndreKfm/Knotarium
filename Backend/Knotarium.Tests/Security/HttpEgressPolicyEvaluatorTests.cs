@@ -57,6 +57,30 @@ public class HttpEgressPolicyEvaluatorTests
             async () => await evaluator.ResolveAndValidateAsync(host, CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("::ffff:169.254.169.254")] // IPv4-mapped IPv6 of cloud metadata endpoint
+    [InlineData("::ffff:127.0.0.1")]        // IPv4-mapped IPv6 of loopback
+    [InlineData("::ffff:10.0.0.1")]         // IPv4-mapped IPv6 of private class A
+    [InlineData("::ffff:192.168.1.1")]      // IPv4-mapped IPv6 of private class C
+    public async Task ResolveAndValidateAsync_RejectsIPv4MappedIPv6PrivateAddresses(string host)
+    {
+        // Regression: an IPv4-mapped IPv6 literal (e.g. an attacker-controlled AAAA record) must be
+        // unwrapped and classified against the IPv4 private/loopback rules, not slip through the IPv6 branch.
+        var evaluator = new HttpEgressPolicyEvaluator(new HttpEgressPolicyOptions());
+        await Assert.ThrowsAsync<HttpRequestException>(
+            async () => await evaluator.ResolveAndValidateAsync(host, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("[::ffff:169.254.169.254]")] // bracketed IPv6 host form as it appears in a URI
+    [InlineData("[::ffff:127.0.0.1]")]
+    public void EnsureAllowed_RejectsIPv4MappedIPv6PrivateAddresses(string bracketedHost)
+    {
+        var evaluator = new HttpEgressPolicyEvaluator(new HttpEgressPolicyOptions());
+        Assert.Throws<HttpRequestException>(
+            () => evaluator.EnsureAllowed(new Uri($"http://{bracketedHost}/test")));
+    }
+
     [Fact]
     public async Task ResolveAndValidateAsync_AllowsPublicLiteralAddress()
     {
