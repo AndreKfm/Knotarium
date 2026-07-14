@@ -578,9 +578,7 @@ public partial class WorkflowExecutor
             {
                 var outgoingEdges = plan.Edges.Where(edge => edge.From == currentNodeId);
                 string? selectedPort = null;
-                if ((plannedNode.Type.Equals("condition", StringComparison.OrdinalIgnoreCase) ||
-                     plannedNode.Type.Equals("forLoop", StringComparison.OrdinalIgnoreCase) ||
-                     plannedNode.Type.Equals("parallelForEach", StringComparison.OrdinalIgnoreCase)) &&
+                if (RoutesBySelectedPort(plannedNode.Type) &&
                     nodeState.Outputs.TryGetValue("selectedPort", out var portObj) &&
                     portObj != null)
                 {
@@ -900,9 +898,7 @@ public partial class WorkflowExecutor
 
                 var outgoingEdges = plan.Edges.Where(edge => edge.From == currentNodeId);
                 string? selectedPort = null;
-                if ((plannedNode.Type.Equals("condition", StringComparison.OrdinalIgnoreCase) ||
-                     plannedNode.Type.Equals("forLoop", StringComparison.OrdinalIgnoreCase) ||
-                     plannedNode.Type.Equals("parallelForEach", StringComparison.OrdinalIgnoreCase)) &&
+                if (RoutesBySelectedPort(plannedNode.Type) &&
                     nodeState.Outputs.TryGetValue("selectedPort", out var portObj) &&
                     portObj != null)
                 {
@@ -1214,4 +1210,16 @@ public partial class WorkflowExecutor
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// The branch-routing node types: for these, a <c>selectedPort</c> output suppresses every outgoing
+    /// edge whose source socket doesn't match. Deliberately an explicit list rather than "any node that
+    /// emits selectedPort" — multi-output data nodes (e.g. httpRequest's body/statusCode sockets, or
+    /// declarative user packages) rely on all their data edges firing, so routing must stay opt-in.
+    /// </summary>
+    private static bool RoutesBySelectedPort(string nodeType) =>
+        nodeType.Equals("condition", StringComparison.OrdinalIgnoreCase) ||
+        nodeType.Equals("forLoop", StringComparison.OrdinalIgnoreCase) ||
+        nodeType.Equals("parallelForEach", StringComparison.OrdinalIgnoreCase) ||
+        nodeType.Equals("aiClassify", StringComparison.OrdinalIgnoreCase);
 }
