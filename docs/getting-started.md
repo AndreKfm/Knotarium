@@ -3,7 +3,7 @@
 This guide takes you from a running instance to your first workflow that calls an API
 and logs the result — in about five minutes.
 
-If you haven't started Knotarium yet, see the [Quickstart in the README](../README.md#quickstart-docker).
+If you haven't started Knotarium yet, see [Download & run](/install).
 
 ---
 
@@ -74,7 +74,7 @@ down by default:
 - **File Read/Write** is **deny-by-default**; grant specific directories under
   *Settings → File Access*.
 
-See the [Security section of the README](../README.md#security) before exposing an instance.
+See the [Security section of the README](https://github.com/AndreKfm/Knotarium#security) before exposing an instance.
 
 ## Where to go next
 
@@ -83,6 +83,6 @@ See the [Security section of the README](../README.md#security) before exposing 
   channels (webhook / Slack / email).
 - **Import** — generate nodes from an OpenAPI spec, or a whole workflow from a natural-language
   description (AI).
-- **Configuration** — see the [Configuration table in the README](../README.md#configuration).
+- **Configuration** — see the [Configuration table in the README](https://github.com/AndreKfm/Knotarium#configuration).
 
 Questions or a rough edge? Open an issue.

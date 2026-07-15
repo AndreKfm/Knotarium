@@ -12,7 +12,10 @@ export default defineConfig({
   base: process.env.DOCS_BASE || '/',
   lastUpdated: true,
   cleanUrls: true,
-  ignoreDeadLinks: true,
+  // Dead internal links fail the build — a missing page or a link to a file outside the docs source
+  // (e.g. ../README.md) is caught here instead of shipping a 404. localhost example URLs are exempt:
+  // they point at the reader's own instance, so they're not reachable at build time by design.
+  ignoreDeadLinks: [/^https?:\/\/localhost/],
 
   themeConfig: {
     nav: [
@@ -25,6 +28,7 @@ export default defineConfig({
       {
         text: 'Getting started',
         items: [
+          { text: 'Download & run', link: '/install' },
           { text: 'Install & first workflow', link: '/getting-started' },
           { text: 'Core concepts', link: '/guide/concepts' },
         ],
