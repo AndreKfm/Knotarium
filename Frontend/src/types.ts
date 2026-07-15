@@ -124,6 +124,19 @@ export interface SetAiProviderConfigInput {
   maxTokens?: number | null;
 }
 
+/** Result of POST /api/settings/ai-provider/test — a real mini-completion against the supplied config. */
+export interface AiProviderTestResponse {
+  ok: boolean;
+  message: string;
+  latencyMs: number | null;
+  model: string | null;
+}
+
+/** Result of POST /api/settings/ai-provider/models — best-effort live model ids (empty = use curated). */
+export interface AiProviderModelsResponse {
+  models: string[];
+}
+
 export type AiGenerationStatus = 'Queued' | 'Running' | 'Succeeded' | 'Failed';
 
 /** Poll result for an AI workflow-generation job (GET /api/ai/generate/{jobId}). */
@@ -552,7 +565,7 @@ export interface WorkflowScheduleSummary {
 
 export interface ParameterDefinition {
   name: string;
-  type: 'string' | 'number' | 'boolean' | 'enum' | 'credentialRef' | 'notificationChannelRef' | 'code' | 'keyValue' | 'dynamicOptions' | 'resourceLocator' | 'dynamicFields';
+  type: 'string' | 'number' | 'boolean' | 'enum' | 'credentialRef' | 'notificationChannelRef' | 'code' | 'keyValue' | 'dynamicOptions' | 'resourceLocator' | 'dynamicFields' | 'agentTools' | 'aiModel';
   required?: boolean;
   values?: string[];
   default?: unknown;

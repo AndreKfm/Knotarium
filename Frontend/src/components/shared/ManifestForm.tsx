@@ -7,6 +7,8 @@ import { VariableToken } from '../VariableToken';
 import { InlineCodeEditorModal, registerCsharpInlineCompletions } from './InlineCodeEditorModal';
 import { AsyncOptionsField } from './AsyncOptionsField';
 import { DynamicFieldsField } from './DynamicFieldsField';
+import { AgentToolsField } from './AgentToolsField';
+import { ModelCombo } from './ModelCombo';
 import { ConditionLogicField } from './ConditionLogicField';
 import { ExpressionField } from './ExpressionField';
 import { variableRefExpression } from '../../utils/variableExpression';
@@ -622,9 +624,50 @@ function ManifestFormImpl({ workflowId, nodeId, manifest, properties, onChange }
         );
       }
 
+      case 'agentTools': {
+        // A parameter whose value is an array of tool bindings (target workflow + model-facing
+        // name/description + parameter contract + projected outputs) for the AI Agent node.
+        return (
+          <AgentToolsField
+            key={param.name}
+            param={param}
+            value={properties[param.name]}
+            onChange={(val) => handleFieldChange(param.name, val)}
+          />
+        );
+      }
+
+      case 'aiModel': {
+        // The AI-node `model` override: an editable combo of curated per-vendor model suggestions (with an
+        // optional live-load), resolving the vendor/credential from the saved global AI provider config.
+        return (
+          <div key={param.name} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+              {param.name}
+            </label>
+            <ModelCombo
+              value={typeof value === 'string' ? value : ''}
+              onChange={(val) => handleFieldChange(param.name, val)}
+              placeholder="Enter model…"
+              style={{ padding: '10px', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.85rem', boxSizing: 'border-box', outline: 'none' }}
+            />
+            {param.description && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>{param.description}</span>
+            )}
+          </div>
+        );
+      }
+
       case 'string':
       default: {
-        const isTextArea = param.name === 'payload' || param.name === 'body' || param.name === 'message' || param.name === 'headers';
+        // Render a multi-line editor for fields that commonly hold long / multi-line text, or whenever the
+        // current value already spans multiple lines or is long — a single-line input truncates those badly.
+        const multilineParams = new Set([
+          'payload', 'body', 'message', 'headers',
+          'value', 'prompt', 'systemPrompt', 'task', 'content', 'sources', 'previous', 'current', 'instructions', 'resultSchema', 'jsonSchema',
+        ]);
+        const isTextArea = multilineParams.has(param.name)
+          || (typeof value === 'string' && (value.includes('\n') || value.length > 80));
         return (
           <div key={param.name} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
