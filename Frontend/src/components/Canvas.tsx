@@ -49,9 +49,8 @@ import {
 import { connectionFailureReason } from '../node-editor/connectionFeedback';
 import { buildNode, createNodeId } from '../node-editor/nodeFactory';
 import { deviceHandleIds } from '../node-editor/externalDevicePins';
-import { referencedActionIds, signalFieldGroupsForNode, simulatablePins, type ActionFieldsById, type SignalField } from '../node-editor/signalFieldBinding';
+import { simulatablePins } from '../node-editor/signalFieldBinding';
 import { upstreamReferenceGroups } from '../node-editor/upstreamReferences';
-import { useSignalFieldStore } from '../stores/useSignalFieldStore';
 import { SimulateSignalDialog } from './SimulateSignalDialog';
 import { cloneSubgraph } from '../node-editor/clipboard';
 import { createStickyNoteNode, STICKY_NOTE_DEFAULT_SIZE, STICKY_NOTE_TYPE } from '../node-editor/stickyNote';
@@ -81,6 +80,7 @@ import { useDiagnostics } from './canvas/useDiagnostics';
 import { useUndoRedo, type CanvasSnapshot } from './canvas/useUndoRedo';
 import { useCanvasClipboard } from './canvas/useCanvasClipboard';
 import { useVersioning } from './canvas/useVersioning';
+import { useSignalFields } from './canvas/useSignalFields';
 import { isApiError, getErrorMessage, getErrorDiagnostics } from '../utils/apiErrors';
 import { decorateEdgesWithDiagnostics } from '../utils/edgeDiagnostics';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
@@ -324,90 +324,9 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   const syncConsumers = useVariableStore((state) => state.syncConsumers);
   const syncDeclaredVariables = useVariableStore((state) => state.syncDeclaredVariables);
 
-  // Distinct external-action ids referenced by the graph — the device block's action pins and any
-  // Action Trigger's picked action. Their static field schema (read from the provider) names the keys
-  // the inbound `signal.params` can carry, so we can offer `signal.params.<key>` as concrete globals.
-  const referencedActions = useMemo(() => referencedActionIds(nodes, edges), [nodes, edges]);
-  const referencedActionsKey = useMemo(() => referencedActions.join('|'), [referencedActions]);
-
-  // Static field schema (key + type) per referenced action, fetched once from the provider via the
-  // reactor.actionFields loader. NOT registered as canvas globals — the inbound `signal` is one
-  // instance per run, so its `params.<key>` fields belong to the originating action, not the whole
-  // canvas. They're surfaced per-node (scoped to the action that can reach a given node) in the
-  // properties panel instead.
-  const [actionFieldsById, setActionFieldsById] = useState<ActionFieldsById>({});
-  useEffect(() => {
-    let cancelled = false;
-    if (referencedActions.length === 0) {
-      setActionFieldsById({});
-      return;
-    }
-    const inferType = (description?: string): SignalField['type'] => {
-      const d = (description || '').toLowerCase();
-      if (d.startsWith('integer') || d.startsWith('number')) return 'number';
-      if (d.startsWith('boolean')) return 'boolean';
-      return 'string';
-    };
-    (async () => {
-      const map: ActionFieldsById = {};
-      await Promise.all(referencedActions.map(async (action) => {
-        try {
-          // integrationType is a routing segment the host ignores (loaders resolve by name); keep the
-          // generic 'reactor' family so no specific provider is named on the public side.
-          const result = await api.loadNodeOptions('reactor', 'reactor.actionFields', { dependsOn: { action } });
-          map[action] = result.options
-            .filter((opt) => opt.value)
-            .map((opt) => ({ key: opt.value, type: inferType(opt.description) }));
-        } catch {
-          // Provider offline / loader absent → no static keys; the generic signal.params bag still works.
-        }
-      }));
-      if (cancelled) return;
-      setActionFieldsById(map);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referencedActionsKey]);
-
-  // Events all share one field layout (the provider's common event slots), so they're fetched once via
-  // reactor.eventFields — but only when the graph actually has an inbound-signal source.
-  const hasInboundSignalSource = useMemo(
-    () => nodes.some((n) => { const t = (n.type || '').toLowerCase(); return t === 'externaldevice' || t === 'eventtrigger' || t === 'actiontrigger'; }),
-    [nodes],
-  );
-  const [eventFields, setEventFields] = useState<SignalField[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    if (!hasInboundSignalSource) { setEventFields([]); return; }
-    const inferType = (description?: string): SignalField['type'] => {
-      const d = (description || '').toLowerCase();
-      if (d.startsWith('integer') || d.startsWith('number')) return 'number';
-      if (d.startsWith('boolean')) return 'boolean';
-      return 'string';
-    };
-    (async () => {
-      try {
-        const result = await api.loadNodeOptions('reactor', 'reactor.eventFields', {});
-        if (cancelled) return;
-        setEventFields(result.options.filter((opt) => opt.value).map((opt) => ({ key: opt.value, type: inferType(opt.description) })));
-      } catch {
-        // Provider offline / loader absent → no static event keys; signal.params still works by hand.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [hasInboundSignalSource]);
-
-  // Scoped signal fields for the currently-selected node: the originating action(s) whose inbound
-  // signal can reach it (each with its fields) plus the shared event group — shown in the node's panel.
-  const selectedNodeSignalGroups = useMemo(
-    () => (selectedNode ? signalFieldGroupsForNode(nodes, edges, selectedNode.id, actionFieldsById, eventFields) : []),
-    [selectedNode, nodes, edges, actionFieldsById, eventFields],
-  );
-  // Publish them to the per-node store so the node's editors (properties panel chips + Condition operand
-  // reference picker) can read them without threading props through ManifestForm.
-  useEffect(() => {
-    useSignalFieldStore.getState().setSignalFields(selectedNode?.id ?? null, selectedNodeSignalGroups);
-  }, [selectedNode, selectedNodeSignalGroups]);
+  // ── Inbound-signal field discovery (action/event field schema + per-node scoped groups) ──
+  // See canvas/useSignalFields.
+  const { actionFieldsById } = useSignalFields({ nodes, edges, selectedNode });
 
   // Variables declared on the canvas via Set Variable / Set Variables nodes. These become
   // first-class globals (auto-registered in the Global Store below), so they get a draggable
