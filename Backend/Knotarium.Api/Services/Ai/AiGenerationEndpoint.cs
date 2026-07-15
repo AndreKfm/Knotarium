@@ -31,6 +31,12 @@ public sealed record SetAiProviderConfigRequest(
     string? ApiVersion,
     int? MaxTokens);
 
+/// <summary>Outcome of a provider connection test. <see cref="Ok"/> false carries a human-readable reason.</summary>
+public sealed record AiProviderTestResponse(bool Ok, string Message, int? LatencyMs, string? Model);
+
+/// <summary>Best-effort live model ids for the supplied provider config (empty = fall back to curated list).</summary>
+public sealed record AiProviderModelsResponse(System.Collections.Generic.IReadOnlyList<string> Models);
+
 /// <summary>
 /// Poll response for a generation job. On success <see cref="Workflow"/> is the generated definition
 /// (serialized through the same converters as every other workflow, so the editor consumes it directly)
@@ -127,5 +133,88 @@ public static class AiGenerationEndpoint
             return Results.Ok(new AiProviderConfigResponse(
                 config.Vendor, config.Model, config.CredentialRef, config.BaseUrl, config.ApiVersion, config.MaxTokens, LlmVendors.All));
         });
+
+        // Test the supplied provider config end-to-end: resolve the key, hit the vendor with a tiny
+        // completion, and report success/failure + round-trip latency. Tests exactly what's in the form
+        // (so it works before Save). Never 500s on a provider/key error — that outcome is the answer.
+        app.MapPost("/api/settings/ai-provider/test", async (
+            SetAiProviderConfigRequest request,
+            System.Collections.Generic.IEnumerable<ILlmChatProvider> providers,
+            Knotarium.Core.Contracts.ISecretResolver secretResolver,
+            CancellationToken ct) =>
+        {
+            if (!LlmVendors.IsKnown(request.Vendor))
+            {
+                return Results.Ok(new AiProviderTestResponse(false, "Unknown or missing vendor.", null, null));
+            }
+            if (string.IsNullOrWhiteSpace(request.Model))
+            {
+                return Results.Ok(new AiProviderTestResponse(false, "A model (or Azure deployment name) is required.", null, request.Model));
+            }
+            if (string.IsNullOrWhiteSpace(request.CredentialRef))
+            {
+                return Results.Ok(new AiProviderTestResponse(false, "An API-key credential is required.", null, request.Model));
+            }
+
+            var provider = System.Linq.Enumerable.FirstOrDefault(providers, p => p.Vendor == request.Vendor);
+            if (provider is null)
+            {
+                return Results.Ok(new AiProviderTestResponse(false, $"No adapter is registered for vendor '{request.Vendor}'.", null, request.Model));
+            }
+
+            var apiKey = await secretResolver.ResolveAsync(request.CredentialRef!, ct);
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                return Results.Ok(new AiProviderTestResponse(false, "The API key could not be resolved from the selected credential.", null, request.Model));
+            }
+
+            var config = new AiProviderConfig(
+                request.Vendor!, request.Model!.Trim(), request.CredentialRef!.Trim(),
+                string.IsNullOrWhiteSpace(request.BaseUrl) ? null : request.BaseUrl!.Trim(),
+                string.IsNullOrWhiteSpace(request.ApiVersion) ? null : request.ApiVersion!.Trim(),
+                request.MaxTokens);
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var reply = await provider.CompleteAsync(
+                    new LlmChatRequest("You are a connection test for an automation platform.",
+                        "Reply with the single word: OK", config, apiKey!, 16), ct);
+                stopwatch.Stop();
+                var trimmed = (reply ?? string.Empty).Trim();
+                return Results.Ok(new AiProviderTestResponse(
+                    true, $"Connected. Model replied: \"{Truncate(trimmed, 60)}\".", (int)stopwatch.ElapsedMilliseconds, config.Model));
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                return Results.Ok(new AiProviderTestResponse(false, Truncate(ex.Message, 300), (int)stopwatch.ElapsedMilliseconds, config.Model));
+            }
+        });
+
+        // Best-effort live model listing for the supplied config. Additive to the frontend's curated list;
+        // an empty result just means "no live models — use the curated suggestions".
+        app.MapPost("/api/settings/ai-provider/models", async (
+            SetAiProviderConfigRequest request,
+            System.Net.Http.IHttpClientFactory clientFactory,
+            Knotarium.Core.Contracts.ISecretResolver secretResolver,
+            CancellationToken ct) =>
+        {
+            if (!LlmVendors.IsKnown(request.Vendor) || string.IsNullOrWhiteSpace(request.CredentialRef))
+            {
+                return Results.Ok(new AiProviderModelsResponse(Array.Empty<string>()));
+            }
+            var apiKey = await secretResolver.ResolveAsync(request.CredentialRef!, ct);
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                return Results.Ok(new AiProviderModelsResponse(Array.Empty<string>()));
+            }
+            var models = await AiModelCatalog.ListAsync(
+                clientFactory, request.Vendor!, apiKey!, request.BaseUrl, request.ApiVersion, ct);
+            return Results.Ok(new AiProviderModelsResponse(models));
+        });
     }
+
+    private static string Truncate(string value, int max) =>
+        value.Length <= max ? value : value[..max] + "…";
 }

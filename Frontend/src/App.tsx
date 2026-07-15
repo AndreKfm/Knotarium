@@ -708,7 +708,7 @@ export default function App() {
           <BundlesView />
         )}
         {currentView === 'templates' && (
-          <TemplatesView />
+          <TemplatesView onOpenWorkflow={navigateToEditor} />
         )}
         {currentView === 'imports' && (
           <SettingImporter onGoToDashboard={navigateToDashboard} />

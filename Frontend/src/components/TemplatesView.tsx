@@ -11,6 +11,8 @@ type TemplateTab = 'browse' | 'library' | 'import' | 'export';
 interface TemplatesViewProps {
   /** When set, opens straight to Export with this workflow preselected (deep-link from the editor). */
   initialExportWorkflowId?: string;
+  /** Open a workflow (by id) in the editor — used to jump straight into a freshly created template. */
+  onOpenWorkflow?: (workflowId: string) => void;
 }
 
 const TABS: Array<[TemplateTab, keyof typeof TI, string]> = [
@@ -20,7 +22,7 @@ const TABS: Array<[TemplateTab, keyof typeof TI, string]> = [
   ['export', 'upload', 'Export'],
 ];
 
-export function TemplatesView({ initialExportWorkflowId }: TemplatesViewProps) {
+export function TemplatesView({ initialExportWorkflowId, onOpenWorkflow }: TemplatesViewProps) {
   const [tab, setTab] = useState<TemplateTab>(initialExportWorkflowId ? 'export' : 'browse');
 
   return (
@@ -43,7 +45,7 @@ export function TemplatesView({ initialExportWorkflowId }: TemplatesViewProps) {
           </div>
         </div>
 
-        {tab === 'browse' && <TemplateGallery />}
+        {tab === 'browse' && <TemplateGallery onOpenWorkflow={onOpenWorkflow} />}
         {tab === 'library' && <UserTemplateLibraryView />}
         {tab === 'import' && <TemplateImporter />}
         {tab === 'export' && <TemplateExporter initialWorkflowId={initialExportWorkflowId} />}

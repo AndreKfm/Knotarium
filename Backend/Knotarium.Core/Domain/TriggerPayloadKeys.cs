@@ -17,4 +17,7 @@ public static class TriggerPayloadKeys
 
     /// <summary>Normalized inbound envelope from an external Event/Action signal.</summary>
     public const string ExternalSignal = "__externalSignal";
+
+    /// <summary>The full validated argument object an <c>aiAgent</c> node passes when invoking a workflow as a tool.</summary>
+    public const string Agent = "__agentPayload";
 }

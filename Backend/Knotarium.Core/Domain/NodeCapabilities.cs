@@ -35,9 +35,15 @@ public static class NodeCapabilities
     public const string Credentials = "credentials";
 
     /// <summary>
+    /// Runs an LLM tool-use loop that can invoke other workflows as tools (the <c>aiAgent</c> node).
+    /// Enforced like <see cref="CodeExecution"/>/<see cref="Database"/>: off unless an admin enables it.
+    /// </summary>
+    public const string AiAgent = "aiAgent";
+
+    /// <summary>
     /// The security-sensitive capabilities worth flagging before installing an imported workflow
-    /// (template / bundle): filesystem, code execution, database. A node carrying any of these lets an
-    /// imported or AI-generated graph touch the host beyond ordinary data flow.
+    /// (template / bundle): filesystem, code execution, database, and the AI agent loop. A node carrying
+    /// any of these lets an imported or AI-generated graph touch the host beyond ordinary data flow.
     /// </summary>
     public static readonly IReadOnlyList<string> Privileged = new[]
     {
@@ -45,6 +51,7 @@ public static class NodeCapabilities
         FilesystemWrite,
         CodeExecution,
         Database,
+        AiAgent,
     };
 
     /// <summary>True if <paramref name="capability"/> is one of the <see cref="Privileged"/> tags.</summary>

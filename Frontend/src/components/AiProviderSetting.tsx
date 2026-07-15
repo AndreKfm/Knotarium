@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { api } from '../utils/api';
-import type { CredentialSummary } from '../types';
+import type { CredentialSummary, AiProviderTestResponse } from '../types';
+import { ModelCombo } from './shared/ModelCombo';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -72,6 +73,8 @@ export function AiProviderSetting() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<AiProviderTestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   // Snapshot of the last loaded/saved config — Save stays disabled until the form diverges from it.
@@ -130,6 +133,26 @@ export function AiProviderSetting() {
     }
   };
 
+  const testConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setError(null);
+    try {
+      const result = await api.testAiProvider({
+        vendor,
+        model: model.trim(),
+        credentialRef,
+        baseUrl: baseUrl.trim() || null,
+        apiVersion: apiVersion.trim() || null,
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({ ok: false, message: err instanceof Error ? err.message : 'Test failed.', latencyMs: null, model: model.trim() });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -179,10 +202,19 @@ export function AiProviderSetting() {
           </select>
 
           <label style={labelStyle}>{meta.modelLabel}</label>
-          <input
-            value={model} disabled={saving} onChange={(e) => setModel(e.target.value)}
-            placeholder={meta.modelPlaceholder} style={inputStyle}
-          />
+          <div style={{ maxWidth: '420px' }}>
+            <ModelCombo
+              vendor={vendor}
+              value={model}
+              onChange={setModel}
+              credentialRef={credentialRef}
+              baseUrl={baseUrl}
+              apiVersion={apiVersion}
+              placeholder={meta.modelPlaceholder}
+              disabled={saving}
+              style={inputStyle}
+            />
+          </div>
 
           <label style={labelStyle}>Base URL{meta.baseUrlRequired ? '' : ' (optional)'}</label>
           <input
@@ -251,9 +283,28 @@ export function AiProviderSetting() {
                 </button>
               );
             })()}
+            {(() => {
+              const canTest = !!vendor && model.trim().length > 0 && credentialRef.length > 0
+                && (!meta.baseUrlRequired || baseUrl.trim().length > 0) && !testing && !saving;
+              return (
+                <button
+                  type="button" onClick={testConnection} disabled={!canTest}
+                  style={{ padding: '9px 16px', borderRadius: '8px', border: '1px solid var(--border-color, rgba(255,255,255,0.1))', background: 'transparent', color: canTest ? '#a78bfa' : '#6b7280', cursor: canTest ? 'pointer' : 'default', fontSize: '0.85rem', fontWeight: 600 }}
+                >
+                  {testing ? 'Testing…' : 'Test connection'}
+                </button>
+              );
+            })()}
             {!dirty && !savedNote && <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary, #94a3b8)' }}>No changes.</span>}
             {savedNote && !dirty && <span style={{ fontSize: '0.78rem', color: '#34d399' }}>{savedNote}</span>}
           </div>
+
+          {testResult && (
+            <div style={{ marginTop: '10px', fontSize: '0.8rem', color: testResult.ok ? '#34d399' : '#f87171' }}>
+              {testResult.ok ? '✓ ' : '✗ '}{testResult.message}
+              {typeof testResult.latencyMs === 'number' && <span style={{ color: 'var(--text-secondary, #94a3b8)' }}> ({testResult.latencyMs} ms)</span>}
+            </div>
+          )}
         </>
       )}
 

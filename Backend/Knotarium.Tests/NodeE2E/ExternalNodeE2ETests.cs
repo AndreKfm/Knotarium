@@ -267,4 +267,267 @@ public class ExternalNodeE2ETests
         Assert.Equal(NodeStatus.Failed, run.Node.Status);
         Assert.Empty(harness.SentNotifications);
     }
+
+    // --- aiPrompt ---
+
+    [Fact]
+    public async Task AiPrompt_text_mode_emits_the_model_reply_on_result()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("Bonjour");
+
+        var run = await harness.RunNodeAsync("aiPrompt", new Dictionary<string, object>
+        {
+            ["prompt"] = "Translate 'Hello' to French.",
+        });
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal(NodeStatus.Completed, run.Node.Status);
+        Assert.Equal("Bonjour", run.Node.Outputs["result"].ToString());
+        Assert.True(run.Ran("end-1"));
+        var request = Assert.Single(harness.ChatRequests);
+        Assert.Equal("Translate 'Hello' to French.", request.UserMessage);
+    }
+
+    [Fact]
+    public async Task AiPrompt_json_mode_emits_the_parsed_object_on_result()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("""{ "sentiment": "positive", "confidence": 0.9 }""");
+
+        var run = await harness.RunNodeAsync("aiPrompt", new Dictionary<string, object>
+        {
+            ["prompt"] = "Classify the sentiment.",
+            ["jsonSchema"] = """{ "type": "object", "properties": { "sentiment": { "type": "string" } } }""",
+        });
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal(NodeStatus.Completed, run.Node.Status);
+        var result = JsonSerializer.SerializeToElement(run.Node.Outputs["result"]);
+        Assert.Equal("positive", result.GetProperty("sentiment").GetString());
+    }
+
+    // --- aiRouter ---
+
+    [Fact]
+    public async Task AiRouter_routes_only_the_matched_category_branch()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("Spam");
+
+        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiRouter", new Dictionary<string, object>
+        {
+            ["input"] = "Cheap watches, buy now!!!",
+            ["categories"] = "Billing, Spam",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logBilling = new NodeDefinition(NodeId.Create("log-billing"), "log", new Dictionary<string, object> { ["message"] = "billing" });
+        var logSpam = new NodeDefinition(NodeId.Create("log-spam"), "log", new Dictionary<string, object> { ["message"] = "spam" });
+        var logOtherwise = new NodeDefinition(NodeId.Create("log-otherwise"), "log", new Dictionary<string, object> { ["message"] = "otherwise" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", classify.Id, "in"),
+            new EdgeDefinition("e-billing", classify.Id, "Billing", logBilling.Id, "in"),
+            new EdgeDefinition("e-spam", classify.Id, "Spam", logSpam.Id, "in"),
+            new EdgeDefinition("e-otherwise", classify.Id, "otherwise", logOtherwise.Id, "in"),
+            new EdgeDefinition("e-end", logSpam.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(
+            new[] { start, classify, logBilling, logSpam, logOtherwise, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal(NodeStatus.Completed, run.State("classify-1").Status);
+        Assert.Equal("Spam", run.State("classify-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-spam"));
+        Assert.False(run.Ran("log-billing"));
+        Assert.False(run.Ran("log-otherwise"));
+        Assert.True(run.Ran("end-1"));
+    }
+
+    [Fact]
+    public async Task AiRouter_off_list_reply_routes_the_otherwise_branch()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("no idea what this is");
+
+        var classify = new NodeDefinition(NodeId.Create("classify-1"), "aiRouter", new Dictionary<string, object>
+        {
+            ["input"] = "gibberish",
+            ["categories"] = "Billing, Spam",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logSpam = new NodeDefinition(NodeId.Create("log-spam"), "log", new Dictionary<string, object> { ["message"] = "spam" });
+        var logOtherwise = new NodeDefinition(NodeId.Create("log-otherwise"), "log", new Dictionary<string, object> { ["message"] = "otherwise" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", classify.Id, "in"),
+            new EdgeDefinition("e-spam", classify.Id, "Spam", logSpam.Id, "in"),
+            new EdgeDefinition("e-otherwise", classify.Id, "otherwise", logOtherwise.Id, "in"),
+            new EdgeDefinition("e-end", logOtherwise.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, classify, logSpam, logOtherwise, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("otherwise", run.State("classify-1").Outputs["selectedPort"].ToString());
+        // Off-list means the classifier got its one repair pass before falling back.
+        Assert.Equal(2, harness.ChatRequests.Count);
+        Assert.True(run.Ran("log-otherwise"));
+        Assert.False(run.Ran("log-spam"));
+    }
+
+    // --- aiVerify ---
+
+    [Fact]
+    public async Task AiVerify_routes_the_contradicted_branch_and_ignores_the_others()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("""
+            { "claims": [ { "claim": "The camera supports AV1.", "status": "contradicted",
+              "evidence": [ { "sourceId": "source-1", "passageId": "line-2", "supportsClaim": false } ] } ] }
+            """);
+
+        var verify = new NodeDefinition(NodeId.Create("verify-1"), "aiVerify", new Dictionary<string, object>
+        {
+            ["content"] = "The camera supports AV1.",
+            ["sources"] = "The camera records H.264/H.265 only. It does not support AV1.",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logVerified = new NodeDefinition(NodeId.Create("log-verified"), "log", new Dictionary<string, object> { ["message"] = "ok" });
+        var logContradicted = new NodeDefinition(NodeId.Create("log-contradicted"), "log", new Dictionary<string, object> { ["message"] = "bad" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", verify.Id, "in"),
+            new EdgeDefinition("e-verified", verify.Id, "verified", logVerified.Id, "in"),
+            new EdgeDefinition("e-contradicted", verify.Id, "contradicted", logContradicted.Id, "in"),
+            new EdgeDefinition("e-end", logContradicted.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, verify, logVerified, logContradicted, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("contradicted", run.State("verify-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-contradicted"));
+        Assert.False(run.Ran("log-verified"));
+        Assert.True(run.Ran("end-1"));
+    }
+
+    [Fact]
+    public async Task AiVerify_downgrades_unbacked_verified_to_unsupported_and_routes_there()
+    {
+        using var harness = new NodeE2EHarness();
+        // Model claims verified but cites no supporting evidence — the deterministic gate downgrades it.
+        harness.WithChatReply("""{ "claims": [ { "claim": "unbacked", "status": "verified", "evidence": [] } ] }""");
+
+        var verify = new NodeDefinition(NodeId.Create("verify-1"), "aiVerify", new Dictionary<string, object>
+        {
+            ["content"] = "some claim",
+            ["sources"] = "unrelated reference text",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logUnsupported = new NodeDefinition(NodeId.Create("log-unsupported"), "log", new Dictionary<string, object> { ["message"] = "u" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", verify.Id, "in"),
+            new EdgeDefinition("e-unsupported", verify.Id, "unsupported", logUnsupported.Id, "in"),
+            new EdgeDefinition("e-end", logUnsupported.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, verify, logUnsupported, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("unsupported", run.State("verify-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-unsupported"));
+    }
+
+    // --- aiDiff ---
+
+    [Fact]
+    public async Task AiDiff_material_change_routes_the_material_branch()
+    {
+        using var harness = new NodeE2EHarness();
+        harness.WithChatReply("""
+            { "materialChanges": [ { "type": "deadline_changed", "old": "30 September", "new": "15 August", "impact": "high" } ],
+              "ignoredChanges": [] }
+            """);
+
+        var diff = new NodeDefinition(NodeId.Create("diff-1"), "aiDiff", new Dictionary<string, object>
+        {
+            ["previous"] = "Deliver by 30 September.",
+            ["current"] = "Deliver by 15 August.",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logMaterial = new NodeDefinition(NodeId.Create("log-material"), "log", new Dictionary<string, object> { ["message"] = "m" });
+        var logNone = new NodeDefinition(NodeId.Create("log-none"), "log", new Dictionary<string, object> { ["message"] = "n" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", diff.Id, "in"),
+            new EdgeDefinition("e-material", diff.Id, "material", logMaterial.Id, "in"),
+            new EdgeDefinition("e-none", diff.Id, "none", logNone.Id, "in"),
+            new EdgeDefinition("e-end", logMaterial.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, diff, logMaterial, logNone, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("material", run.State("diff-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-material"));
+        Assert.False(run.Ran("log-none"));
+        Assert.True(run.Ran("end-1"));
+    }
+
+    [Fact]
+    public async Task AiDiff_identical_documents_route_none_without_a_model_call()
+    {
+        using var harness = new NodeE2EHarness();
+        // No chat reply configured; the deterministic short-circuit must route 'none' without calling it.
+
+        var diff = new NodeDefinition(NodeId.Create("diff-1"), "aiDiff", new Dictionary<string, object>
+        {
+            ["previous"] = "Unchanged policy text.",
+            ["current"] = "Unchanged policy text.",
+        });
+        var start = new NodeDefinition(NodeId.Create("start-1"), "start", new Dictionary<string, object>());
+        var logNone = new NodeDefinition(NodeId.Create("log-none"), "log", new Dictionary<string, object> { ["message"] = "n" });
+        var end = new NodeDefinition(NodeId.Create("end-1"), "end", new Dictionary<string, object>());
+
+        var edges = new[]
+        {
+            new EdgeDefinition("e-start", start.Id, "result", diff.Id, "in"),
+            new EdgeDefinition("e-none", diff.Id, "none", logNone.Id, "in"),
+            new EdgeDefinition("e-end", logNone.Id, "result", end.Id, "in"),
+        };
+
+        var run = await harness.RunWorkflowAsync(new[] { start, diff, logNone, end }, edges);
+
+        Assert.Equal(ExecutionStatus.Completed, run.Status);
+        Assert.Equal("none", run.State("diff-1").Outputs["selectedPort"].ToString());
+        Assert.True(run.Ran("log-none"));
+        Assert.Empty(harness.ChatRequests);
+    }
+
+    [Fact]
+    public async Task AiPrompt_without_a_prompt_fails_the_run_before_calling_the_model()
+    {
+        using var harness = new NodeE2EHarness();
+
+        // 'prompt' is a required manifest parameter, so the run fails at compile/validation
+        // time — the node never executes and no model call is made.
+        var run = await harness.RunNodeAsync("aiPrompt", new Dictionary<string, object>());
+
+        Assert.Equal(ExecutionStatus.Failed, run.Status);
+        Assert.False(run.Ran("end-1"));
+        Assert.Empty(harness.ChatRequests);
+    }
 }

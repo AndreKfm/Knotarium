@@ -59,6 +59,11 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
             "smtpsend" => typeof(SmtpSendNodeTask),
             "imapfetch" => typeof(ImapFetchNodeTask),
             "mqpublish" => typeof(MqPublishNodeTask),
+            "aiprompt" => typeof(AiPromptNodeTask),
+            "airouter" => typeof(AiRouterNodeTask),
+            "aiverify" => typeof(AiVerifyNodeTask),
+            "aidiff" => typeof(AiDiffNodeTask),
+            "aiagent" => typeof(AiAgentNodeTask),
             "end" => typeof(EndNodeTask),
             _ => null
         };

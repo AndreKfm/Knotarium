@@ -1,0 +1,75 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-ai-support-triage",
+    "WorkflowName": "AI Support Triage",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      {
+        "Id": "setvar-1",
+        "Type": "setVariable",
+        "Properties": {
+          "variableName": "customerMessage",
+          "value": "Subject: Order #4711 arrived broken\n\nHi team, my name is Sarah Miller. The ceramic mug from order #4711 arrived cracked yesterday — and this is the third delivery in a row with damage. I genuinely love your products, but this is getting really frustrating. I'd like a replacement, or my money back if that's easier. Please let me know today if possible, the mug was a birthday gift for Friday.\n\nSarah"
+        }
+      },
+      {
+        "Id": "extract-1",
+        "Type": "aiPrompt",
+        "Properties": {
+          "prompt": "Analyze this customer message and extract the key facts:\n\n{{ $variables.customerMessage }}",
+          "jsonSchema": "{ \"type\": \"object\", \"properties\": { \"customerName\": { \"type\": \"string\" }, \"orderNumber\": { \"type\": \"string\" }, \"sentiment\": { \"type\": \"string\", \"enum\": [\"positive\", \"neutral\", \"negative\", \"mixed\"] }, \"urgency\": { \"type\": \"string\", \"enum\": [\"low\", \"medium\", \"high\"] }, \"summary\": { \"type\": \"string\" } }, \"required\": [\"customerName\", \"sentiment\", \"urgency\", \"summary\"] }"
+        }
+      },
+      {
+        "Id": "router-1",
+        "Type": "aiRouter",
+        "Properties": {
+          "input": "{{ $variables.customerMessage }}",
+          "categories": "Complaint, Question, Praise",
+          "instructions": "A damaged, wrong, or late delivery is a Complaint, even when the customer is friendly about it."
+        }
+      },
+      {
+        "Id": "draft-1",
+        "Type": "aiPrompt",
+        "Properties": {
+          "systemPrompt": "You are a senior customer-support agent. You write warm, concise, concrete replies — no corporate filler, no over-apologizing.",
+          "prompt": "Draft a reply (max 120 words) to the customer message below. Offer an immediate free replacement AND a refund option, and acknowledge their deadline if they mentioned one. Address the customer by name.\n\nCustomer message:\n{{ $variables.customerMessage }}\n\nExtracted facts (JSON):\n{{ $node.extract-1.output.result }}"
+        }
+      },
+      {
+        "Id": "log-draft",
+        "Type": "log",
+        "Properties": {
+          "message": "COMPLAINT triaged (urgency: extracted above) — drafted reply:\n{{ $node.draft-1.output.result }}"
+        }
+      },
+      {
+        "Id": "log-other",
+        "Type": "log",
+        "Properties": {
+          "message": "Routed as '{{ $node.router-1.output.category }}' (raw model answer: {{ $node.router-1.output.reply }}) — no draft needed for this branch."
+        }
+      },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "setvar-1", "Input": "in" },
+      { "Id": "e2", "From": "setvar-1", "Output": "result", "To": "extract-1", "Input": "in" },
+      { "Id": "e3", "From": "extract-1", "Output": "result", "To": "router-1", "Input": "in" },
+      { "Id": "e4", "From": "router-1", "Output": "Complaint", "To": "draft-1", "Input": "in" },
+      { "Id": "e5", "From": "router-1", "Output": "Question", "To": "log-other", "Input": "in" },
+      { "Id": "e6", "From": "router-1", "Output": "Praise", "To": "log-other", "Input": "in" },
+      { "Id": "e7", "From": "router-1", "Output": "otherwise", "To": "log-other", "Input": "in" },
+      { "Id": "e8", "From": "draft-1", "Output": "result", "To": "log-draft", "Input": "in" },
+      { "Id": "e9", "From": "log-draft", "Output": "result", "To": "end-1", "Input": "in" },
+      { "Id": "e10", "From": "log-other", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

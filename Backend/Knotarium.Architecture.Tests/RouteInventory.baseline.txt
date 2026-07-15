@@ -92,6 +92,8 @@ Post /api/notification-channels/{id}/test
 Post /api/openapi/specs
 Post /api/runtime/arming
 Post /api/server-configs
+Post /api/settings/ai-provider/models
+Post /api/settings/ai-provider/test
 Post /api/templates/export
 Post /api/templates/gallery/{templateId}/install
 Post /api/templates/inspect

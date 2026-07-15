@@ -1,0 +1,57 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-ai-contract-diff",
+    "WorkflowName": "AI Contract Diff",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      {
+        "Id": "setvar-previous",
+        "Type": "setVariable",
+        "Properties": {
+          "variableName": "previous",
+          "value": "Payment is due within 30 days of invoice. Deliver by 30 September 2026. Warranty: 12 months on parts and labour."
+        }
+      },
+      {
+        "Id": "setvar-current",
+        "Type": "setVariable",
+        "Properties": {
+          "variableName": "current",
+          "value": "Payment is due within 30 days of the invoice date. Deliver by 15 August 2026. Warranty: 12 months on parts and labour."
+        }
+      },
+      {
+        "Id": "diff-1",
+        "Type": "aiDiff",
+        "Properties": {
+          "previous": "{{ $variables.previous }}",
+          "current": "{{ $variables.current }}",
+          "instructions": "A changed date, price, deadline, or obligation is material. Pure rewording is cosmetic."
+        }
+      },
+      {
+        "Id": "log-diff",
+        "Type": "log",
+        "Properties": {
+          "message": "Contract diff verdict: {{ $node.diff-1.output.changeType }} (top impact: {{ $node.diff-1.output.impact }})\nMaterial changes:\n{{ $node.diff-1.output.materialChanges }}"
+        }
+      },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "setvar-previous", "Input": "in" },
+      { "Id": "e2", "From": "setvar-previous", "Output": "result", "To": "setvar-current", "Input": "in" },
+      { "Id": "e3", "From": "setvar-current", "Output": "result", "To": "diff-1", "Input": "in" },
+      { "Id": "e4", "From": "diff-1", "Output": "material", "To": "log-diff", "Input": "in" },
+      { "Id": "e5", "From": "diff-1", "Output": "cosmetic", "To": "log-diff", "Input": "in" },
+      { "Id": "e6", "From": "diff-1", "Output": "none", "To": "log-diff", "Input": "in" },
+      { "Id": "e7", "From": "log-diff", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

@@ -188,6 +188,7 @@ export function ExecutionCanvasPanel({
           </div>
         ) : (
           <ReactFlow
+            proOptions={{ hideAttribution: true }}
             nodes={renderedNodes}
             edges={edges}
             nodeTypes={combinedNodeTypes}

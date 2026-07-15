@@ -1,0 +1,58 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-ai-evidence-check",
+    "WorkflowName": "AI Evidence Check",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      {
+        "Id": "setvar-claim",
+        "Type": "setVariable",
+        "Properties": {
+          "variableName": "claim",
+          "value": "Our return policy allows returns within 30 days, and shipping is always free for orders over €25."
+        }
+      },
+      {
+        "Id": "setvar-sources",
+        "Type": "setVariable",
+        "Properties": {
+          "variableName": "sources",
+          "value": "[{ \"id\": \"policy\", \"content\": \"Returns are accepted within 14 days of delivery. Free shipping applies to orders over €50.\" }]"
+        }
+      },
+      {
+        "Id": "verify-1",
+        "Type": "aiVerify",
+        "Properties": {
+          "content": "{{ $variables.claim }}",
+          "sources": "{{ $variables.sources }}",
+          "instructions": "Treat every number (days, thresholds, prices) as a material fact to check."
+        }
+      },
+      {
+        "Id": "log-verdict",
+        "Type": "log",
+        "Properties": {
+          "message": "Evidence check verdict: {{ $node.verify-1.output.status }}\nPer-claim findings:\n{{ $node.verify-1.output.claims }}"
+        }
+      },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "setvar-claim", "Input": "in" },
+      { "Id": "e2", "From": "setvar-claim", "Output": "result", "To": "setvar-sources", "Input": "in" },
+      { "Id": "e3", "From": "setvar-sources", "Output": "result", "To": "verify-1", "Input": "in" },
+      { "Id": "e4", "From": "verify-1", "Output": "verified", "To": "log-verdict", "Input": "in" },
+      { "Id": "e5", "From": "verify-1", "Output": "unsupported", "To": "log-verdict", "Input": "in" },
+      { "Id": "e6", "From": "verify-1", "Output": "contradicted", "To": "log-verdict", "Input": "in" },
+      { "Id": "e7", "From": "verify-1", "Output": "uncertain", "To": "log-verdict", "Input": "in" },
+      { "Id": "e8", "From": "log-verdict", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}
