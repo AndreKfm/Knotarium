@@ -29,29 +29,18 @@ import '@xyflow/react/dist/style.css';
 import { api } from '../utils/api';
 import { schemaMapper, definitionHasSavedPositions } from '../utils/schemaMapper';
 import { createNodeTypes } from '../utils/nodeTypes';
-import { createNodePackageMetadataMap, enrichNodesWithPackageMetadata, type NodePackageMetadata } from '../utils/nodePackages';
+import { createNodePackageMetadataMap, enrichNodesWithPackageMetadata } from '../utils/nodePackages';
 import { extractSubflowInterface, type SubflowInterface } from '../utils/subflowInterface';
 import {
   findContainingLoopNode,
   isContainerNodeType,
-  getPortPositions,
-  getFreePorts,
-  findNearestCompatiblePort,
-  findEdgeUnderPoint,
-  collectDownstream,
-  DEFAULT_NODE_WIDTH,
-  EDGE_HIT_TOLERANCE,
-  PROXIMITY_THRESHOLD,
   type PortPosition,
-  type InternalNodeLike,
-  type EdgeLike,
 } from '../node-editor/canvasGeometry';
 import { connectionFailureReason } from '../node-editor/connectionFeedback';
 import { buildNode, createNodeId } from '../node-editor/nodeFactory';
 import { deviceHandleIds } from '../node-editor/externalDevicePins';
-import { referencedActionIds, signalFieldGroupsForNode, simulatablePins, type ActionFieldsById, type SignalField } from '../node-editor/signalFieldBinding';
+import { simulatablePins } from '../node-editor/signalFieldBinding';
 import { upstreamReferenceGroups } from '../node-editor/upstreamReferences';
-import { useSignalFieldStore } from '../stores/useSignalFieldStore';
 import { SimulateSignalDialog } from './SimulateSignalDialog';
 import { cloneSubgraph } from '../node-editor/clipboard';
 import { createStickyNoteNode, STICKY_NOTE_DEFAULT_SIZE, STICKY_NOTE_TYPE } from '../node-editor/stickyNote';
@@ -81,6 +70,10 @@ import { useDiagnostics } from './canvas/useDiagnostics';
 import { useUndoRedo, type CanvasSnapshot } from './canvas/useUndoRedo';
 import { useCanvasClipboard } from './canvas/useCanvasClipboard';
 import { useVersioning } from './canvas/useVersioning';
+import { useSignalFields } from './canvas/useSignalFields';
+import { useAutoConnect } from './canvas/useAutoConnect';
+import { useCanvasKeyboardShortcuts } from './canvas/useCanvasKeyboardShortcuts';
+import { acceptsMultipleIncoming } from '../node-editor/connectionSemantics';
 import { isApiError, getErrorMessage, getErrorDiagnostics } from '../utils/apiErrors';
 import { decorateEdgesWithDiagnostics } from '../utils/edgeDiagnostics';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
@@ -179,18 +172,6 @@ interface CanvasProps {
   onWatchLiveRuns?: (workflowId: string) => void;
   // Global runtime armed state — when disarmed, device events start no runs, so "watch live" is gated.
   armed?: boolean | null;
-}
-
-// Fan-in points that accept MULTIPLE incoming branches instead of the usual single input:
-// a container's 'end' loopback (parallelForEach / forLoop body converging back) and the join
-// node's input (wait-for-all). Every other input still replaces its existing wire.
-function acceptsMultipleIncoming(
-  targetId: string | null | undefined,
-  targetHandle: string | null | undefined,
-  nodes: { id: string; type?: string }[],
-): boolean {
-  if ((targetHandle ?? '') === 'end') return true;
-  return nodes.find((n) => n.id === targetId)?.type === 'join';
 }
 
 // Floating layout-tools toolbar styles (Tidy + Align/Distribute).
@@ -324,90 +305,9 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   const syncConsumers = useVariableStore((state) => state.syncConsumers);
   const syncDeclaredVariables = useVariableStore((state) => state.syncDeclaredVariables);
 
-  // Distinct external-action ids referenced by the graph — the device block's action pins and any
-  // Action Trigger's picked action. Their static field schema (read from the provider) names the keys
-  // the inbound `signal.params` can carry, so we can offer `signal.params.<key>` as concrete globals.
-  const referencedActions = useMemo(() => referencedActionIds(nodes, edges), [nodes, edges]);
-  const referencedActionsKey = useMemo(() => referencedActions.join('|'), [referencedActions]);
-
-  // Static field schema (key + type) per referenced action, fetched once from the provider via the
-  // reactor.actionFields loader. NOT registered as canvas globals — the inbound `signal` is one
-  // instance per run, so its `params.<key>` fields belong to the originating action, not the whole
-  // canvas. They're surfaced per-node (scoped to the action that can reach a given node) in the
-  // properties panel instead.
-  const [actionFieldsById, setActionFieldsById] = useState<ActionFieldsById>({});
-  useEffect(() => {
-    let cancelled = false;
-    if (referencedActions.length === 0) {
-      setActionFieldsById({});
-      return;
-    }
-    const inferType = (description?: string): SignalField['type'] => {
-      const d = (description || '').toLowerCase();
-      if (d.startsWith('integer') || d.startsWith('number')) return 'number';
-      if (d.startsWith('boolean')) return 'boolean';
-      return 'string';
-    };
-    (async () => {
-      const map: ActionFieldsById = {};
-      await Promise.all(referencedActions.map(async (action) => {
-        try {
-          // integrationType is a routing segment the host ignores (loaders resolve by name); keep the
-          // generic 'reactor' family so no specific provider is named on the public side.
-          const result = await api.loadNodeOptions('reactor', 'reactor.actionFields', { dependsOn: { action } });
-          map[action] = result.options
-            .filter((opt) => opt.value)
-            .map((opt) => ({ key: opt.value, type: inferType(opt.description) }));
-        } catch {
-          // Provider offline / loader absent → no static keys; the generic signal.params bag still works.
-        }
-      }));
-      if (cancelled) return;
-      setActionFieldsById(map);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referencedActionsKey]);
-
-  // Events all share one field layout (the provider's common event slots), so they're fetched once via
-  // reactor.eventFields — but only when the graph actually has an inbound-signal source.
-  const hasInboundSignalSource = useMemo(
-    () => nodes.some((n) => { const t = (n.type || '').toLowerCase(); return t === 'externaldevice' || t === 'eventtrigger' || t === 'actiontrigger'; }),
-    [nodes],
-  );
-  const [eventFields, setEventFields] = useState<SignalField[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    if (!hasInboundSignalSource) { setEventFields([]); return; }
-    const inferType = (description?: string): SignalField['type'] => {
-      const d = (description || '').toLowerCase();
-      if (d.startsWith('integer') || d.startsWith('number')) return 'number';
-      if (d.startsWith('boolean')) return 'boolean';
-      return 'string';
-    };
-    (async () => {
-      try {
-        const result = await api.loadNodeOptions('reactor', 'reactor.eventFields', {});
-        if (cancelled) return;
-        setEventFields(result.options.filter((opt) => opt.value).map((opt) => ({ key: opt.value, type: inferType(opt.description) })));
-      } catch {
-        // Provider offline / loader absent → no static event keys; signal.params still works by hand.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [hasInboundSignalSource]);
-
-  // Scoped signal fields for the currently-selected node: the originating action(s) whose inbound
-  // signal can reach it (each with its fields) plus the shared event group — shown in the node's panel.
-  const selectedNodeSignalGroups = useMemo(
-    () => (selectedNode ? signalFieldGroupsForNode(nodes, edges, selectedNode.id, actionFieldsById, eventFields) : []),
-    [selectedNode, nodes, edges, actionFieldsById, eventFields],
-  );
-  // Publish them to the per-node store so the node's editors (properties panel chips + Condition operand
-  // reference picker) can read them without threading props through ManifestForm.
-  useEffect(() => {
-    useSignalFieldStore.getState().setSignalFields(selectedNode?.id ?? null, selectedNodeSignalGroups);
-  }, [selectedNode, selectedNodeSignalGroups]);
+  // ── Inbound-signal field discovery (action/event field schema + per-node scoped groups) ──
+  // See canvas/useSignalFields.
+  const { actionFieldsById } = useSignalFields({ nodes, edges, selectedNode });
 
   // Variables declared on the canvas via Set Variable / Set Variables nodes. These become
   // first-class globals (auto-registered in the Global Store below), so they get a draggable
@@ -1403,22 +1303,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
 
   // Absolute-flow-space positions of every measured handle on the canvas. Brand-new
   // nodes (not yet measured by React Flow) contribute nothing until their bounds exist.
-  const collectMeasuredPorts = useCallback((): PortPosition[] => {
-    const ports: PortPosition[] = [];
-    for (const n of getNodes()) {
-      const internal = getInternalNode(n.id);
-      if (internal) ports.push(...getPortPositions(internal as unknown as InternalNodeLike));
-    }
-    return ports;
-  }, [getNodes, getInternalNode]);
-
-  // Fan-in predicate shared by the proximity helpers (mirrors acceptsMultipleIncoming):
-  // a loop 'end' loopback or a join node's input accepts many wires and is never "free".
-  const isFanInTarget = useCallback(
-    (nodeId: string, handleId: string) => acceptsMultipleIncoming(nodeId, handleId, getNodes()),
-    [getNodes],
-  );
-
   // Connect two nodes (fired when a drag ends on a real handle, incl. magnetic snap).
   // During an input-pickup the move is resolved in onConnectEnd (using the drop node),
   // so ignore the snap-driven connection here to avoid creating a reversed edge.
@@ -1647,125 +1531,12 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     setSelectedEdge(null);
   }, [setEdges, recordUndo]);
 
-  // Global keydown handler to support Delete / Backspace key deletions and Escape clearing
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        useVariableStore.getState().clearPins();
-        clearClickConnect();
-        return;
-      }
-
-      const activeEl = document.activeElement;
-      const editingText = !!activeEl && (
-        activeEl.tagName === 'INPUT' ||
-        activeEl.tagName === 'TEXTAREA' ||
-        activeEl.tagName === 'SELECT' ||
-        activeEl.getAttribute('contenteditable') === 'true'
-      );
-
-      // Search / jump palette (Ctrl+F / Cmd+K). Allowed even from a field so the
-      // palette can always be summoned; it owns its own input afterwards.
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        ((event.key === 'f' || event.key === 'F') || (event.key === 'k' || event.key === 'K'))
-      ) {
-        event.preventDefault();
-        setSearchOpen(true);
-        return;
-      }
-
-      // Keyboard-shortcut help ("?" = Shift+/). Ignored while typing in a field.
-      if (!editingText && event.key === '?') {
-        event.preventDefault();
-        setShortcutsOpen((v) => !v);
-        return;
-      }
-
-      // Version history drawer (Ctrl/⌘ + Shift + H). Shift avoids the bare
-      // Ctrl+H browser-history / ⌘+H macOS-hide collisions. Allowed even from a
-      // field so it can always be summoned.
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && (event.key === 'h' || event.key === 'H')) {
-        event.preventDefault();
-        if (historyOpenRef.current) {
-          closeVersionOverview();
-        } else {
-          setHistoryOpen(true);
-        }
-        return;
-      }
-
-      // Undo / Redo (ignored while typing in a field).
-      if (!editingText && (event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
-        event.preventDefault();
-        if (event.shiftKey) doRedo();
-        else doUndo();
-        return;
-      }
-      if (!editingText && (event.ctrlKey || event.metaKey) && (event.key === 'y' || event.key === 'Y')) {
-        event.preventDefault();
-        doRedo();
-        return;
-      }
-
-      // Copy / Paste / Duplicate (ignored while typing in a field).
-      if (!editingText && (event.ctrlKey || event.metaKey) && (event.key === 'c' || event.key === 'C')) {
-        if (copySelection()) event.preventDefault();
-        return;
-      }
-      if (!editingText && (event.ctrlKey || event.metaKey) && (event.key === 'v' || event.key === 'V')) {
-        if (pasteClipboard()) event.preventDefault();
-        return;
-      }
-      if (!editingText && (event.ctrlKey || event.metaKey) && (event.key === 'd' || event.key === 'D')) {
-        event.preventDefault(); // also stops the browser bookmark shortcut
-        duplicateSelection();
-        return;
-      }
-
-      // Select-all nodes (multi-select).
-      if (!editingText && (event.ctrlKey || event.metaKey) && (event.key === 'a' || event.key === 'A')) {
-        event.preventDefault();
-        setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
-        return;
-      }
-
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        if (editingText) return;
-
-        // Snapshot once before removing whatever is selected.
-        if (nodesRef.current.some((n) => n.selected) || edgesRef.current.some((e) => e.selected)) {
-          recordUndo();
-        }
-
-        // Delete selected nodes and their connected edges
-        setNodes((nds) => {
-          const selectedNodeIds = nds.filter((n) => n.selected).map((n) => n.id);
-          if (selectedNodeIds.length > 0) {
-            setEdges((eds) => eds.filter((e) => !selectedNodeIds.includes(e.source) && !selectedNodeIds.includes(e.target)));
-            setSelectedNode(null);
-            return nds.filter((n) => !selectedNodeIds.includes(n.id));
-          }
-          return nds;
-        });
-
-        // Delete selected edges
-        setEdges((eds) => {
-          const selectedEdgeIds = eds.filter((e) => e.selected).map((e) => e.id);
-          if (selectedEdgeIds.length > 0) {
-            setSelectedEdge(null);
-            return eds.filter((e) => !selectedEdgeIds.includes(e.id));
-          }
-          return eds;
-        });
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [setNodes, setEdges, clearClickConnect, doUndo, doRedo, recordUndo, copySelection, pasteClipboard, duplicateSelection]);
+  // ── Global keyboard shortcuts (Escape/search/help/history/undo/copy/delete) ── See canvas/useCanvasKeyboardShortcuts.
+  useCanvasKeyboardShortcuts({
+    clearClickConnect, setSearchOpen, setShortcutsOpen, historyOpenRef, closeVersionOverview,
+    setHistoryOpen, doUndo, doRedo, recordUndo, copySelection, pasteClipboard, duplicateSelection,
+    setNodes, setEdges, setSelectedNode, setSelectedEdge, nodesRef, edgesRef,
+  });
 
   // Add new nodes toolbar handler
   const addNode = useCallback((nodePackage: NodePackageSummary, position?: { x: number; y: number }) => {
@@ -1951,195 +1722,14 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     [nodes],
   );
 
-  // ── Feature B — insert-on-edge ──
-  // If `dropPosition` lands squarely on an existing wire A→B, splice the new node in:
-  // A→new→B, shifting B's downstream subgraph aside to make room. Returns true when it
-  // spliced (caller skips the plain drop). Triggers/containers/output-less nodes opt out.
-  const tryInsertOnEdge = useCallback(
-    (
-      nodePackage: NodePackageSummary,
-      metadata: NodePackageMetadata | undefined,
-      dropPosition: { x: number; y: number },
-    ): boolean => {
-      // Containers manage their own body wiring; never splice one onto a wire.
-      if (isContainerNodeType(nodePackage.id)) return false;
-      // Trigger-only nodes have no input to receive the upstream half of the splice.
-      if (metadata?.triggerOnly) return false;
-
-      const ports = collectMeasuredPorts();
-      const hit = findEdgeUnderPoint(edges as EdgeLike[], ports, dropPosition, EDGE_HIT_TOLERANCE);
-      if (!hit) return false;
-
-      const outHandles = metadata?.outputHandles;
-      const primaryOut = Array.isArray(outHandles) && outHandles.length > 0 ? outHandles[0] : 'result';
-
-      const width = DEFAULT_NODE_WIDTH;
-
-      // Open space for the inserted node by shifting the downstream subgraph right.
-      // Only top-level nodes move — children stay within their container's extent.
-      const downstream = collectDownstream(hit.edge.target, edges as EdgeLike[]);
-      const delta = width + 80;
-
-      // Centre the node in the *expanded* gap (after the downstream shift), not on the
-      // original edge midpoint — otherwise it hugs the upstream node with a long wire to
-      // the downstream one. Adding delta/2 balances the A→new and new→B wire lengths.
-      const newNode = buildNode({
-        type: nodePackage.id,
-        position: snapIfEnabled({ x: hit.midpoint.x - width / 2 + delta / 2, y: hit.midpoint.y - 40 }),
-        metadata,
-        fallbackDisplayName: nodePackage.displayName,
-      });
-
-      setNodes((nds) => [
-        ...nds.map((n) =>
-          downstream.has(n.id) && !n.parentId
-            ? { ...n, position: { x: n.position.x + delta, y: n.position.y } }
-            : n,
-        ),
-        newNode,
-      ]);
-
-      // Re-wire A → new → B. Removing the hit edge and the two addConnection calls all
-      // compose as queued functional updates, so they land in a single render batch.
-      setEdges((eds) => eds.filter((e) => e.id !== hit.edge.id));
-      addConnection({
-        source: hit.edge.source,
-        sourceHandle: hit.edge.sourceHandle ?? null,
-        target: newNode.id,
-        targetHandle: 'in',
-      });
-      addConnection({
-        source: newNode.id,
-        sourceHandle: primaryOut,
-        target: hit.edge.target,
-        targetHandle: hit.edge.targetHandle ?? null,
-      });
-
-      addRecentNode(nodePackage.id);
-      return true;
-    },
-    [collectMeasuredPorts, edges, setNodes, setEdges, addConnection, addRecentNode, snapIfEnabled],
-  );
-
-  // ── Feature A — proximity snap ──
-  // After a node is dropped or moved, auto-wire it to the nearest *free, compatible*
-  // port of another node when one lands within PROXIMITY_THRESHOLD. Both ends must be
-  // free, so this never steals a single-input wire or fights a fan-in. At most one
-  // downstream (self.source → other.target) and one upstream (other.source → self.target)
-  // link are drawn; the upstream half is skipped for trigger-only nodes (no input).
-  // Shared core: the nearest free, compatible downstream (self.source → other.target)
-  // and upstream (other.source → self.target) matches for `nodeId`. Both the connect
-  // (on drop / drag-stop) and the drag-time highlight paths read from this.
-  const findProximityMatches = useCallback(
-    (nodeId: string, triggerOnly: boolean) => {
-      const self = getInternalNode(nodeId) as unknown as InternalNodeLike | undefined;
-      if (!self || getPortPositions(self).length === 0) return { down: null, up: null };
-
-      const internals: InternalNodeLike[] = [];
-      for (const n of getNodes()) {
-        const ni = getInternalNode(n.id);
-        if (ni) internals.push(ni as unknown as InternalNodeLike);
-      }
-      const free = getFreePorts(internals, edges as EdgeLike[], isFanInTarget);
-      const selfFree = free.filter((p) => p.nodeId === nodeId);
-      const otherFree = free.filter((p) => p.nodeId !== nodeId);
-      if (selfFree.length === 0 || otherFree.length === 0) return { down: null, up: null };
-
-      const valid = (c: { source: string; sourceHandle: string; target: string; targetHandle: string }) =>
-        isValidConnection(c as unknown as Connection);
-
-      const down = findNearestCompatiblePort(selfFree.filter((p) => p.kind === 'source'), otherFree, PROXIMITY_THRESHOLD, valid);
-      const up = triggerOnly
-        ? null
-        : findNearestCompatiblePort(selfFree.filter((p) => p.kind === 'target'), otherFree, PROXIMITY_THRESHOLD, valid);
-      return { down, up };
-    },
-    [getInternalNode, getNodes, edges, isFanInTarget, isValidConnection],
-  );
-
-  const runProximityConnect = useCallback(
-    (nodeId: string, triggerOnly: boolean) => {
-      const { down, up } = findProximityMatches(nodeId, triggerOnly);
-      if (down) {
-        addConnection({
-          source: down.source.nodeId,
-          sourceHandle: down.source.handleId,
-          target: down.target.nodeId,
-          targetHandle: down.target.handleId,
-        });
-      }
-      if (up) {
-        addConnection({
-          source: up.source.nodeId,
-          sourceHandle: up.source.handleId,
-          target: up.target.nodeId,
-          targetHandle: up.target.handleId,
-        });
-      }
-    },
-    [findProximityMatches, addConnection],
-  );
-
-  // Drag-time affordance: while a node is dragged, glow the ports that would auto-connect
-  // on release. Skips containers (their drag reparents rather than snaps).
-  const handleNodeDrag = useCallback(
-    (_event: React.MouseEvent, node: RFNode) => {
-      const setKeys = useVariableStore.getState().setSnapCandidateKeys;
-      if (isContainerNodeType(node.type)) {
-        setKeys([]);
-        dragProximityRef.current = null;
-        return;
-      }
-      // Build the other-nodes free-port cache once on the first move of this drag (their positions/edges
-      // don't change while one node is dragged), then reuse it every frame.
-      let cache = dragProximityRef.current;
-      if (!cache || cache.nodeId !== node.id) {
-        const internals: InternalNodeLike[] = [];
-        for (const n of getNodes()) {
-          if (n.id === node.id) continue;
-          const ni = getInternalNode(n.id);
-          if (ni) internals.push(ni as unknown as InternalNodeLike);
-        }
-        cache = { nodeId: node.id, otherFree: getFreePorts(internals, edgesRef.current as unknown as EdgeLike[], isFanInTarget) };
-        dragProximityRef.current = cache;
-      }
-      // Recompute only the DRAGGED node's free ports each frame; match against the cached (static) other
-      // nodes' ports — so the per-mousemove cost is independent of total node count.
-      const self = getInternalNode(node.id) as unknown as InternalNodeLike | undefined;
-      const selfFree = self ? getFreePorts([self], edgesRef.current as unknown as EdgeLike[], isFanInTarget).filter((p) => p.nodeId === node.id) : [];
-      const keys: string[] = [];
-      if (selfFree.length > 0 && cache.otherFree.length > 0) {
-        const valid = (c: { source: string; sourceHandle: string; target: string; targetHandle: string }) =>
-          isValidConnection(c as unknown as Connection);
-        const down = findNearestCompatiblePort(selfFree.filter((p) => p.kind === 'source'), cache.otherFree, PROXIMITY_THRESHOLD, valid);
-        const up = node.data?.triggerOnly
-          ? null
-          : findNearestCompatiblePort(selfFree.filter((p) => p.kind === 'target'), cache.otherFree, PROXIMITY_THRESHOLD, valid);
-        if (down) keys.push(`${down.source.nodeId} ${down.source.handleId}`, `${down.target.nodeId} ${down.target.handleId}`);
-        if (up) keys.push(`${up.source.nodeId} ${up.source.handleId}`, `${up.target.nodeId} ${up.target.handleId}`);
-      }
-      const prev = useVariableStore.getState().snapCandidateKeys;
-      // Only write when the candidate set actually changes (drag fires every mousemove).
-      if (keys.length !== prev.length || keys.some((k, i) => k !== prev[i])) {
-        setKeys(keys);
-      }
-    },
-    [getNodes, getInternalNode, isFanInTarget, isValidConnection],
-  );
-
-  // Defer two frames so React Flow has mounted + measured the node's handle bounds
-  // before we read their positions. Falls back to setTimeout where rAF is absent.
-  const scheduleProximityConnect = useCallback(
-    (nodeId: string, triggerOnly: boolean) => {
-      const raf: (cb: () => void) => void =
-        typeof requestAnimationFrame === 'function' ? (cb) => requestAnimationFrame(cb) : (cb) => { setTimeout(cb, 0); };
-      raf(() => raf(() => runProximityConnect(nodeId, triggerOnly)));
-    },
-    [runProximityConnect],
-  );
-  useEffect(() => {
-    scheduleProximityRef.current = scheduleProximityConnect;
-  }, [scheduleProximityConnect]);
+  // ── Proximity auto-connect (Feature A) + insert-on-edge (Feature B) ── See canvas/useAutoConnect.
+  // scheduleProximityRef + dragProximityRef stay in Canvas (they bridge into the drag lifecycle
+  // handlers onNodeDragStart/handleNodeDragStop) and are passed in.
+  const { handleNodeDrag, scheduleProximityConnect, tryInsertOnEdge } = useAutoConnect({
+    getNodes, getInternalNode, edges, edgesRef, isValidConnection,
+    addConnection, addRecentNode, setNodes, setEdges, snapIfEnabled,
+    scheduleProximityRef, dragProximityRef,
+  });
 
   const handlePaletteDragStart = useCallback((event: DragEvent<HTMLButtonElement>, nodePackage: NodePackageSummary) => {
     event.dataTransfer.setData('application/knotarium-node-package', nodePackage.id);
