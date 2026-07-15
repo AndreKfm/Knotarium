@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../utils/api';
-import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, NotificationChannel, FailureAlertConfig } from '../types';
+import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, FailureAlertConfig } from '../types';
 import { Eye, Plus, RefreshCw, Layers, Terminal, AlertTriangle, CheckCircle, Clock, Search, Globe, Trash2, Check, Minus, Ban, Archive, RotateCcw, Filter, Power, Activity } from 'lucide-react';
 import { TipOfTheDay } from './TipOfTheDay';
 import { useSplitPane, SPLIT_MIN_PANEL_PX, SPLIT_DEFAULT_FRAC } from './dashboard/useSplitPane';
 import { useSystemEchoes } from './dashboard/useSystemEchoes';
+import { useNotificationChannels } from './dashboard/useNotificationChannels';
+import { useDashboardFilters, type DashboardStatusFilter } from './dashboard/useDashboardFilters';
 import { OnboardingEmptyState } from './OnboardingEmptyState';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
@@ -77,7 +79,6 @@ interface DashboardProps {
   onTriggeredExecution: (id: string) => void;
 }
 
-type DashboardStatusFilter = 'All' | 'Running' | 'Waiting' | 'Retrying' | 'Completed' | 'Failed' | 'Cancelled';
 
 interface TimelineGroup {
   label: 'Today' | 'Yesterday' | 'Last 7 Days' | 'Older';
@@ -230,10 +231,8 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<DashboardStatusFilter>('All');
-  const [searchFilter, setSearchFilter] = useState('');
-  // Name filter for the Workflow Definitions list (distinct from `searchFilter`, which scopes the runs table).
-  const [workflowSearch, setWorkflowSearch] = useState('');
+  // Filters (run status/search + workflow-name search). See dashboard/useDashboardFilters.
+  const { statusFilter, setStatusFilter, searchFilter, setSearchFilter, workflowSearch, setWorkflowSearch } = useDashboardFilters();
   // Selected run ids (Operations Timeline multi-select) + an in-progress flag while a delete runs.
   const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
   const [deletingRuns, setDeletingRuns] = useState(false);
@@ -251,8 +250,8 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
   const [groups, setGroups] = useState<WorkflowGroup[]>([]);
   const [etag, setEtag] = useState<string>('');
 
-  // Notification channels (for per-workflow failure-alert routing)
-  const [channels, setChannels] = useState<NotificationChannel[]>([]);
+  // Notification channels (for per-workflow failure-alert routing). See dashboard/useNotificationChannels.
+  const { channels } = useNotificationChannels();
 
   // Auto-filtered signals (e.g. self-echoes an external-signal provider dropped before any run). These
   // never become executions, so they don't show up in /api/executions — we surface them here as their own
@@ -262,13 +261,6 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
   // See dashboard/useSystemEchoes.
   const { filteredEchoes, echoesCollapsed, toggleEchoesCollapsed, clearingEchoes, handleClearEchoes } = useSystemEchoes();
 
-  useEffect(() => {
-    let cancelled = false;
-    api.getNotificationChannels()
-      .then((list) => { if (!cancelled) setChannels(list); })
-      .catch(() => { /* non-fatal: alert routing UI degrades gracefully */ });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     let isCancelled = false;
