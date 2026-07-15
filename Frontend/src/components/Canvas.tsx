@@ -47,13 +47,6 @@ import {
   type EdgeLike,
 } from '../node-editor/canvasGeometry';
 import { connectionFailureReason } from '../node-editor/connectionFeedback';
-import {
-  createUndoHistory,
-  record as recordHistory,
-  applyUndo,
-  applyRedo,
-  type UndoHistory,
-} from '../node-editor/undoHistory';
 import { buildNode, createNodeId } from '../node-editor/nodeFactory';
 import { deviceHandleIds } from '../node-editor/externalDevicePins';
 import { referencedActionIds, signalFieldGroupsForNode, simulatablePins, type ActionFieldsById, type SignalField } from '../node-editor/signalFieldBinding';
@@ -77,15 +70,18 @@ import {
   computeNestedAutoLayout,
   alignNodes,
   distributeNodes,
-  snapPointToGrid,
   type AlignEdge,
   type DistributeAxis,
 } from '../node-editor/autoLayout';
 import { inferLoopContainment, orderParentsBeforeChildren } from '../node-editor/loopContainment';
 import { CanvasToolbar } from './CanvasToolbar';
+import { useConnectFeedback } from './canvas/useConnectFeedback';
+import { useSnapToGrid, SNAP_GRID_SIZE } from './canvas/useSnapToGrid';
+import { useDiagnostics } from './canvas/useDiagnostics';
+import { useUndoRedo, type CanvasSnapshot } from './canvas/useUndoRedo';
+import { useCanvasClipboard } from './canvas/useCanvasClipboard';
 import { isApiError, getErrorMessage, getErrorDiagnostics } from '../utils/apiErrors';
 import { decorateEdgesWithDiagnostics } from '../utils/edgeDiagnostics';
-import { mergeDiagnostics, resolveDiagnosticFocus, countBySeverity } from '../utils/diagnosticsNavigation';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { variablePathHead, hasVariablePath, pathContainerKind } from '../utils/variablePath';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -94,7 +90,7 @@ import { SidebarPalette } from './SidebarPalette';
 import { EmptyCanvasHint } from './EmptyCanvasHint';
 import { CanvasImportModal } from './CanvasImportModal';
 import { useCanvasStore } from '../stores/useCanvasStore';
-import type { ActiveWorkflowVersion, CompilationDiagnostic, NodePackageSummary, WorkflowVersionSummary, WorkflowVersion, RestoreVersionResult, WorkflowDefinition } from '../types';
+import type { ActiveWorkflowVersion, NodePackageSummary, WorkflowVersionSummary, WorkflowVersion, RestoreVersionResult, WorkflowDefinition } from '../types';
 import { CircleHelp, Eye, Hash, History, Maximize2, StickyNote, Group, Ungroup, LayoutTemplate, Crosshair, Combine } from 'lucide-react';
 import { analyzeMultiExtraction, planParametrizedExtraction, type ExNode, type ExEdge } from '../node-editor/extractSubflow';
 
@@ -204,9 +200,6 @@ function acceptsMultipleIncoming(
   return nodes.find((n) => n.id === targetId)?.type === 'join';
 }
 
-// Snap-to-grid step (px) — matches the Background dot gap so nodes land on dots.
-const SNAP_GRID_SIZE = 24;
-
 // Floating layout-tools toolbar styles (Tidy + Align/Distribute).
 const layoutToolbarStyle: CSSProperties = {
   display: 'flex',
@@ -288,39 +281,22 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     [workflowName, nodes, edges],
   );
   const isDirty = savedSignature !== null && currentSignature !== savedSignature;
-  const [diagnostics, setDiagnostics] = useState<CompilationDiagnostic[]>([]);
-  // Non-blocking diagnostics (e.g. edge type-mismatch warnings) fetched live from the validate
-  // endpoint and used to colour offending edges. Separate from `diagnostics`, which is the
-  // blocking publish/run failure overlay.
-  const [edgeDiagnostics, setEdgeDiagnostics] = useState<CompilationDiagnostic[]>([]);
-  // Dockable diagnostics panel (#9): collapse state, defaulting to expanded.
-  const [diagnosticsCollapsed, setDiagnosticsCollapsed] = useState(false);
-
-  // Live, debounced compile pass so the editor can mark type-mismatch edges as you wire the graph.
-  // Keyed off currentSignature (which ignores selection/position churn), so it only re-runs when
-  // the graph's meaningful shape changes.
-  useEffect(() => {
-    if (!currentId || edges.length === 0) {
-      setEdgeDiagnostics([]);
-      return;
-    }
-
-    let cancelled = false;
-    const handle = setTimeout(() => {
-      api.validateWorkflow(currentId, nodes, edges)
-        .then((result) => { if (!cancelled) setEdgeDiagnostics(result); })
-        .catch(() => { if (!cancelled) setEdgeDiagnostics([]); });
-    }, 500);
-
-    return () => { cancelled = true; clearTimeout(handle); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentId, currentSignature]);
+  // Compilation/validation diagnostics: live edge-validate pass, blocking failure list (written by
+  // save/run below), merged panel view, and click-to-locate focus. See canvas/useDiagnostics.
+  const {
+    setDiagnostics,
+    edgeDiagnostics,
+    diagnosticsCollapsed, setDiagnosticsCollapsed,
+    panelDiagnostics, blockingErrorCount, focusDiagnostic,
+  } = useDiagnostics({
+    currentId, currentSignature, nodes, edges, nodesRef, edgesRef,
+    getInternalNode, setCenter, setNodes, setEdges, setSelectedNode, setSelectedEdge,
+  });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [triggering, setTriggering] = useState(false);
   // Connection feedback toast: a success pulse, or an error explaining why a drop didn't wire up.
-  const [connectToast, setConnectToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
-  const connectToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { connectToast, triggerConnectToast, triggerConnectError } = useConnectFeedback();
   // Pending click-to-connect source (output handle a click-connection began on).
   const clickConnectRef = useRef<{ nodeId: string; handleId: string | null } | null>(null);
   // Timestamp of the last wire-up — used to swallow the node click that
@@ -339,19 +315,17 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   // component (e.g. handleNodeDragStop) can trigger it without a use-before-declare cycle.
   const scheduleProximityRef = useRef<(nodeId: string, triggerOnly: boolean) => void>(() => {});
 
-  // ── Undo/Redo ── The canvas is the live "present"; historyRef holds snapshots to
-  // restore. recordUndo() pushes a pre-change snapshot before each structural edit.
-  type CanvasSnapshot = { nodes: RFNode[]; edges: Edge[] };
-  const historyRef = useRef<UndoHistory<CanvasSnapshot>>(createUndoHistory<CanvasSnapshot>());
+  // ── Undo/Redo ── The canvas is the live "present"; a ref-held history holds snapshots to
+  // restore. recordUndo() pushes a pre-change snapshot before each structural edit. See canvas/useUndoRedo.
+  const { snapshotNow, recordUndo, doUndo, doRedo, resetHistory, recordSnapshot } = useUndoRedo({
+    nodesRef, edgesRef, setNodes, setEdges, setSelectedNode, setSelectedEdge,
+  });
   // Pre-move snapshot captured at drag start, committed on drag stop only if changed.
   const dragStartSnapshotRef = useRef<CanvasSnapshot | null>(null);
   // Proximity-snap cache for the in-flight node drag: the free ports of every OTHER node, computed once
   // at drag start (they don't move while one node is dragged), so each mousemove only recomputes the
   // dragged node's own ports instead of rebuilding all nodes' ports every frame.
   const dragProximityRef = useRef<{ nodeId: string; otherFree: PortPosition[] } | null>(null);
-  // Copy/paste clipboard (selected subgraph with original ids) + repeat-paste offset counter.
-  const clipboardRef = useRef<{ nodes: RFNode[]; edges: Edge[] } | null>(null);
-  const pasteCountRef = useRef(0);
 
   const variables = useVariableStore((state) => state.variables[currentId] || []);
   const syncConsumers = useVariableStore((state) => state.syncConsumers);
@@ -833,7 +807,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         setNodes(applyGroupCollapseOnLoad(enrichNodesWithPackageMetadata(rfNodes, availableNodeMetadataRef.current)));
         setEdges(rfEdges);
         setSavedSignature(workflowSignature(wf.name, rfNodes, rfEdges));
-        historyRef.current = createUndoHistory<CanvasSnapshot>(); // fresh history per loaded workflow
+        resetHistory(); // fresh history per loaded workflow
       } catch (err) {
         if (isCancelled) {
           return;
@@ -903,7 +877,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         // Baseline against an EMPTY canvas so the generated content reads as unsaved (dirty) and the
         // user is prompted to save; saving then goes through the normal create-workflow path.
         setSavedSignature(workflowSignature(previewName, [], []));
-        historyRef.current = createUndoHistory<CanvasSnapshot>();
+        resetHistory();
       });
     } else {
       const startNodeMetadata = availableNodeMetadataRef.current.start;
@@ -933,7 +907,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         setNodes(initialNodes);
         setEdges([]);
         setSavedSignature(workflowSignature('Knotarium Flow', initialNodes, []));
-        historyRef.current = createUndoHistory<CanvasSnapshot>();
+        resetHistory();
       });
     }
 
@@ -1072,7 +1046,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         before.position?.y !== node.position?.y ||
         (before.parentId ?? null) !== (node.parentId ?? null);
       if (moved) {
-        historyRef.current = recordHistory(historyRef.current, startSnap);
+        recordSnapshot(startSnap);
       }
     }
 
@@ -1143,25 +1117,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     }
   }, [nodes, setNodes]);
 
-  // Brief "Connected ✓" confirmation pulse after a successful wire-up
-  const triggerConnectToast = useCallback(() => {
-    setConnectToast({ kind: 'success', message: 'Connected ✓' });
-    if (connectToastTimer.current) {
-      clearTimeout(connectToastTimer.current);
-    }
-    connectToastTimer.current = setTimeout(() => setConnectToast(null), 1100);
-  }, []);
-
-  // Explain why a connection drop didn't take. Lingers longer than the success
-  // pulse so the reason is readable.
-  const triggerConnectError = useCallback((message: string) => {
-    setConnectToast({ kind: 'error', message });
-    if (connectToastTimer.current) {
-      clearTimeout(connectToastTimer.current);
-    }
-    connectToastTimer.current = setTimeout(() => setConnectToast(null), 2600);
-  }, []);
-
   // Single place that adds a wire. Enforces the invariant that an input accepts
   // at most one incoming connection — a new wire replaces any existing one on
   // the same target handle. Outputs are unrestricted (fan-out: one output may
@@ -1183,66 +1138,15 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     triggerConnectToast();
   }, [setEdges, triggerConnectToast, getNodes]);
 
-  // ── Undo/Redo helpers ──
-  // A snapshot clones the current graph so later edits can't mutate stored history.
-  const snapshotNow = useCallback((): CanvasSnapshot => ({
-    nodes: structuredClone(nodesRef.current),
-    edges: structuredClone(edgesRef.current),
-  }), []);
-  // Record a pre-change snapshot before a structural edit (call once per user gesture,
-  // never inside addConnection — compound ops like splice must stay a single undo step).
-  const recordUndo = useCallback(() => {
-    historyRef.current = recordHistory(historyRef.current, snapshotNow());
-  }, [snapshotNow]);
-  const applySnapshot = useCallback((s: CanvasSnapshot) => {
-    setNodes(structuredClone(s.nodes));
-    setEdges(structuredClone(s.edges));
-    setSelectedNode(null);
-    setSelectedEdge(null);
-  }, [setNodes, setEdges]);
-  const doUndo = useCallback(() => {
-    const r = applyUndo(historyRef.current, snapshotNow());
-    if (!r) return;
-    historyRef.current = r.history;
-    applySnapshot(r.restored);
-  }, [snapshotNow, applySnapshot]);
-  const doRedo = useCallback(() => {
-    const r = applyRedo(historyRef.current, snapshotNow());
-    if (!r) return;
-    historyRef.current = r.history;
-    applySnapshot(r.restored);
-  }, [snapshotNow, applySnapshot]);
 
   // ── Snap-to-grid (grid matches the 24px Background dot gap) ──
-  const [snapEnabled, setSnapEnabled] = useState(false);
-  // Ref mirror so placement callbacks (drop/paste/tidy) can snap without being
-  // re-created on every toggle. React Flow already snaps manual drags itself.
-  const snapEnabledRef = useRef(snapEnabled);
-  useEffect(() => { snapEnabledRef.current = snapEnabled; }, [snapEnabled]);
-  const snapIfEnabled = useCallback(
-    (p: { x: number; y: number }) => (snapEnabledRef.current ? snapPointToGrid(p, SNAP_GRID_SIZE) : p),
-    [],
-  );
+  const { snapEnabled, setSnapEnabled, snapIfEnabled } = useSnapToGrid();
 
   // ── Copy / Paste / Duplicate ──
-  // Append a freshly-cloned subgraph (new ids, offset) and leave it selected. Shared by
-  // paste (from clipboard) and duplicate (direct from the current selection).
-  const appendClones = useCallback(
-    (sourceNodes: RFNode[], sourceEdges: Edge[], offset: number) => {
-      if (sourceNodes.length === 0) return;
-      const { nodes: cloned, edges: cloneEdges } = cloneSubgraph(sourceNodes, sourceEdges, {
-        newId: (type) => createNodeId(type ?? 'node'),
-        offset: { x: offset, y: offset },
-      });
-      const clones = cloned.map((n) => ({ ...n, position: snapIfEnabled(n.position) }));
-      recordUndo();
-      setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...clones]);
-      setEdges((eds) => [...eds, ...cloneEdges]);
-      setSelectedNode(clones[0] ?? null);
-      setSelectedEdge(null);
-    },
-    [recordUndo, setNodes, setEdges, snapIfEnabled],
-  );
+  // Copy / paste / duplicate of the selected subgraph. See canvas/useCanvasClipboard.
+  const { copySelection, pasteClipboard, duplicateSelection } = useCanvasClipboard({
+    nodesRef, edgesRef, recordUndo, snapIfEnabled, setNodes, setEdges, setSelectedNode, setSelectedEdge,
+  });
 
   // Insert a template's graph into the OPEN workflow (vs. creating a new workflow). Reuses the paste
   // path: fresh node ids, internal edges rewired, single undo step. Credential refs stay as `slot:`
@@ -1350,33 +1254,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     },
     [insertTemplatePayload],
   );
-
-  const copySelection = useCallback(() => {
-    const selected = nodesRef.current.filter((n) => n.selected);
-    if (selected.length === 0) return false;
-    const ids = new Set(selected.map((n) => n.id));
-    const internalEdges = edgesRef.current.filter((e) => ids.has(e.source) && ids.has(e.target));
-    clipboardRef.current = { nodes: structuredClone(selected), edges: structuredClone(internalEdges) };
-    pasteCountRef.current = 0;
-    return true;
-  }, []);
-
-  const pasteClipboard = useCallback(() => {
-    const clip = clipboardRef.current;
-    if (!clip || clip.nodes.length === 0) return false;
-    pasteCountRef.current += 1;
-    appendClones(clip.nodes, clip.edges, 40 * pasteCountRef.current);
-    return true;
-  }, [appendClones]);
-
-  const duplicateSelection = useCallback(() => {
-    const selected = nodesRef.current.filter((n) => n.selected);
-    if (selected.length === 0) return false;
-    const ids = new Set(selected.map((n) => n.id));
-    const internalEdges = edgesRef.current.filter((e) => ids.has(e.source) && ids.has(e.target));
-    appendClones(selected, internalEdges, 40);
-    return true;
-  }, [appendClones]);
 
   // ── Search / jump palette (Ctrl+F / Cmd+K) ──
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1590,50 +1467,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
 
   // Diagnostics panel (#9): blocking publish/run failures merged with the live
   // edge-validation warnings into one ordered, de-duplicated list.
-  const panelDiagnostics = useMemo(
-    () => mergeDiagnostics(diagnostics, edgeDiagnostics),
-    [diagnostics, edgeDiagnostics],
-  );
-  // Blocking (Error-severity) count — surfaced on the Save & Publish button so the corner panel isn't
-  // the only signal that publishing will fail.
-  const blockingErrorCount = useMemo(() => countBySeverity(panelDiagnostics).Error, [panelDiagnostics]);
-
-  // Centre the canvas on the node / edge a diagnostic points at, and select it.
-  const focusDiagnostic = useCallback(
-    (diagnostic: CompilationDiagnostic) => {
-      const focus = resolveDiagnosticFocus(diagnostic, edgesRef.current);
-      if (!focus) return;
-      const centerOf = (nodeId: string): { x: number; y: number } | null => {
-        const internal = getInternalNode(nodeId);
-        if (!internal) return null;
-        const w = internal.measured?.width ?? DEFAULT_NODE_WIDTH;
-        const h = internal.measured?.height ?? 80;
-        const pos = internal.internals?.positionAbsolute ?? internal.position;
-        return { x: pos.x + w / 2, y: pos.y + h / 2 };
-      };
-      if (focus.kind === 'node') {
-        const c = centerOf(focus.nodeId);
-        if (!c) return;
-        setCenter(c.x, c.y, { zoom: 1.2, duration: 400 });
-        setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === focus.nodeId })));
-        setSelectedNode(nodesRef.current.find((n) => n.id === focus.nodeId) ?? null);
-        setSelectedEdge(null);
-      } else {
-        const pts = [centerOf(focus.source), centerOf(focus.target)].filter(
-          (p): p is { x: number; y: number } => p !== null,
-        );
-        if (pts.length === 0) return;
-        const x = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-        const y = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-        setCenter(x, y, { zoom: 1.2, duration: 400 });
-        setEdges((eds) =>
-          eds.map((e) => ({ ...e, selected: e.source === focus.source && e.target === focus.target })),
-        );
-        setSelectedNode(null);
-      }
-    },
-    [getInternalNode, setCenter, setNodes, setEdges],
-  );
 
   // ── Auto-layout (dagre) + Align / Distribute (multi-select) ──
   // Measured size of a node (container nodes carry size in style; fall back later).
@@ -1868,7 +1701,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         const targetHandle = dropNode.internals.handleBounds?.target?.[0];
         if (targetHandle) {
           // Re-home is a real change → commit the pre-lift snapshot as one undo step.
-          if (pickupSnapshot) historyRef.current = recordHistory(historyRef.current, pickupSnapshot);
+          if (pickupSnapshot) recordSnapshot(pickupSnapshot);
           // Move the connection's target onto the drop node's input (source unchanged).
           addConnection({
             source: pickup.source,
