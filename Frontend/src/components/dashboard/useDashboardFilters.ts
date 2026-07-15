@@ -3,6 +3,20 @@ import type { Dispatch, SetStateAction } from 'react'
 
 export type DashboardStatusFilter = 'All' | 'Running' | 'Waiting' | 'Retrying' | 'Completed' | 'Failed' | 'Cancelled'
 
+/** Map a UI status filter to the executions API `status` param (undefined = no filter). */
+export function mapStatusFilterToApi(status: DashboardStatusFilter): string | undefined {
+  switch (status) {
+    case 'All':
+      return undefined
+    case 'Waiting':
+      return 'Suspended'
+    case 'Retrying':
+      return 'Retrying'
+    default:
+      return status
+  }
+}
+
 export interface DashboardFilters {
   /** Run-status filter for the Operations Timeline (feeds the executions loader). */
   statusFilter: DashboardStatusFilter
