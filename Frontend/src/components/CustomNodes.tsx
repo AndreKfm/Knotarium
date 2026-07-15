@@ -502,6 +502,23 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
     boxShadow: '0 0 0 1.5px rgba(16, 185, 129, 0.6), 0 0 20px rgba(16, 185, 129, 0.4)',
   } : {};
 
+  // Nodes that render branch/verdict labels down the right edge (AI Verify's 4, AI Diff's 3, AI Router's
+  // dynamic categories) need a right gutter on the OUTPUTS chip section so the promotable-output chips don't
+  // slide under those labels. The header title is short and left-aligned, so it does NOT get the gutter
+  // (padding it would squeeze the title in the execution view, where a status badge shares the header row,
+  // and wrap it onto 3 lines). For AI Router the gutter is sized to the longest category (labels ellipsize
+  // at 45% of the node, so it is capped accordingly).
+  const rightBranchCount = type === 'aiVerify' ? 4 : type === 'aiDiff' ? 3 : isAiRouter ? aiRouterHandles.length : 0;
+  const branchLabelGutter = type === 'aiVerify' ? 104
+    : type === 'aiDiff' ? 92
+    : type === 'httpRequest' ? 46  // short DONE/FAIL labels — just enough to clear the isSuccess chip
+    : isAiRouter && aiRouterHandles.length > 0
+      ? Math.min(150, Math.max(...aiRouterHandles.map((h) => h.length)) * 7 + 18)
+      : 0;
+  // Give branch-heavy nodes a little more height so 3–4 labels spread down the right edge with breathing
+  // room instead of stacking tightly (they were reading as "condensed").
+  const branchMinHeight = rightBranchCount >= 3 ? rightBranchCount * 30 + 44 : undefined;
+
   return (
     <div
       className={nodeClass}
@@ -511,6 +528,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
       style={{
         width: isContainer ? '100%' : undefined,
         height: isContainer ? '100%' : undefined,
+        minHeight: isContainer ? undefined : branchMinHeight,
         // Cap a normal node's width so long config values (e.g. a Set Variable holding a paragraph)
         // wrap and grow the card DOWNWARD instead of stretching it across the canvas. Containers are
         // user-resizable, so they opt out.
@@ -828,7 +846,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
             </div>
           );
         })() : getNodeDataOutputs(type, props as any).length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '6px', marginTop: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '6px', marginTop: '6px', paddingRight: branchLabelGutter || undefined }}>
             <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
               Outputs (Drag to Promote)
             </span>

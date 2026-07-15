@@ -89,6 +89,7 @@ import { mergeDiagnostics, resolveDiagnosticFocus, countBySeverity } from '../ut
 import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { variablePathHead, hasVariablePath, pathContainerKind } from '../utils/variablePath';
 import { PropertiesPanel } from './PropertiesPanel';
+import { useResizableWidth, ResizeHandle } from './shared/useResizablePanel';
 import { SidebarPalette } from './SidebarPalette';
 import { EmptyCanvasHint } from './EmptyCanvasHint';
 import { CanvasImportModal } from './CanvasImportModal';
@@ -258,6 +259,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   // State, not a ref, so setting it re-runs the tidy effect even when the graph was already measured before
   // this load (otherwise the effect, keyed only on nodesInitialized, would miss the no-transition case).
   const [autoTidyPending, setAutoTidyPending] = useState(false);
+  const { width: sidebarWidth, startResize: startSidebarResize } = useResizableWidth('editor-sidebar-width', 380, 300, 820);
   const [selectedNode, setSelectedNode] = useState<RFNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [selectedNodeCount, setSelectedNodeCount] = useState(0);
@@ -2930,6 +2932,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
                 `nodes`/`edges`, just not rendered, and returns on exit). Diff mode
                 keeps the live draft visible but read-only behind the diff panel. */}
             <ReactFlow
+              proOptions={{ hideAttribution: true }}
               nodes={editorMode.kind === 'preview' ? previewNodes : nodes}
               edges={editorMode.kind === 'preview' ? previewEdges : displayEdges}
               edgeTypes={edgeTypes}
@@ -3409,16 +3412,19 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         )}
       </div>
 
-      {/* Split Sidebar (Right side) */}
+      {/* Split Sidebar (Right side) — resizable by dragging its left edge. */}
       <div style={{
-        width: '380px',
+        width: `${sidebarWidth}px`,
+        flex: 'none',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
         background: 'rgba(16, 22, 37, 0.4)',
         backdropFilter: 'blur(10px)',
         borderLeft: '1px solid var(--border-color)',
+        position: 'relative',
       }}>
+        <ResizeHandle onMouseDown={startSidebarResize} title="Drag to resize the panel" />
         {/* Top: Properties Panel */}
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', borderBottom: '1px solid var(--border-color)' }}>
           <PropertiesPanel
