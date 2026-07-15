@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-ai-contract-diff",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "AI Contract Diff",
+  "author": "Knotarium",
+  "description": "Compares two versions of a document by meaning and routes by whether anything material changed — the AI Semantic Diff node in one run. Byte-identical inputs short-circuit to 'none' with no model call; otherwise the model extracts the changes and deterministic code decides material vs cosmetic vs none. The bundled sample changes a delivery deadline, so a fresh run lands on the 'material' branch. Requires an AI provider under Settings → AI Provider.",
+  "tags": ["starter", "ai", "diff", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-15T00:00:00.0000000Z",
+  "sourceWorkflowName": "AI Contract Diff",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

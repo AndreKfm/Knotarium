@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-ai-evidence-check",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "AI Evidence Check",
+  "author": "Knotarium",
+  "description": "Fact-checks a claim against reference sources and routes by the verdict — the AI Verify node in one run. The claim and the sources are checked claim-by-claim; the verdict (verified / unsupported / contradicted / uncertain) is decided by deterministic code over the model's structured findings, not by a second 'does this look right?' prompt. The bundled sample claim contradicts the sources, so a fresh run lands on the 'contradicted' branch. Requires an AI provider under Settings → AI Provider.",
+  "tags": ["starter", "ai", "verify", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-15T00:00:00.0000000Z",
+  "sourceWorkflowName": "AI Evidence Check",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}
