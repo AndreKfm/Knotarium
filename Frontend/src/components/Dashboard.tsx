@@ -7,8 +7,9 @@ import { TipOfTheDay } from './TipOfTheDay';
 import { useSplitPane, SPLIT_MIN_PANEL_PX, SPLIT_DEFAULT_FRAC } from './dashboard/useSplitPane';
 import { useSystemEchoes } from './dashboard/useSystemEchoes';
 import { useNotificationChannels } from './dashboard/useNotificationChannels';
-import { useDashboardFilters, mapStatusFilterToApi, type DashboardStatusFilter } from './dashboard/useDashboardFilters';
+import { useDashboardFilters, mapExecutionStatusLabel, type DashboardStatusFilter } from './dashboard/useDashboardFilters';
 import { useDashboardData } from './dashboard/useDashboardData';
+import { useRunSelection } from './dashboard/useRunSelection';
 import { OnboardingEmptyState } from './OnboardingEmptyState';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
@@ -87,16 +88,6 @@ interface TimelineGroup {
 
 const statusFilters: DashboardStatusFilter[] = ['All', 'Running', 'Waiting', 'Retrying', 'Completed', 'Failed', 'Cancelled'];
 
-function mapExecutionStatusLabel(status: ExecutionStatus): DashboardStatusFilter | 'Pending' {
-  switch (status) {
-    case 'Suspended':
-      return 'Waiting';
-    case 'WaitingForRetry':
-      return 'Retrying';
-    default:
-      return status;
-  }
-}
 
 
 function normalizeTriggerOrigin(origin?: string): 'manual' | 'webhook' | 'schedule' | 'deviceEvent' {
@@ -221,9 +212,6 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
     archived, setArchived, groups,
     handleRefresh, handleCreateGroup, handleRenameGroup, handleUpdateGroupColor, handleDeleteGroup,
   } = useDashboardData({ statusFilter, searchFilter });
-  // Selected run ids (Operations Timeline multi-select) + an in-progress flag while a delete runs.
-  const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
-  const [deletingRuns, setDeletingRuns] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
@@ -361,80 +349,12 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
     }
   };
 
-  const toggleRunSelection = (id: string) => {
-    setSelectedRuns((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  // Selectable runs = everything not in-flight (those can't be deleted). Drives the "Select all" control.
-  const selectableRunIds = executions
-    .filter((e) => { const l = mapExecutionStatusLabel(e.status); return l !== 'Running' && l !== 'Pending'; })
-    .map((e) => e.id);
-  const allRunsSelected = selectableRunIds.length > 0 && selectableRunIds.every((id) => selectedRuns.has(id));
-  const someRunsSelected = selectedRuns.size > 0 && !allRunsSelected;
-  const toggleSelectAllRuns = () => setSelectedRuns(allRunsSelected ? new Set() : new Set(selectableRunIds));
-
-  const afterRunsDeleted = async () => {
-    setSelectedRuns(new Set());
-    await handleRefresh();
-  };
-
-  const handleCancelRun = async (id: string) => {
-    if (!window.confirm('Stop this run? It will be marked Cancelled (then you can delete it).')) return;
-    setDeletingRuns(true);
-    try {
-      await api.cancelExecution(id);
-      await handleRefresh();
-    } catch (err: unknown) {
-      alert(`Failed to stop run: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
-
-  const handleDeleteRun = async (id: string) => {
-    setDeletingRuns(true);
-    try {
-      await api.deleteExecution(id);
-      await afterRunsDeleted();
-    } catch (err: unknown) {
-      alert(`Failed to delete run: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
-
-  const handleDeleteSelectedRuns = async () => {
-    const ids = [...selectedRuns];
-    if (ids.length === 0) return;
-    if (!window.confirm(`Delete ${ids.length} selected run${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return;
-    setDeletingRuns(true);
-    try {
-      await api.bulkDeleteExecutions({ ids });
-      await afterRunsDeleted();
-    } catch (err: unknown) {
-      alert(`Failed to delete runs: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
-
-  const handleDeleteAllRuns = async () => {
-    const scope = statusFilter === 'All' ? 'all runs' : `all ${statusFilter} runs`;
-    if (!window.confirm(`Delete ${scope}? In-progress runs are kept. This can't be undone.`)) return;
-    setDeletingRuns(true);
-    try {
-      await api.bulkDeleteExecutions({ all: true, status: mapStatusFilterToApi(statusFilter) });
-      await afterRunsDeleted();
-    } catch (err: unknown) {
-      alert(`Failed to delete runs: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
+  // Operations-Timeline run selection + deletion. See dashboard/useRunSelection.
+  const {
+    selectedRuns, deletingRuns,
+    toggleRunSelection, selectableRunIds, allRunsSelected, someRunsSelected, toggleSelectAllRuns, clearSelection,
+    handleCancelRun, handleDeleteRun, handleDeleteSelectedRuns, handleDeleteAllRuns,
+  } = useRunSelection({ executions, statusFilter, handleRefresh });
 
   const handleRenameWorkflow = async (id: string, name: string) => {
     const target = workflows.find(w => w.id.value === id);
@@ -918,7 +838,7 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <button
                           type="button"
-                          onClick={() => setSelectedRuns(new Set())}
+                          onClick={clearSelection}
                           title="Clear selection"
                           style={{ padding: '6px 12px', borderRadius: '8px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
                         >
