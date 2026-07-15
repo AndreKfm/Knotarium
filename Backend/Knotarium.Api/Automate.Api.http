@@ -1,4 +1,4 @@
-@Automate.Api_HostAddress = http://localhost:5232
+@Automate.Api_HostAddress = http://localhost:43120
 
 GET {{Automate.Api_HostAddress}}/weatherforecast/
 Accept: application/json

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: AndreKaufmann.Knotarium
+PackageVersion: 1.0.0-rc.1
+PackageLocale: en-US
+Publisher: Andre Kaufmann
+PublisherUrl: https://github.com/AndreKfm
+PackageName: Knotarium
+PackageUrl: https://github.com/AndreKfm/Knotarium
+License: Apache-2.0
+LicenseUrl: https://github.com/AndreKfm/Knotarium/blob/main/LICENSE
+Copyright: Copyright (c) Andre Kaufmann
+ShortDescription: Self-hosted visual workflow automation server.
+Description: >-
+  Knotarium is a self-hosted, node-based workflow automation server. Build workflows on a visual
+  canvas and run them on a local .NET engine — HTTP, database, file, email, schedule, polling and
+  AI nodes, with inline C# and subflows. Installs and runs as a Windows service.
+Moniker: knotarium
+Tags:
+  - automation
+  - workflow
+  - self-hosted
+  - no-code
+  - integration
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

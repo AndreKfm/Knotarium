@@ -9,19 +9,19 @@ export default defineConfig({
     port: Number(process.env.PORT) || 5273,
     proxy: {
       '/api': {
-        target: 'http://localhost:5232',
+        target: 'http://localhost:43120',
         changeOrigin: true,
         secure: false,
       }
     }
   },
   // `vite preview` (production build) uses its own config block — mirror the dev proxy so a prod build
-  // run locally still reaches the backend on :5232.
+  // run locally still reaches the backend on :43120.
   preview: {
     port: Number(process.env.PORT) || 4173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5232',
+        target: 'http://localhost:43120',
         changeOrigin: true,
         secure: false,
       }
