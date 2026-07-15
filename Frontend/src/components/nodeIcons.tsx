@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import {
-  AlertTriangle, Bell, Calendar, Code2, FileText, Forward, Hourglass, Megaphone,
+  AlertTriangle, Bell, Bot, Calendar, Code2, FileText, Forward, Hourglass, Megaphone,
   FileDiff, MousePointerClick, Play, Puzzle, RadioTower, RefreshCw, Router, Send, ShieldCheck, Sparkles, Split, Square, Variable, Zap,
 } from 'lucide-react';
 
@@ -84,6 +84,7 @@ const NODE_TO_LUCIDE: Record<string, typeof Play> = {
   aiRouter: Split,
   aiVerify: ShieldCheck,
   aiDiff: FileDiff,
+  aiAgent: Bot,
 };
 
 function resolveGlyph(nodeId: string, glyphSize: number): ReactNode {

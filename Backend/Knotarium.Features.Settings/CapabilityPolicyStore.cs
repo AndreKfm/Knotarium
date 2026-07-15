@@ -30,6 +30,7 @@ public sealed class CapabilityPolicyStore : ICapabilityPolicy
     {
         NodeCapabilities.CodeExecution,
         NodeCapabilities.Database,
+        NodeCapabilities.AiAgent,
     };
 
     private readonly GlobalSettingsService _settings;

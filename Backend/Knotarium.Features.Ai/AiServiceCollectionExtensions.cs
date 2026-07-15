@@ -34,9 +34,17 @@ public static class AiServiceCollectionExtensions
         services.AddScoped<IWorkflowGenerator, LlmWorkflowGenerator>();
         services.AddScoped<WorkflowGenerationOrchestrator>();
 
-        // Runtime chat completion for AI nodes (aiPrompt). Registered here — BEFORE AddBuiltInNodes runs
-        // in the host — so the node slice's TryAdd not-configured fallback never wins in a real host.
+        // Tool-calling adapters for the AI agent node's tool-use loop (no Gemini adapter in v1 — the agent
+        // service rejects a Gemini config with a clear message).
+        services.AddSingleton<ILlmToolChatProvider, AnthropicToolChatProvider>();
+        services.AddSingleton<ILlmToolChatProvider, OpenAiToolChatProvider>();
+        services.AddSingleton<ILlmToolChatProvider, AzureOpenAiToolChatProvider>();
+
+        // Runtime chat completion for AI nodes (aiPrompt) + tool-enabled turns for the AI agent node.
+        // Registered here — BEFORE AddBuiltInNodes runs in the host — so the node slice's TryAdd
+        // not-configured fallbacks never win in a real host.
         services.AddScoped<IChatCompletionService, ChatCompletionService>();
+        services.AddScoped<IAgentChatService, AgentChatService>();
         return services;
     }
 }

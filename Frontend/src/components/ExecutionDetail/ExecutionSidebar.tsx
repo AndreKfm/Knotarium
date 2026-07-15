@@ -3,6 +3,7 @@ import { ChevronDown, Clock3, Copy, Eye, EyeOff, FolderLock, OctagonX, Play, Rot
 import type { ExecutionInstance, WorkflowScheduleSummary } from '../../types';
 import type { JournalOverviewGroup, KnownExecutionStatus, VisualRunStatus } from './types';
 import { usePendingFileAccessGrantStore } from '../../stores/usePendingFileAccessGrantStore';
+import { useResizableWidth, ResizeHandle } from '../shared/useResizablePanel';
 
 // A File Access policy denial (guard-blocked path) — as opposed to a free-space denial or an ordinary IO
 // error — carries "File access denied" and names the attempted path in single quotes. Returns the parent
@@ -117,6 +118,7 @@ export function ExecutionSidebar({
   // noise. Hide those by default (opt-in reveal). Scoped to device-event runs so a meaningful skip
   // elsewhere — an operator "Skip" decision, a Condition's untaken branch — stays visible as before.
   const [showSkipped, setShowSkipped] = useState(false);
+  const { width: panelWidth, startResize: startPanelResize } = useResizableWidth('execution-sidebar-width', 420, 320, 900);
   const canHideSkipped = triggerOrigin === 'deviceEvent';
   const skippedCount = useMemo(
     () => (canHideSkipped ? journalOverview.filter((group) => normalizeStatusValue(group.status) === 'Skipped').length : 0),
@@ -154,7 +156,8 @@ export function ExecutionSidebar({
           pillColor: '#e9d5ff',
         };
   return (
-    <div style={{ width: '420px', background: '#0b1220', display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid #182231', position: 'relative', zIndex: 2 }}>
+    <div style={{ width: `${panelWidth}px`, flex: 'none', background: '#0b1220', display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid #182231', position: 'relative', zIndex: 2 }}>
+      <ResizeHandle onMouseDown={startPanelResize} title="Drag to resize the panel" />
       <div style={{ padding: '24px', borderBottom: '1px solid var(--border-color)', maxHeight: '200px', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
           <ShieldCheck size={16} color="var(--color-info)" />
@@ -682,6 +685,47 @@ export function ExecutionSidebar({
                                 );
                               })}
                             </div>
+
+                            {/* AI Agent: render the per-iteration tool-call trail from the node's `steps`
+                                output as a nested list, with click-through to each tool's child run. */}
+                            {group.nodeType === 'aiAgent' && (() => {
+                              const payload = group.latestPayload as Record<string, unknown> | null;
+                              const steps = payload && Array.isArray(payload.steps) ? (payload.steps as unknown[]) : null;
+                              if (!steps || steps.length === 0) return null;
+                              return (
+                                <div style={{ background: '#09111d', border: '1px solid rgba(244, 114, 182, 0.24)', borderRadius: '12px', padding: '12px' }}>
+                                  <div style={{ fontSize: '0.68rem', color: '#f472b6', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px', fontWeight: 700 }}>
+                                    Agent steps{typeof payload?.iterations === 'number' ? ` · ${payload.iterations} iteration(s)` : ''}
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {steps.map((raw, si) => {
+                                      const step = raw as { iteration?: number; toolCalls?: unknown[] };
+                                      const calls = Array.isArray(step.toolCalls) ? step.toolCalls : [];
+                                      return (
+                                        <div key={si} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                          <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Turn {step.iteration ?? si + 1}</span>
+                                          {calls.map((c, ci) => {
+                                            const call = c as { tool?: string; ok?: boolean; childExecutionId?: string; error?: string };
+                                            return (
+                                              <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontFamily: 'monospace', color: '#f8fafc' }}>
+                                                <span style={{ color: call.ok === false ? '#f87171' : '#34d399' }}>{call.ok === false ? '✗' : '✓'}</span>
+                                                <span>{call.tool ?? 'tool'}</span>
+                                                {call.error && <span style={{ color: '#f87171' }}>— {call.error}</span>}
+                                                {call.childExecutionId && call.childExecutionId !== '00000000-0000-0000-0000-000000000000' && (
+                                                  <span style={{ color: '#64748b', fontSize: '0.7rem' }} title={`child run ${call.childExecutionId}`}>
+                                                    run {call.childExecutionId.slice(0, 8)}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             {showInlinePayload && group.latestPayload && (
                               <div
