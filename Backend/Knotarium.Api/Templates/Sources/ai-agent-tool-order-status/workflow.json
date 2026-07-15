@@ -1,0 +1,28 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-ai-agent-tool-order-status",
+    "WorkflowName": "Tool: Order Status Lookup",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      {
+        "Id": "setvar-status",
+        "Type": "setVariable",
+        "Properties": {
+          "variableName": "orderStatus",
+          "value": "Order {{ $variables.orderId }}: shipped Monday, currently in transit, arriving Wednesday via DHL. Tracking: DH-{{ $variables.orderId }}-EU."
+        }
+      },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "setvar-status", "Input": "in" },
+      { "Id": "e2", "From": "setvar-status", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

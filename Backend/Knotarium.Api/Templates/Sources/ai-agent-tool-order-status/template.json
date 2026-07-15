@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-ai-agent-tool-order-status",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "Tool: Order Status Lookup",
+  "author": "Knotarium",
+  "description": "A tiny, self-contained workflow meant to be used as a TOOL by the 'AI Agent: Order Concierge' template. It takes an orderId and returns a canned shipping status on the 'orderStatus' variable. Install this, publish + enable it, then open the Order Concierge agent node and pick this workflow under Tools. Replace the canned status with a real HTTP or DB lookup to make it live.",
+  "tags": ["starter", "ai", "agent", "tool", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-15T00:00:00.0000000Z",
+  "sourceWorkflowName": "Tool: Order Status Lookup",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

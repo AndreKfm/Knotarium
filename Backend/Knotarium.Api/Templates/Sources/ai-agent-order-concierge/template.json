@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-ai-agent-order-concierge",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "AI Agent: Order Concierge",
+  "author": "Knotarium",
+  "description": "Showcases the AI Agent node: a bounded LLM tool-use loop whose tools are your own workflows. The agent reads a customer message, decides whether it needs to look up the order, calls the 'lookup_order_status' tool (a workflow), and writes a short status reply. SETUP: (1) enable the 'aiAgent' capability under Settings → Capabilities; (2) install the companion 'Tool: Order Status Lookup' template and publish it; (3) open the AI Agent node here and select that workflow under Tools (the binding ships with the name/parameters pre-filled, only the target workflow is left for you to pick). List only workflows you would let the incoming message invoke. Requires an AI provider under Settings → AI Provider.",
+  "tags": ["starter", "ai", "agent", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-15T00:00:00.0000000Z",
+  "sourceWorkflowName": "AI Agent: Order Concierge",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}
