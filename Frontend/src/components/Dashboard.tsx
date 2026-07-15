@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../utils/api';
 import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, NotificationChannel, FailureAlertConfig, SystemActivityEntry } from '../types';
 import { Eye, Plus, RefreshCw, Layers, Terminal, AlertTriangle, CheckCircle, Clock, Search, Globe, Trash2, Check, Minus, Ban, Archive, RotateCcw, Filter, Power, Activity } from 'lucide-react';
 import { TipOfTheDay } from './TipOfTheDay';
+import { useSplitPane, SPLIT_MIN_PANEL_PX, SPLIT_DEFAULT_FRAC } from './dashboard/useSplitPane';
 import { OnboardingEmptyState } from './OnboardingEmptyState';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
@@ -12,9 +13,6 @@ const RUN_SELECT_ACCENT = '#22d3ee';
 
 // Resizable split between the Workflow Definitions panel (left) and the Operations Timeline (right).
 // The left panel's fraction of the row is persisted; both sides are floored so neither can collapse.
-const SPLIT_STORAGE_KEY = 'kg-dashboard-split';
-const SPLIT_MIN_PANEL_PX = 360;
-const SPLIT_DEFAULT_FRAC = 0.48;
 
 /**
  * Styled run-selection checkbox — a rounded square that fills with the accent + a check when selected
@@ -245,45 +243,8 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
   const [purgingId, setPurgingId] = useState<string | null>(null);
   const [purgingAll, setPurgingAll] = useState(false);
 
-  // Adjustable width of the two dashboard panels. `splitFrac` is the left panel's share of the row;
-  // persisted to localStorage and clamped on drag so neither panel drops below SPLIT_MIN_PANEL_PX.
-  const splitRowRef = useRef<HTMLDivElement | null>(null);
-  const [splitFrac, setSplitFrac] = useState<number>(() => {
-    const stored = Number(localStorage.getItem(SPLIT_STORAGE_KEY));
-    return Number.isFinite(stored) && stored >= 0.15 && stored <= 0.85 ? stored : SPLIT_DEFAULT_FRAC;
-  });
-  const [draggingSplit, setDraggingSplit] = useState(false);
-
-  useEffect(() => {
-    if (!draggingSplit) return;
-    const onMove = (e: MouseEvent) => {
-      const row = splitRowRef.current;
-      if (!row) return;
-      const rect = row.getBoundingClientRect();
-      if (rect.width <= 0) return;
-      const minFrac = SPLIT_MIN_PANEL_PX / rect.width;
-      const raw = (e.clientX - rect.left) / rect.width;
-      setSplitFrac(Math.min(1 - minFrac, Math.max(minFrac, raw)));
-    };
-    const stop = () => setDraggingSplit(false);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', stop);
-    // Suppress text selection + hold the resize cursor for the whole drag.
-    const prevSelect = document.body.style.userSelect;
-    const prevCursor = document.body.style.cursor;
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', stop);
-      document.body.style.userSelect = prevSelect;
-      document.body.style.cursor = prevCursor;
-    };
-  }, [draggingSplit]);
-
-  useEffect(() => {
-    localStorage.setItem(SPLIT_STORAGE_KEY, String(splitFrac));
-  }, [splitFrac]);
+  // Adjustable width of the two dashboard panels. See dashboard/useSplitPane.
+  const { splitRowRef, splitFrac, setSplitFrac, draggingSplit, setDraggingSplit } = useSplitPane();
 
   // Groups and optimistic ETag tracking
   const [groups, setGroups] = useState<WorkflowGroup[]>([]);
