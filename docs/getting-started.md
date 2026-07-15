@@ -34,7 +34,8 @@ A workflow is a **graph of nodes** connected by **edges**:
 - **Nodes** do the work — HTTP request, log, delay, set a variable, conditionals, loops,
   database query, file read/write, email, inline C# code, and more.
 - **Edges** carry the flow (and data) from one node's output port to the next node's input.
-  A node references an upstream node's output with `{{ $node.<id>.output.<field> }}`.
+  A node references an upstream node's output with a `$node`-based expression — see
+  [Core concepts](/guide/concepts).
 
 Some nodes **branch**: the HTTP Request node has a **success** and an **error** port, so you can
 handle failures explicitly (the *Fetch from an API* starter logs each).
