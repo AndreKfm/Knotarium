@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../utils/api';
-import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, FailureAlertConfig } from '../types';
+import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, FailureAlertConfig } from '../types';
 import { Eye, Plus, RefreshCw, Layers, Terminal, AlertTriangle, CheckCircle, Clock, Search, Globe, Trash2, Check, Minus, Ban, Archive, RotateCcw, Filter, Power, Activity } from 'lucide-react';
 import { TipOfTheDay } from './TipOfTheDay';
 import { useSplitPane, SPLIT_MIN_PANEL_PX, SPLIT_DEFAULT_FRAC } from './dashboard/useSplitPane';
 import { useSystemEchoes } from './dashboard/useSystemEchoes';
 import { useNotificationChannels } from './dashboard/useNotificationChannels';
-import { useDashboardFilters, type DashboardStatusFilter } from './dashboard/useDashboardFilters';
+import { useDashboardFilters, mapExecutionStatusLabel, type DashboardStatusFilter } from './dashboard/useDashboardFilters';
+import { useDashboardData } from './dashboard/useDashboardData';
+import { useRunSelection } from './dashboard/useRunSelection';
+import { useArchivedWorkflows } from './dashboard/useArchivedWorkflows';
 import { OnboardingEmptyState } from './OnboardingEmptyState';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
@@ -45,7 +48,6 @@ function RunCheckbox({ checked, indeterminate = false, disabled = false }: { che
   );
 }
 import WorkflowDefinitions from './WorkflowDefinitions';
-import { replaceIfChanged } from '../utils/stableState';
 
 // One card of the overview stat strip — a labelled headline number with a category-tinted accent bar.
 interface OverviewStat {
@@ -87,29 +89,7 @@ interface TimelineGroup {
 
 const statusFilters: DashboardStatusFilter[] = ['All', 'Running', 'Waiting', 'Retrying', 'Completed', 'Failed', 'Cancelled'];
 
-function mapExecutionStatusLabel(status: ExecutionStatus): DashboardStatusFilter | 'Pending' {
-  switch (status) {
-    case 'Suspended':
-      return 'Waiting';
-    case 'WaitingForRetry':
-      return 'Retrying';
-    default:
-      return status;
-  }
-}
 
-function mapStatusFilterToApi(status: DashboardStatusFilter): string | undefined {
-  switch (status) {
-    case 'All':
-      return undefined;
-    case 'Waiting':
-      return 'Suspended';
-    case 'Retrying':
-      return 'Retrying';
-    default:
-      return status;
-  }
-}
 
 function normalizeTriggerOrigin(origin?: string): 'manual' | 'webhook' | 'schedule' | 'deviceEvent' {
   switch ((origin ?? '').trim().toLowerCase()) {
@@ -223,32 +203,27 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecution }: DashboardProps) {
-  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
-  const [executions, setExecutions] = useState<ExecutionInstance[]>([]);
-  // Unfiltered run set powering the overview stat strip — kept separate from `executions` (which the
-  // timeline narrows by status/search) so the headline health numbers stay stable while you filter below.
-  const [statsRuns, setStatsRuns] = useState<ExecutionInstance[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   // Filters (run status/search + workflow-name search). See dashboard/useDashboardFilters.
   const { statusFilter, setStatusFilter, searchFilter, setSearchFilter, workflowSearch, setWorkflowSearch } = useDashboardFilters();
-  // Selected run ids (Operations Timeline multi-select) + an in-progress flag while a delete runs.
-  const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
-  const [deletingRuns, setDeletingRuns] = useState(false);
+
+  // Data-loading spine: workflows/executions/stats/groups/archived + loading/error, the polling
+  // loaders, handleRefresh, and group mutations. See dashboard/useDashboardData.
+  const {
+    workflows, setWorkflows, executions, statsRuns, loading, error,
+    archived, setArchived, groups,
+    handleRefresh, handleCreateGroup, handleRenameGroup, handleUpdateGroupColor, handleDeleteGroup,
+  } = useDashboardData({ statusFilter, searchFilter });
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [archived, setArchived] = useState<{ id: string; name: string }[]>([]);
-  const [showArchived, setShowArchived] = useState(false);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
-  const [purgingId, setPurgingId] = useState<string | null>(null);
-  const [purgingAll, setPurgingAll] = useState(false);
+
+  // Archived-workflow panel: show/hide + per-row in-flight ids + restore/purge. See dashboard/useArchivedWorkflows.
+  const {
+    showArchived, setShowArchived, restoringId, purgingId, purgingAll,
+    handleRestoreWorkflow, handlePermanentlyDeleteWorkflow, handlePurgeAllArchived,
+  } = useArchivedWorkflows({ archived, setArchived, handleRefresh });
 
   // Adjustable width of the two dashboard panels. See dashboard/useSplitPane.
   const { splitRowRef, splitFrac, setSplitFrac, draggingSplit, setDraggingSplit } = useSplitPane();
 
-  // Groups and optimistic ETag tracking
-  const [groups, setGroups] = useState<WorkflowGroup[]>([]);
-  const [etag, setEtag] = useState<string>('');
 
   // Notification channels (for per-workflow failure-alert routing). See dashboard/useNotificationChannels.
   const { channels } = useNotificationChannels();
@@ -262,153 +237,6 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
   const { filteredEchoes, echoesCollapsed, toggleEchoesCollapsed, clearingEchoes, handleClearEchoes } = useSystemEchoes();
 
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function loadWorkflowsAndGroups() {
-      try {
-        const [workflowList, groupsResult] = await Promise.all([
-          api.getWorkflows(),
-          api.getGroups()
-        ]);
-        if (!isCancelled) {
-          setWorkflows(workflowList);
-          setGroups(groupsResult.container.groups || []);
-          setEtag(groupsResult.etag);
-        }
-      } catch (err: unknown) {
-        if (!isCancelled) {
-          setError(getErrorMessage(err, 'Failed to fetch baseline data from the server.'));
-        }
-      }
-    }
-
-    loadWorkflowsAndGroups();
-    api.listArchivedWorkflows().then((a) => { if (!isCancelled) setArchived(a); }).catch(() => { /* non-fatal */ });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function loadExecutions(showLoading: boolean) {
-      if (showLoading) {
-        setLoading(true);
-      }
-
-      try {
-        const executionList = await api.getExecutions({
-          status: mapStatusFilterToApi(statusFilter),
-          search: searchFilter.trim() || undefined,
-        });
-
-        if (!isCancelled) {
-          setExecutions(replaceIfChanged(executionList));
-          setError(null);
-        }
-      } catch (err: unknown) {
-        if (!isCancelled) {
-          setError(getErrorMessage(err, 'Failed to fetch executions from the server.'));
-          setExecutions([]);
-        }
-      } finally {
-        if (!isCancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadExecutions(true);
-    const timer = setInterval(() => {
-      void loadExecutions(false);
-    }, 4000);
-
-    return () => {
-      isCancelled = true;
-      clearInterval(timer);
-    };
-  }, [statusFilter, searchFilter]);
-
-  // Overview stat strip feed — the full, unfiltered run set, polled independently of the timeline filters.
-  useEffect(() => {
-    let isCancelled = false;
-    const loadStats = () => {
-      api.getExecutions()
-        .then((all) => { if (!isCancelled) setStatsRuns(replaceIfChanged(all)); })
-        .catch(() => { /* non-fatal: the strip degrades to zeros until the next poll */ });
-    };
-    loadStats();
-    const timer = setInterval(loadStats, 4000);
-    return () => { isCancelled = true; clearInterval(timer); };
-  }, []);
-
-  const handleRefresh = async () => {
-    setLoading(true);
-    try {
-      const [workflowList, executionList, statsList, groupsResult] = await Promise.all([
-        api.getWorkflows(),
-        api.getExecutions({
-          status: mapStatusFilterToApi(statusFilter),
-          search: searchFilter.trim() || undefined,
-        }),
-        api.getExecutions(),
-        api.getGroups(),
-      ]);
-
-      setWorkflows(workflowList);
-      setExecutions(executionList);
-      setStatsRuns(statsList);
-      setGroups(groupsResult.container.groups || []);
-      setEtag(groupsResult.etag);
-      setError(null);
-      api.listArchivedWorkflows().then(setArchived).catch(() => { /* non-fatal */ });
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Failed to fetch dashboard data from the server.'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRestoreWorkflow = async (id: string) => {
-    setRestoringId(id);
-    try {
-      await api.restoreWorkflow(id);
-      await handleRefresh(); // refreshes the list + the archived set
-    } catch (err: unknown) {
-      alert(`Failed to restore workflow: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setRestoringId(null);
-    }
-  };
-
-  const handlePermanentlyDeleteWorkflow = async (id: string, name: string) => {
-    if (!window.confirm(`Permanently delete “${name}”? This erases its entire version history and activation log and cannot be undone.`)) return;
-    setPurgingId(id);
-    try {
-      await api.permanentlyDeleteWorkflow(id);
-      setArchived((prev) => prev.filter((w) => w.id !== id));
-    } catch (err: unknown) {
-      alert(`Failed to permanently delete workflow: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setPurgingId(null);
-    }
-  };
-
-  const handlePurgeAllArchived = async () => {
-    if (!window.confirm(`Permanently delete all ${archived.length} archived workflow${archived.length === 1 ? '' : 's'}? This erases their entire version history and activation log and cannot be undone.`)) return;
-    setPurgingAll(true);
-    try {
-      await api.purgeAllArchivedWorkflows();
-      setArchived([]);
-    } catch (err: unknown) {
-      alert(`Failed to delete archived workflows: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setPurgingAll(false);
-    }
-  };
 
   const handleTrigger = async (workflowId: string) => {
     try {
@@ -436,50 +264,6 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
     }
   };
 
-  const handleSaveGroups = async (updatedGroups: WorkflowGroup[]) => {
-    try {
-      const newEtag = await api.saveGroups({ version: 1, groups: updatedGroups }, etag);
-      setGroups(updatedGroups);
-      setEtag(newEtag);
-    } catch (err: unknown) {
-      console.error('Failed to save group with optimistic lock:', err);
-      if (isApiError(err) && err.status === 412) {
-        alert('Action failed: another user has modified the workflow groups. Reloading latest changes...');
-      } else {
-        alert(`Failed to save groups: ${getErrorMessage(err, 'Unknown error')}`);
-      }
-      // Reload on failure to sync
-      const rest = await api.getGroups();
-      setGroups(rest.container.groups || []);
-      setEtag(rest.etag);
-    }
-  };
-
-  const handleCreateGroup = async (name: string, color: string): Promise<string> => {
-    const newId = 'grp_' + Math.random().toString(36).substring(2, 11);
-    const updated = [...groups, { id: newId, name, color }];
-    await handleSaveGroups(updated);
-    return newId;
-  };
-
-  const handleRenameGroup = async (id: string, name: string) => {
-    const updated = groups.map(g => g.id === id ? { ...g, name } : g);
-    await handleSaveGroups(updated);
-  };
-
-  const handleUpdateGroupColor = async (id: string, color: string) => {
-    const updated = groups.map(g => g.id === id ? { ...g, color } : g);
-    await handleSaveGroups(updated);
-  };
-
-  const handleDeleteGroup = async (id: string) => {
-    try {
-      await api.deleteGroup(id);
-      await handleRefresh();
-    } catch (err: unknown) {
-      alert(`Failed to delete group: ${getErrorMessage(err, 'Unknown error')}`);
-    }
-  };
 
   const handleToggleEnabled = async (id: string, enabled: boolean) => {
     try {
@@ -530,80 +314,12 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
     }
   };
 
-  const toggleRunSelection = (id: string) => {
-    setSelectedRuns((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  // Selectable runs = everything not in-flight (those can't be deleted). Drives the "Select all" control.
-  const selectableRunIds = executions
-    .filter((e) => { const l = mapExecutionStatusLabel(e.status); return l !== 'Running' && l !== 'Pending'; })
-    .map((e) => e.id);
-  const allRunsSelected = selectableRunIds.length > 0 && selectableRunIds.every((id) => selectedRuns.has(id));
-  const someRunsSelected = selectedRuns.size > 0 && !allRunsSelected;
-  const toggleSelectAllRuns = () => setSelectedRuns(allRunsSelected ? new Set() : new Set(selectableRunIds));
-
-  const afterRunsDeleted = async () => {
-    setSelectedRuns(new Set());
-    await handleRefresh();
-  };
-
-  const handleCancelRun = async (id: string) => {
-    if (!window.confirm('Stop this run? It will be marked Cancelled (then you can delete it).')) return;
-    setDeletingRuns(true);
-    try {
-      await api.cancelExecution(id);
-      await handleRefresh();
-    } catch (err: unknown) {
-      alert(`Failed to stop run: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
-
-  const handleDeleteRun = async (id: string) => {
-    setDeletingRuns(true);
-    try {
-      await api.deleteExecution(id);
-      await afterRunsDeleted();
-    } catch (err: unknown) {
-      alert(`Failed to delete run: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
-
-  const handleDeleteSelectedRuns = async () => {
-    const ids = [...selectedRuns];
-    if (ids.length === 0) return;
-    if (!window.confirm(`Delete ${ids.length} selected run${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return;
-    setDeletingRuns(true);
-    try {
-      await api.bulkDeleteExecutions({ ids });
-      await afterRunsDeleted();
-    } catch (err: unknown) {
-      alert(`Failed to delete runs: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
-
-  const handleDeleteAllRuns = async () => {
-    const scope = statusFilter === 'All' ? 'all runs' : `all ${statusFilter} runs`;
-    if (!window.confirm(`Delete ${scope}? In-progress runs are kept. This can't be undone.`)) return;
-    setDeletingRuns(true);
-    try {
-      await api.bulkDeleteExecutions({ all: true, status: mapStatusFilterToApi(statusFilter) });
-      await afterRunsDeleted();
-    } catch (err: unknown) {
-      alert(`Failed to delete runs: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setDeletingRuns(false);
-    }
-  };
+  // Operations-Timeline run selection + deletion. See dashboard/useRunSelection.
+  const {
+    selectedRuns, deletingRuns,
+    toggleRunSelection, selectableRunIds, allRunsSelected, someRunsSelected, toggleSelectAllRuns, clearSelection,
+    handleCancelRun, handleDeleteRun, handleDeleteSelectedRuns, handleDeleteAllRuns,
+  } = useRunSelection({ executions, statusFilter, handleRefresh });
 
   const handleRenameWorkflow = async (id: string, name: string) => {
     const target = workflows.find(w => w.id.value === id);
@@ -1087,7 +803,7 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <button
                           type="button"
-                          onClick={() => setSelectedRuns(new Set())}
+                          onClick={clearSelection}
                           title="Clear selection"
                           style={{ padding: '6px 12px', borderRadius: '8px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
                         >
