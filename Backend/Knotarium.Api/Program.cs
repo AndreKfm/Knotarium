@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Knotarium.Core.Contracts;
 using Knotarium.Core.Domain;
@@ -39,6 +40,13 @@ using Serilog;
 using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Allow the same executable to run as a Windows service. This is a no-op unless the process was
+// actually launched by the Service Control Manager, so interactive/console and dev runs are
+// unaffected. Under SCM it wires up the service lifetime handshake (so the service reaches the
+// "Running" state instead of timing out) and pins the content root to the exe directory rather than
+// System32. The installer's service-install mode relies on this.
+builder.Host.UseWindowsService();
 
 builder.Host.UseSerilog((context, _, loggerConfiguration) =>
 {

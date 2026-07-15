@@ -151,7 +151,7 @@ function Stop-ListeningProcess {
 	throw "$DisplayName on port $Port did not stop cleanly."
 }
 
-$backendPort = 5232
+$backendPort = 43120
 $frontendPort = 5273
 $mockApiPort = 8787
 

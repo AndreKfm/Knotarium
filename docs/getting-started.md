@@ -9,7 +9,7 @@ If you haven't started Knotarium yet, see the [Quickstart in the README](../READ
 
 ## 1. Open the app and create your admin account
 
-Browse to **http://localhost:8080**. Auth is on by default, so the first visit asks you to
+Browse to **http://localhost:43120**. Auth is on by default, so the first visit asks you to
 create an **admin account** — this is a local account on your instance, not a hosted service.
 
 > Just kicking the tires? Start with `KG_AUTH_ENABLED=false docker compose up --build` to skip login.

@@ -18,7 +18,7 @@
 docker compose up --build
 ```
 
-Open **http://localhost:8080**. On first run you create an admin account. The SQLite database **and** the auto-generated credential-encryption key persist in the `knotarium-data` volume, so credentials survive restarts with no extra setup.
+Open **http://localhost:43120**. On first run you create an admin account. The SQLite database **and** the auto-generated credential-encryption key persist in the `knotarium-data` volume, so credentials survive restarts with no extra setup.
 
 > Bringing your own encryption key (e.g. to share one across instances)? `export KG_ENCRYPTION_KEY="$(openssl rand -base64 32)"` before `docker compose up`.
 
@@ -31,7 +31,7 @@ Open **http://localhost:8080**. On first run you create an admin account. The SQ
 Prerequisites: **.NET 10 SDK** and **Node 22+**.
 
 ```bash
-# Terminal 1 — backend (API on http://localhost:5232)
+# Terminal 1 — backend (API on http://localhost:43120)
 dotnet run --project Backend/Knotarium.Api
 
 # Terminal 2 — frontend (UI on http://localhost:5280, proxies /api to the backend)
