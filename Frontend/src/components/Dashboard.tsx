@@ -10,6 +10,7 @@ import { useNotificationChannels } from './dashboard/useNotificationChannels';
 import { useDashboardFilters, mapExecutionStatusLabel, type DashboardStatusFilter } from './dashboard/useDashboardFilters';
 import { useDashboardData } from './dashboard/useDashboardData';
 import { useRunSelection } from './dashboard/useRunSelection';
+import { useArchivedWorkflows } from './dashboard/useArchivedWorkflows';
 import { OnboardingEmptyState } from './OnboardingEmptyState';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
@@ -213,10 +214,12 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
     handleRefresh, handleCreateGroup, handleRenameGroup, handleUpdateGroupColor, handleDeleteGroup,
   } = useDashboardData({ statusFilter, searchFilter });
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
-  const [purgingId, setPurgingId] = useState<string | null>(null);
-  const [purgingAll, setPurgingAll] = useState(false);
+
+  // Archived-workflow panel: show/hide + per-row in-flight ids + restore/purge. See dashboard/useArchivedWorkflows.
+  const {
+    showArchived, setShowArchived, restoringId, purgingId, purgingAll,
+    handleRestoreWorkflow, handlePermanentlyDeleteWorkflow, handlePurgeAllArchived,
+  } = useArchivedWorkflows({ archived, setArchived, handleRefresh });
 
   // Adjustable width of the two dashboard panels. See dashboard/useSplitPane.
   const { splitRowRef, splitFrac, setSplitFrac, draggingSplit, setDraggingSplit } = useSplitPane();
@@ -234,44 +237,6 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
   const { filteredEchoes, echoesCollapsed, toggleEchoesCollapsed, clearingEchoes, handleClearEchoes } = useSystemEchoes();
 
 
-
-  const handleRestoreWorkflow = async (id: string) => {
-    setRestoringId(id);
-    try {
-      await api.restoreWorkflow(id);
-      await handleRefresh(); // refreshes the list + the archived set
-    } catch (err: unknown) {
-      alert(`Failed to restore workflow: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setRestoringId(null);
-    }
-  };
-
-  const handlePermanentlyDeleteWorkflow = async (id: string, name: string) => {
-    if (!window.confirm(`Permanently delete “${name}”? This erases its entire version history and activation log and cannot be undone.`)) return;
-    setPurgingId(id);
-    try {
-      await api.permanentlyDeleteWorkflow(id);
-      setArchived((prev) => prev.filter((w) => w.id !== id));
-    } catch (err: unknown) {
-      alert(`Failed to permanently delete workflow: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setPurgingId(null);
-    }
-  };
-
-  const handlePurgeAllArchived = async () => {
-    if (!window.confirm(`Permanently delete all ${archived.length} archived workflow${archived.length === 1 ? '' : 's'}? This erases their entire version history and activation log and cannot be undone.`)) return;
-    setPurgingAll(true);
-    try {
-      await api.purgeAllArchivedWorkflows();
-      setArchived([]);
-    } catch (err: unknown) {
-      alert(`Failed to delete archived workflows: ${getErrorMessage(err, 'Unknown error')}`);
-    } finally {
-      setPurgingAll(false);
-    }
-  };
 
   const handleTrigger = async (workflowId: string) => {
     try {
