@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { api } from '../utils/api';
-import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, NotificationChannel, FailureAlertConfig, SystemActivityEntry } from '../types';
+import type { ExecutionInstance, ExecutionStatus, WorkflowDefinition, WorkflowGroup, NotificationChannel, FailureAlertConfig } from '../types';
 import { Eye, Plus, RefreshCw, Layers, Terminal, AlertTriangle, CheckCircle, Clock, Search, Globe, Trash2, Check, Minus, Ban, Archive, RotateCcw, Filter, Power, Activity } from 'lucide-react';
 import { TipOfTheDay } from './TipOfTheDay';
 import { useSplitPane, SPLIT_MIN_PANEL_PX, SPLIT_DEFAULT_FRAC } from './dashboard/useSplitPane';
+import { useSystemEchoes } from './dashboard/useSystemEchoes';
 import { OnboardingEmptyState } from './OnboardingEmptyState';
 
 // Selection accent = the cyan the runs list already uses (Event tags, timeline) rather than the indigo
@@ -257,36 +258,9 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
   // never become executions, so they don't show up in /api/executions — we surface them here as their own
   // "skipped" entries. In-memory on the provider, so the list resets when the host restarts. Absent (no
   // provider / 404) → stays empty and the section simply doesn't render.
-  const [filteredEchoes, setFilteredEchoes] = useState<SystemActivityEntry[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      api.getExternalSystem()
-        .then((sys) => { if (!cancelled) setFilteredEchoes(sys.diagnostics?.recentActivity ?? []); })
-        .catch(() => { if (!cancelled) setFilteredEchoes([]); });
-    };
-    load();
-    const timer = setInterval(load, 4000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, []);
-  // Collapse the auto-filtered section (persisted) and clear its buffer on demand.
-  const [echoesCollapsed, setEchoesCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem('kg-echoes-collapsed') === '1'; } catch { return false; }
-  });
-  const toggleEchoesCollapsed = () => setEchoesCollapsed((v) => {
-    const next = !v;
-    try { localStorage.setItem('kg-echoes-collapsed', next ? '1' : '0'); } catch { /* ignore */ }
-    return next;
-  });
-  const [clearingEchoes, setClearingEchoes] = useState(false);
-  const handleClearEchoes = async () => {
-    setClearingEchoes(true);
-    try {
-      await api.clearExternalSystemDiagnostics();
-      setFilteredEchoes([]);
-    } catch { /* non-fatal: the buffer resets on host restart anyway */ }
-    finally { setClearingEchoes(false); }
-  };
+  // Auto-filtered external-system activity ("echoes"): poll + persisted collapse + clear.
+  // See dashboard/useSystemEchoes.
+  const { filteredEchoes, echoesCollapsed, toggleEchoesCollapsed, clearingEchoes, handleClearEchoes } = useSystemEchoes();
 
   useEffect(() => {
     let cancelled = false;
