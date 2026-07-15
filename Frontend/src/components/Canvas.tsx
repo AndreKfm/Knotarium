@@ -80,6 +80,7 @@ import { useSnapToGrid, SNAP_GRID_SIZE } from './canvas/useSnapToGrid';
 import { useDiagnostics } from './canvas/useDiagnostics';
 import { useUndoRedo, type CanvasSnapshot } from './canvas/useUndoRedo';
 import { useCanvasClipboard } from './canvas/useCanvasClipboard';
+import { useVersioning } from './canvas/useVersioning';
 import { isApiError, getErrorMessage, getErrorDiagnostics } from '../utils/apiErrors';
 import { decorateEdgesWithDiagnostics } from '../utils/edgeDiagnostics';
 import { DiagnosticsPanel } from './DiagnosticsPanel';
@@ -90,7 +91,7 @@ import { SidebarPalette } from './SidebarPalette';
 import { EmptyCanvasHint } from './EmptyCanvasHint';
 import { CanvasImportModal } from './CanvasImportModal';
 import { useCanvasStore } from '../stores/useCanvasStore';
-import type { ActiveWorkflowVersion, NodePackageSummary, WorkflowVersionSummary, WorkflowVersion, RestoreVersionResult, WorkflowDefinition } from '../types';
+import type { NodePackageSummary, WorkflowDefinition } from '../types';
 import { CircleHelp, Eye, Hash, History, Maximize2, StickyNote, Group, Ungroup, LayoutTemplate, Crosshair, Combine } from 'lucide-react';
 import { analyzeMultiExtraction, planParametrizedExtraction, type ExNode, type ExEdge } from '../node-editor/extractSubflow';
 
@@ -127,14 +128,6 @@ import { PreviewBanner } from './PreviewBanner';
 import { RestoreVersionDialog } from './RestoreVersionDialog';
 import { UnsavedChangesDialog } from './UnsavedChangesDialog';
 import { VersionDiffView } from './VersionDiffView';
-import { useWorkflowVersions } from '../hooks/useWorkflowVersions';
-import {
-  DRAFT_MODE,
-  editorModeReducer,
-  isEditingDisabled,
-  type EditorMode,
-} from '../node-editor/editorMode';
-import { diffVersions, type DiffablePayload, type VersionDiff } from '../utils/versionDiff';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 import { GlobalReadEdge } from './GlobalReadEdge';
 import { useVariableStore } from '../stores/useVariableStore';
@@ -615,13 +608,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   // one bind-slot per declared local of the child it calls.
   const [subflowInterfaceById, setSubflowInterfaceById] = useState<Record<string, SubflowInterface>>({});
   const [showOpenApiImportModal, setShowOpenApiImportModal] = useState(false);
-  const [workflowVersions, setWorkflowVersions] = useState<WorkflowVersionSummary[]>([]);
-  const [activeWorkflowVersion, setActiveWorkflowVersion] = useState<ActiveWorkflowVersion | null>(null);
-  // Live mirror so preview/diff handlers read the latest active version without
-  // re-creating on every change (e.g. a remote activation arriving mid-preview).
-  const activeWorkflowVersionRef = useRef<ActiveWorkflowVersion | null>(null);
-  useEffect(() => { activeWorkflowVersionRef.current = activeWorkflowVersion; }, [activeWorkflowVersion]);
-  const [selectedActivationVersionId, setSelectedActivationVersionId] = useState('');
   const [workflowStatusMessage, setWorkflowStatusMessage] = useState<string | null>(null);
   const addRecentNode = useCanvasStore((state) => state.addRecentNode);
 
@@ -634,6 +620,25 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   useEffect(() => {
     availableNodeMetadataRef.current = availableNodeMetadata;
   }, [availableNodeMetadata]);
+
+  // ── Version history / read-only preview / diff / restore ── See canvas/useVersioning.
+  const {
+    workflowVersions, setWorkflowVersions,
+    activeWorkflowVersion, setActiveWorkflowVersion,
+    selectedActivationVersionId, setSelectedActivationVersionId,
+    historyOpen, setHistoryOpen, historyOpenRef,
+    historyVersions, historyLoading, historyError,
+    editorMode, readOnly,
+    previewNodes, previewEdges, previewVersionNumber,
+    restoreTarget, setRestoreTarget, restoreBusy, restoreError, setRestoreError,
+    restoreResult, setRestoreResult, diffState,
+    handlePreviewVersion, exitReadOnly, closeVersionOverview,
+    handleSelectVersion, handleHoverPreviewVersion,
+    handleDiffAgainstDraft, handleDiffDraftVsActive,
+    openRestoreDialog, confirmRestore,
+  } = useVersioning({
+    currentId, workflowName, nodesRef, edgesRef, availableNodeMetadataRef, setWorkflowStatusMessage,
+  });
 
   // Insertable `{{ $node.<id>.output.<field> }}` references from the selected node's UPSTREAM outputs,
   // for the properties-panel reference picker (schema-driven expression discovery).
@@ -1260,195 +1265,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   // ── Keyboard-shortcut help overlay ("?") ──
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // ── Version history drawer (Ctrl/⌘ + Shift + H) ──
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const historyOpenRef = useRef(historyOpen);
-  historyOpenRef.current = historyOpen;
-  // Fetch version metadata only while the drawer is open. The drawer shares no
-  // state with the toolbar's `workflowVersions` (which drives the activate flow).
-  const {
-    versions: historyVersions,
-    loading: historyLoading,
-    error: historyError,
-    refresh: refreshHistory,
-  } = useWorkflowVersions(currentId || undefined, historyOpen);
-
-  // ── Editor-mode state machine (plan §7.3) ──
-  // Draft = live editable graph; PublishedPreview / Diff = read-only snapshots.
-  // While in a read-only mode we render `previewNodes/previewEdges` instead of the
-  // live `nodes/edges`, hold the working draft aside (it stays in the live state and
-  // is simply not rendered), and disable editing/autosave/publish/run.
-  const [editorMode, setEditorMode] = useState<EditorMode>(DRAFT_MODE);
-  const dispatchMode = useCallback((action: Parameters<typeof editorModeReducer>[1]) => {
-    setEditorMode((prev) => editorModeReducer(prev, action));
-  }, []);
-  const readOnly = isEditingDisabled(editorMode);
-  // Read-only canvas state shown during preview (separate from the live draft).
-  const [previewNodes, setPreviewNodes] = useState<RFNode[]>([]);
-  const [previewEdges, setPreviewEdges] = useState<Edge[]>([]);
-  const [previewVersionNumber, setPreviewVersionNumber] = useState<number | null>(null);
-  // Restore dialog state.
-  const [restoreTarget, setRestoreTarget] = useState<WorkflowVersionSummary | null>(null);
-  const [restoreBusy, setRestoreBusy] = useState(false);
-  const [restoreError, setRestoreError] = useState<string | null>(null);
-  const [restoreResult, setRestoreResult] = useState<RestoreVersionResult | null>(null);
-  // Diff view state (left → right). `diff` is computed by the pure versionDiff module.
-  const [diffState, setDiffState] = useState<{ leftLabel: string; rightLabel: string; diff: VersionDiff } | null>(null);
-
-  // A workflow version's payload as a DiffablePayload (already in NodeDefinition/EdgeDefinition shape).
-  const versionToPayload = useCallback((version: WorkflowVersion): DiffablePayload => {
-    return { nodes: version.nodes, edges: version.edges };
-  }, []);
-
-  // Switching workflows must drop any in-flight preview/diff so a stale read-only
-  // snapshot can't leak across workflows.
-  useEffect(() => {
-    setEditorMode(DRAFT_MODE);
-    setPreviewNodes([]);
-    setPreviewEdges([]);
-    setPreviewVersionNumber(null);
-    setDiffState(null);
-    setRestoreTarget(null);
-  }, [currentId]);
-
-  // The live working draft as a DiffablePayload, derived through the same backend
-  // mapper used for save/publish so the comparison is apples-to-apples.
-  const draftPayload = useCallback((): DiffablePayload => {
-    const def = schemaMapper.toBackend(currentId, workflowName, nodesRef.current, edgesRef.current);
-    return { nodes: def.nodes, edges: def.edges };
-  }, [currentId, workflowName]);
-
-  // Enter read-only preview of a committed version (snapshots stay in the live state,
-  // which is simply not rendered while read-only — exiting restores them verbatim).
-  const handlePreviewVersion = useCallback(async (versionId: string) => {
-    if (!currentId) return;
-    try {
-      const version = await api.getWorkflowVersionDetail(currentId, versionId);
-      const def = { id: { value: currentId }, name: workflowName, nodes: version.nodes, edges: version.edges };
-      const { nodes: rfNodes, edges: rfEdges } = schemaMapper.toReactFlow(def);
-      setPreviewNodes(applyGroupCollapseOnLoad(enrichNodesWithPackageMetadata(rfNodes, availableNodeMetadataRef.current)));
-      setPreviewEdges(rfEdges);
-      setPreviewVersionNumber(version.versionNumber);
-      dispatchMode({ type: 'openPreview', versionId });
-    } catch (err) {
-      setWorkflowStatusMessage(`Could not load version for preview: ${getErrorMessage(err, 'Unknown error')}`);
-    }
-  }, [currentId, workflowName, dispatchMode]);
-
-  // Exit any read-only mode → live draft is rendered again (never mutated).
-  const exitReadOnly = useCallback(() => {
-    dispatchMode({ type: 'exit' });
-    setPreviewNodes([]);
-    setPreviewEdges([]);
-    setPreviewVersionNumber(null);
-    setDiffState(null);
-  }, [dispatchMode]);
-
-  // The history drawer and a read-only preview are one "version overview" — leaving either should
-  // return you to the draft in a single action, so closing the drawer also exits the preview and
-  // exiting the preview also closes the drawer.
-  const closeVersionOverview = useCallback(() => {
-    setHistoryOpen(false);
-    exitReadOnly();
-  }, [exitReadOnly]);
-
-  // Runtime dropdown selection → preview the chosen version read-only (semi-transparent). Selecting
-  // the active version returns to the live editable draft. Activation never happens on select — it
-  // has live trigger side effects and stays explicit (Run, or restore from the preview banner).
-  const handleSelectVersion = useCallback((versionId: string) => {
-    setSelectedActivationVersionId(versionId);
-    if (!versionId || versionId === activeWorkflowVersion?.workflowVersionId) {
-      exitReadOnly();
-      return;
-    }
-    void handlePreviewVersion(versionId);
-  }, [activeWorkflowVersion, exitReadOnly, handlePreviewVersion]);
-
-  // Transient preview while the user lingers on a version in the runtime dropdown. `null` reverts to
-  // the committed selection's view. Never commits the selection and never activates.
-  const handleHoverPreviewVersion = useCallback((versionId: string | null) => {
-    if (!versionId) {
-      handleSelectVersion(selectedActivationVersionId);
-      return;
-    }
-    if (versionId === activeWorkflowVersion?.workflowVersionId) {
-      exitReadOnly();
-      return;
-    }
-    void handlePreviewVersion(versionId);
-  }, [selectedActivationVersionId, activeWorkflowVersion, handleSelectVersion, exitReadOnly, handlePreviewVersion]);
-
-  // Diff a committed version against the working draft (committed = left, draft = right).
-  const handleDiffAgainstDraft = useCallback(async (versionId: string) => {
-    if (!currentId) return;
-    try {
-      const version = await api.getWorkflowVersionDetail(currentId, versionId);
-      const diff = diffVersions(versionToPayload(version), draftPayload());
-      setDiffState({ leftLabel: `v${version.versionNumber}`, rightLabel: 'working draft', diff });
-      dispatchMode({ type: 'openDiff', leftVersionId: versionId, rightVersionId: 'draft' });
-    } catch (err) {
-      setWorkflowStatusMessage(`Could not load version for diff: ${getErrorMessage(err, 'Unknown error')}`);
-    }
-  }, [currentId, versionToPayload, draftPayload, dispatchMode]);
-
-  // The most-wanted diff (plan §7.4): working draft vs the active version.
-  const handleDiffDraftVsActive = useCallback(async () => {
-    if (!currentId) return;
-    const activeId = activeWorkflowVersionRef.current?.workflowVersionId;
-    if (!activeId) {
-      setWorkflowStatusMessage('No active version to diff against — publish one first.');
-      return;
-    }
-    try {
-      const version = await api.getWorkflowVersionDetail(currentId, activeId);
-      const diff = diffVersions(versionToPayload(version), draftPayload());
-      setDiffState({ leftLabel: `active v${version.versionNumber}`, rightLabel: 'working draft', diff });
-      dispatchMode({ type: 'openDiff', leftVersionId: activeId, rightVersionId: 'draft' });
-    } catch (err) {
-      setWorkflowStatusMessage(`Could not load active version for diff: ${getErrorMessage(err, 'Unknown error')}`);
-    }
-  }, [currentId, versionToPayload, draftPayload, dispatchMode]);
-
-  // Open the restore confirmation for a version id (resolves its summary for the dialog).
-  const openRestoreDialog = useCallback((versionId: string) => {
-    const summary =
-      historyVersions.find((v) => v.id === versionId) ||
-      workflowVersions.find((v) => v.id === versionId) ||
-      null;
-    setRestoreResult(null);
-    setRestoreError(null);
-    setRestoreTarget(summary ?? { id: versionId, versionNumber: 0, createdAt: '', createdBy: null, label: null, origin: 'Published', isActive: false, restoredFromVersionId: null, nodeCount: 0, executionCount: 0 });
-  }, [historyVersions, workflowVersions]);
-
-  const confirmRestore = useCallback(async ({ activate }: { activate: boolean }) => {
-    if (!currentId || !restoreTarget) return;
-    setRestoreBusy(true);
-    setRestoreError(null);
-    try {
-      const result = await api.restoreVersion(currentId, restoreTarget.id, activate);
-      setRestoreResult(result);
-      // Refresh the panel list + active badge so the new forward copy shows up.
-      void refreshHistory();
-      const [versions, activeVersion] = await Promise.all([
-        api.getWorkflowVersions(currentId),
-        api.getActiveWorkflowVersion(currentId),
-      ]);
-      setWorkflowVersions(versions);
-      setSelectedActivationVersionId(activeVersion?.workflowVersionId ?? versions[0]?.id ?? '');
-      setActiveWorkflowVersion(activeVersion);
-    } catch (err) {
-      const errorDiagnostics = getErrorDiagnostics(err);
-      if (isApiError(err) && err.status === 400 && errorDiagnostics && errorDiagnostics.length > 0) {
-        setRestoreError(`Activation failed — fix these first: ${errorDiagnostics.map((d) => `[${d.code}] ${d.message}`).join('; ')}`);
-      } else if (isApiError(err) && err.status === 409) {
-        setRestoreError('Another activation happened concurrently. Reopen and try again.');
-      } else {
-        setRestoreError(getErrorMessage(err, 'Restore failed.'));
-      }
-    } finally {
-      setRestoreBusy(false);
-    }
-  }, [currentId, restoreTarget, refreshHistory]);
   // Centre the canvas on a node and select it (clearing any other selection).
   const jumpToNode = useCallback(
     (node: RFNode) => {
