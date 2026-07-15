@@ -20,18 +20,30 @@
   ./publish.ps1 -Runtime win-arm64
   ./publish.ps1 -SkipFrontend       # reuse an existing Frontend/dist
   ./publish.ps1 -SingleFile         # one self-extracting exe (may trip antivirus)
+  ./publish.ps1 -Version 1.0.0-rc.1 -Zip          # stamp version + emit a zip archive
+  ./publish.ps1 -Version 1.0.0-rc.1 -Zip -Installer   # also build the Inno Setup installer
 #>
 [CmdletBinding()]
 param(
     [string]$Runtime = 'win-x64',
     [string]$Configuration = 'Release',
     [string]$OutputDir = (Join-Path $PSScriptRoot 'publish'),
-    [int]$Port = 5232,
+    [int]$Port = 43120,
     [switch]$SkipFrontend,
     # Produce ONE self-extracting .exe instead of a folder. Convenient, but such builds
     # unpack to a temp dir at launch, which antivirus frequently flags as a FALSE POSITIVE
     # (and it's unsigned). The default folder build avoids that trigger entirely.
-    [switch]$SingleFile
+    [switch]$SingleFile,
+    # Release version stamped into the assembly (surfaced by GET /api/version) and used in
+    # artifact filenames. Accepts SemVer incl. a pre-release suffix (e.g. 1.0.0-rc.1). When empty,
+    # the <Version> from Knotarium.Api.csproj is used.
+    [string]$Version = '',
+    # Also compress publish/app into publish/Knotarium-<version>-<runtime>.zip (zero-install channel).
+    [switch]$Zip,
+    # Also build the Windows installer (installer/Knotarium.iss) via Inno Setup's ISCC compiler.
+    [switch]$Installer,
+    # Path to Inno Setup's ISCC.exe. Auto-detected in the usual install locations when empty.
+    [string]$InnoSetupExe = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,6 +52,17 @@ $api = Join-Path $root 'Backend/Knotarium.Api/Knotarium.Api.csproj'
 $frontend = Join-Path $root 'Frontend'
 $dist = Join-Path $frontend 'dist'
 $appOut = Join-Path $OutputDir 'app'
+
+# Resolve the release version: use -Version if given, else the <Version> from the API csproj.
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $csprojText = Get-Content $api -Raw
+    if ($csprojText -match '<Version>\s*([^<]+?)\s*</Version>') {
+        $Version = $Matches[1].Trim()
+    } else {
+        $Version = '0.0.0'
+    }
+    Write-Host "-> No -Version given; using csproj version $Version" -ForegroundColor DarkGray
+}
 
 Write-Host '== Knotarium — productive build (UI included) ==' -ForegroundColor Cyan
 
@@ -73,6 +96,7 @@ $publishArgs = @(
     '-p:PublishTrimmed=false',          # trimming breaks EF/Roslyn/reflection
     '-p:DebugType=none',                # no .pdb in the shipped folder
     '-p:DebugSymbols=false',
+    "-p:Version=$Version",              # stamps the assembly; surfaced by GET /api/version
     '-o', $appOut
 )
 if ($SingleFile) {
@@ -113,8 +137,65 @@ start "" "$url"
 "@ | Set-Content -Path $launcher -Encoding ascii
 }
 
+# 7. Optional: zip the app folder for the zero-install download channel.
+$zipPath = $null
+if ($Zip) {
+    Write-Host '-> Creating zip archive...' -ForegroundColor Yellow
+    $zipPath = Join-Path $OutputDir "Knotarium-$Version-$Runtime.zip"
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    # Compress the CONTENTS of app (app\* not app) so the zip extracts to a Knotarium-* folder
+    # of files rather than a nested app\ level.
+    Compress-Archive -Path (Join-Path $appOut '*') -DestinationPath $zipPath -CompressionLevel Optimal
+    $zipHash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+    Set-Content -Path "$zipPath.sha256" -Value "$zipHash  $(Split-Path $zipPath -Leaf)" -Encoding ascii
+    Write-Host "   $zipPath" -ForegroundColor DarkGray
+}
+
+# 8. Optional: build the Windows installer via Inno Setup (installer/Knotarium.iss).
+$setupPath = $null
+if ($Installer) {
+    Write-Host '-> Building installer (Inno Setup)...' -ForegroundColor Yellow
+    $iss = Join-Path $root 'installer/Knotarium.iss'
+    if (-not (Test-Path $iss)) { throw "Installer script not found at $iss." }
+
+    # Locate ISCC.exe (Inno Setup command-line compiler).
+    $iscc = $InnoSetupExe
+    if ([string]::IsNullOrWhiteSpace($iscc)) {
+        $candidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'),
+            (Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe')
+        )
+        $iscc = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+        if (-not $iscc) { $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source }
+    }
+    if (-not $iscc -or -not (Test-Path $iscc)) {
+        throw 'ISCC.exe (Inno Setup 6) not found. Install it (winget install JRSoftware.InnoSetup) or pass -InnoSetupExe.'
+    }
+
+    # ISCC defines: AppVersion, SourceDir (the published app), OutputDir, OutputBase.
+    $outputBase = "Knotarium-$Version-setup"
+    & $iscc `
+        "/DAppVersion=$Version" `
+        "/DPort=$Port" `
+        "/DSourceDir=$appOut" `
+        "/DOutputDir=$OutputDir" `
+        "/DOutputBase=$outputBase" `
+        $iss
+    if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compile failed.' }
+
+    $setupPath = Join-Path $OutputDir "$outputBase.exe"
+    if (Test-Path $setupPath) {
+        $setupHash = (Get-FileHash $setupPath -Algorithm SHA256).Hash
+        Set-Content -Path "$setupPath.sha256" -Value "$setupHash  $(Split-Path $setupPath -Leaf)" -Encoding ascii
+        Write-Host "   $setupPath" -ForegroundColor DarkGray
+    }
+}
+
 Write-Host ''
 Write-Host '== Done ==' -ForegroundColor Green
+Write-Host "Version       : $Version"
+if ($zipPath)   { Write-Host "Zip archive   : $zipPath" }
+if ($setupPath) { Write-Host "Installer     : $setupPath" }
 Write-Host "Output folder : $appOut"
 Write-Host "Launch        : double-click Start.bat  (or run `"$exeName`")"
 Write-Host "URL           : $url"

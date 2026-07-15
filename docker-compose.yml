@@ -1,4 +1,4 @@
-# Quick self-host: `docker compose up --build`, then open http://localhost:8080
+# Quick self-host: `docker compose up --build`, then open http://localhost:43120
 #
 # Credentials work out of the box — the at-rest encryption key auto-generates onto the
 # knotarium-data volume on first run and stays stable across restarts. Set KG_ENCRYPTION_KEY
@@ -10,7 +10,7 @@ services:
     build: .
     image: knotarium:local
     ports:
-      - "8080:8080"
+      - "43120:43120"
     environment:
       # Optional: bring your own at-rest credential key. Left empty, the app auto-generates and
       # persists one on the /data volume. If you set it, keep it stable — saved credentials

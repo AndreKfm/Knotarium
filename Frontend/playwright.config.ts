@@ -36,7 +36,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'dotnet run --project ../Backend/Knotarium.Api/Knotarium.Api.csproj --launch-profile http',
-      url: 'http://localhost:5232/api/workflows',
+      url: 'http://localhost:43120/api/workflows',
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',

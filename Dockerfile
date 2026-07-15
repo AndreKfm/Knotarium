@@ -39,7 +39,7 @@ RUN mkdir -p /data
 VOLUME /data
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
-    ASPNETCORE_URLS=http://+:8080 \
+    ASPNETCORE_URLS=http://+:43120 \
     Storage__DataDirectory=/data
 
 # The credential-encryption key auto-generates onto /data on first run (persisted with the DB), so
@@ -48,5 +48,5 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
 # docker-compose.yml / README. The bundle-signing key is env-only and optional.
 # TODO(hardening): run as a non-root user once /data volume ownership is sorted.
 
-EXPOSE 8080
+EXPOSE 43120
 ENTRYPOINT ["dotnet", "Knotarium.Api.dll"]
