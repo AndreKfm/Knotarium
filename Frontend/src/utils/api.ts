@@ -1,5 +1,5 @@
 import type { Edge as FlowEdge, Node as FlowNode } from '@xyflow/react';
-import type { WorkflowDefinition, ExecutionInstance, ExecutionJournal, NodePackageSummary, WorkflowScheduleSummary, WorkflowVersion, WorkflowVersionSummary, WorkflowVersionListResponse, WorkflowVersionOrigin, ActiveWorkflowVersion, RestoreVersionResult, NodeDefinition, EdgeDefinition, NodeId, WorkflowGroupContainer, ReplayResult, ReplayWarning, ReplayLineageEntry, CompilationDiagnostic, FailureAlertConfig, FailureAlertMode, NotificationChannel, NotificationChannelType, InlineCodeTestResult, LoadOptionsResult, BundleInstallResponse, CredentialSummary, BundleManifestInput, BackupManifest, RestoreReport, TemplateExportRequest, TemplatePortabilizationReport, TemplateInspectResponse, TemplateInstallResponse, GalleryTemplate, TemplatePayloadResponse, TemplateManifest, TemplateCredentialSlot, TemplateCompatibility, ParameterValues, ConditionLastRunResponse, VersionInfo, ProviderDescriptor, ExternalSystemInfo, ExternalTargetInfo, ExternalTargetEdit, TargetStatus, ImportProviderDescriptor, ImportGranularity, ImportPreviewResponse, ImportInstallResponse, ImportTargetStrategy, AiGenerationJobResult, AiProviderConfigResponse, SetAiProviderConfigInput, AuthStatus, AuthUser, FileAccessPolicyDto, CapabilityPolicyDto } from '../types';
+import type { WorkflowDefinition, ExecutionInstance, ExecutionJournal, NodePackageSummary, WorkflowScheduleSummary, WorkflowVersion, WorkflowVersionSummary, WorkflowVersionListResponse, WorkflowVersionOrigin, ActiveWorkflowVersion, RestoreVersionResult, NodeDefinition, EdgeDefinition, NodeId, WorkflowGroupContainer, ReplayResult, ReplayWarning, ReplayLineageEntry, CompilationDiagnostic, FailureAlertConfig, FailureAlertMode, NotificationChannel, NotificationChannelType, InlineCodeTestResult, LoadOptionsResult, BundleInstallResponse, CredentialSummary, BundleManifestInput, BackupManifest, RestoreReport, TemplateExportRequest, TemplatePortabilizationReport, TemplateInspectResponse, TemplateInstallResponse, GalleryTemplate, TemplatePayloadResponse, TemplateManifest, TemplateCredentialSlot, TemplateCompatibility, ParameterValues, ConditionLastRunResponse, VersionInfo, ProviderDescriptor, ExternalSystemInfo, ExternalTargetInfo, ExternalTargetEdit, TargetStatus, ImportProviderDescriptor, ImportGranularity, ImportPreviewResponse, ImportInstallResponse, ImportTargetStrategy, AiGenerationJobResult, AiProviderConfigResponse, SetAiProviderConfigInput, AiProviderTestResponse, AiProviderModelsResponse, AuthStatus, AuthUser, FileAccessPolicyDto, CapabilityPolicyDto } from '../types';
 
 const API_BASE = '/api';
 
@@ -379,6 +379,26 @@ export const api = {
       body: JSON.stringify(input),
     });
     return handleResponse<AiProviderConfigResponse>(response);
+  },
+
+  /** Test the supplied provider config end-to-end (a tiny real completion). Never throws on a provider error. */
+  async testAiProvider(input: SetAiProviderConfigInput): Promise<AiProviderTestResponse> {
+    const response = await fetch(`${API_BASE}/settings/ai-provider/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return handleResponse<AiProviderTestResponse>(response);
+  },
+
+  /** Best-effort live model ids for the supplied provider config (empty = fall back to the curated list). */
+  async getAiProviderModels(input: SetAiProviderConfigInput): Promise<AiProviderModelsResponse> {
+    const response = await fetch(`${API_BASE}/settings/ai-provider/models`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return handleResponse<AiProviderModelsResponse>(response);
   },
 
   // The list endpoint returns a paginated metadata envelope (no nodes/edges).

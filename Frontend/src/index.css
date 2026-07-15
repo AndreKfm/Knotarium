@@ -137,7 +137,11 @@ code, pre {
 .custom-node-body {
   color: var(--text-secondary);
   font-size: 0.8rem;
-  word-break: break-all;
+  /* Wrap at word boundaries first, only splitting a token when it alone overflows (long URLs, ids).
+     Pairs with the node's max-width so a long value grows the card taller, not wider — and reads far
+     better than break-all's mid-word chopping. */
+  overflow-wrap: anywhere;
+  word-break: normal;
   line-height: 1.3;
 }
 

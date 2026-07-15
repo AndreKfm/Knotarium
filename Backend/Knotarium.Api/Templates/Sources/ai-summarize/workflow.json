@@ -1,0 +1,45 @@
+{
+  "Manifest": {
+    "WorkflowId": "starter-ai-summarize",
+    "WorkflowName": "AI Summarize",
+    "VersionNumber": 1,
+    "Origin": "Published",
+    "Label": null,
+    "Checksum": ""
+  },
+  "Content": {
+    "Nodes": [
+      { "Id": "start-1", "Type": "start", "Properties": {} },
+      {
+        "Id": "setvar-article",
+        "Type": "setVariable",
+        "Properties": {
+          "variableName": "article",
+          "value": "Knotarium is a self-hosted workflow automation platform. Workflows are graphs of typed nodes that run on a single-writer engine, so every run is journaled and replayable. Built-in nodes cover HTTP, databases, files, email, and a family of AI nodes; privileged capabilities such as code execution are off by default and enabled per instance by an administrator. Integrations ship as templates or signed bundles that are checked for privileged nodes before install."
+        }
+      },
+      {
+        "Id": "summarize-1",
+        "Type": "aiPrompt",
+        "Properties": {
+          "systemPrompt": "You summarize text for a busy reader. No preamble, no closing remarks.",
+          "prompt": "Summarize the text below into exactly three bullet points. Each bullet must be a single short line of at most 12 words. Output only the three bullets.\n\n{{ $variables.article }}"
+        }
+      },
+      {
+        "Id": "log-summary",
+        "Type": "log",
+        "Properties": {
+          "message": "Summary:\n{{ $node.summarize-1.output.result }}"
+        }
+      },
+      { "Id": "end-1", "Type": "end", "Properties": {} }
+    ],
+    "Edges": [
+      { "Id": "e1", "From": "start-1", "Output": "result", "To": "setvar-article", "Input": "in" },
+      { "Id": "e2", "From": "setvar-article", "Output": "result", "To": "summarize-1", "Input": "in" },
+      { "Id": "e3", "From": "summarize-1", "Output": "result", "To": "log-summary", "Input": "in" },
+      { "Id": "e4", "From": "log-summary", "Output": "result", "To": "end-1", "Input": "in" }
+    ]
+  }
+}

@@ -297,6 +297,160 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
             }
         ));
 
+        // 6h. AI Prompt node — one LLM call over the incoming data (classify / extract / summarize /
+        // draft). Uses the instance-wide AI provider config; optional per-node model/token overrides.
+        // Idempotent: the call has no external side effect, so automatic retry after a transport
+        // failure is safe (the reply may differ, which a workflow using AI must tolerate anyway).
+        Register(new NodePackageManifest(
+            new NodePackageId("aiPrompt"),
+            "1.0.0",
+            "AI Prompt",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("prompt", "string", true, true, Description: "The task for the model. Reference upstream data with {{ }}."),
+                new("systemPrompt", "string", false, true, Description: "Optional role/instructions; a safe default is applied when empty."),
+                new("jsonSchema", "string", false, false, Description: "Optional JSON schema; when set, the node emits a parsed object conforming to it instead of raw text."),
+                new("model", "aiModel", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>
+            {
+                new("result", "any"),
+            }
+        ));
+
+        // 6i. AI Router node — uses the configured LLM to evaluate the input and route the run down one
+        // of the node's configured category branches (selectedPort convention). Categories are per-node
+        // config, so NO outputs are declared here: an output-less manifest makes the compiler skip socket
+        // validation (same escape hatch the device pins use via their own type check), and the editor
+        // derives the handles from the 'categories' property plus the always-present 'otherwise' fallback.
+        // Description keeps "classify/categorize" wording so palette search still finds it by those terms.
+        Register(new NodePackageManifest(
+            new NodePackageId("aiRouter"),
+            "1.0.0",
+            "AI Router",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("input", "string", true, true, Description: "The text/data to evaluate and route (classify/categorize). Reference upstream data with {{ }}."),
+                new("categories", "string", true, false, Description: "Category labels, comma- or newline-separated. Each label becomes an output branch, plus an 'otherwise' fallback."),
+                new("instructions", "string", false, true, Description: "Optional extra guidance for the routing decision."),
+                new("model", "aiModel", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>()
+        ));
+
+        // 6j. AI Verify node — evidence gate. Checks the content's factual claims against the supplied
+        // sources claim-by-claim and routes the run by the overall verdict. Four FIXED branch outputs
+        // (declared here so socket validation works normally, unlike aiRouter's dynamic ports). The
+        // verdict itself is deterministic code over the model's structured claim JSON (see
+        // AiVerifyNodeTask): no supporting evidence downgrades to unsupported; the worst per-claim
+        // status wins. Emits the full audited record on `result`.
+        Register(new NodePackageManifest(
+            new NodePackageId("aiVerify"),
+            "1.0.0",
+            "AI Verify",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("content", "string", true, true, Description: "The text/AI output whose factual claims should be verified. Reference upstream data with {{ }}."),
+                new("sources", "string", true, true, Description: "Reference material to check against. Plain text, or a JSON array of {id, content} for per-source citations."),
+                new("instructions", "string", false, true, Description: "Optional extra guidance for the verification (domain rules, what counts as material)."),
+                new("model", "aiModel", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>
+            {
+                new("verified"),
+                new("unsupported"),
+                new("contradicted"),
+                new("uncertain"),
+            }
+        ));
+
+        // 6k. AI Semantic Diff node — compares two document versions by meaning and routes by whether
+        // anything material changed. Three FIXED branch outputs (declared here for normal socket
+        // validation). The verdict is deterministic code over the model's structured diff JSON (see
+        // AiDiffNodeTask): identical inputs short-circuit to 'none' with no LLM call; any material change
+        // → 'material'; changes-but-only-cosmetic → 'cosmetic'. Emits the full change record on `result`.
+        Register(new NodePackageManifest(
+            new NodePackageId("aiDiff"),
+            "1.0.0",
+            "AI Semantic Diff",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.IdempotentSideEffect,
+            RecoveryMode.RetryAutomatically,
+            300,
+            new List<string> { "network" },
+            new List<ParameterDefinition>
+            {
+                new("previous", "string", true, true, Description: "The previous version of the document. Reference upstream data with {{ }}."),
+                new("current", "string", true, true, Description: "The current version to compare against the previous one."),
+                new("instructions", "string", false, true, Description: "Optional guidance on what counts as a material change for your domain."),
+                new("model", "aiModel", false, false, Description: "Override the configured model for this node only."),
+                new("maxTokens", "number", false, false, Description: "Override the configured completion token cap for this node only."),
+            },
+            new List<OutputDefinition>
+            {
+                new("material"),
+                new("cosmetic"),
+                new("none"),
+            }
+        ));
+
+        // 6l. AI Agent node — a bounded LLM tool-use loop where the tools are existing workflows, explicitly
+        // allowlisted on the node. The model decides which workflow-tool to call with which arguments; each
+        // call runs as a seeded, journaled child run and its projected outputs feed the next turn. Privileged:
+        // carries the new `aiAgent` capability (default OFF) plus `network`. Non-idempotent side effect (the
+        // loop may fire side-effectful tools) so the engine never auto-retries a half-finished loop —
+        // FailImmediately, longer 600s timeout (several model turns + child runs). `tools` is a structured
+        // field (agentTools) edited in the inspector. Single `result` output (final text, or a parsed object
+        // when `resultSchema` is set); failure surfaces through the normal node-failure path.
+        Register(new NodePackageManifest(
+            new NodePackageId("aiAgent"),
+            "1.0.0",
+            "AI Agent",
+            "AI",
+            NodeTier.Declarative,
+            NodeSideEffectKind.NonIdempotentSideEffect,
+            RecoveryMode.FailImmediately,
+            600,
+            new List<string> { "network", "aiAgent" },
+            new List<ParameterDefinition>
+            {
+                new("task", "string", true, true, Description: "The instruction for the agent. Reference upstream data with {{ }}."),
+                new("systemPrompt", "string", false, true, Description: "Optional role/instructions; a safe default agent preamble is applied when empty."),
+                new("tools", "agentTools", false, false, Description: "Workflows the agent may call as tools. Each: target workflow, model-facing name/description, parameters, and the outputs projected back as the tool result."),
+                new("maxIterations", "number", false, false, Description: "Maximum model turns before the node fails without an answer. Default 8, clamped 1–32."),
+                new("maxTokensPerCall", "number", false, false, Description: "Override the completion token cap per model turn."),
+                new("tokenBudget", "number", false, false, Description: "Optional total token budget across the whole loop; the node fails when exceeded."),
+                new("resultSchema", "string", false, false, Description: "Optional JSON schema; when set, the final answer must be JSON and is emitted as a parsed object (one re-ask on failure)."),
+                new("model", "aiModel", false, false, Description: "Override the configured model for this node only. The agent needs a tool-capable model (e.g. gpt-4o / gpt-4.1); OpenAI reasoning models such as the gpt-5 family are not yet supported for tools."),
+            },
+            new List<OutputDefinition>
+            {
+                new("result", "any"),
+            }
+        ));
+
         // 7. SetVariable node manifest
         Register(new NodePackageManifest(
             new NodePackageId("setVariable"),

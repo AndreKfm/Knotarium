@@ -10,7 +10,12 @@ import type { CredentialSummary, GalleryTemplate, ParameterValues, TemplateInsta
 
 type CardState = 'idle' | 'installing' | 'done';
 
-export function TemplateGallery() {
+interface TemplateGalleryProps {
+  /** When provided, a freshly created workflow opens straight in the editor instead of just banner-confirming. */
+  onOpenWorkflow?: (workflowId: string) => void;
+}
+
+export function TemplateGallery({ onOpenWorkflow }: TemplateGalleryProps = {}) {
   const [templates, setTemplates] = useState<GalleryTemplate[]>([]);
   const [credentials, setCredentials] = useState<CredentialSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +91,9 @@ export function TemplateGallery() {
       setCardState((prev) => ({ ...prev, [template.templateId]: 'done' }));
       setOpenId(null);
       await ensureImportedGroup(installed.workflowId);
+      // Jump straight into the new workflow so the user lands on their canvas, not a confirmation
+      // banner. The banner (InstallResult) stays as the fallback when no navigation handler is wired.
+      onOpenWorkflow?.(installed.workflowId);
     } catch (err) {
       setCardState((prev) => ({ ...prev, [template.templateId]: 'idle' }));
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Could not create the workflow.');

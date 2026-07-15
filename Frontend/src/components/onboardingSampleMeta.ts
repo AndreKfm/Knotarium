@@ -2,7 +2,7 @@
 // (name, description), so the category accent, tile icon, tag, and node-flow chips live here — keyed
 // by the built-in templateId. Templates without an entry fall back to a neutral default.
 
-export type SampleCategory = 'trigger' | 'logic' | 'data' | 'network';
+export type SampleCategory = 'trigger' | 'logic' | 'data' | 'network' | 'ai';
 
 export interface FlowChip {
   label: string;
@@ -23,6 +23,7 @@ export const CATEGORY_ACCENT: Record<SampleCategory, string> = {
   logic: '#a99bff',
   data: '#f0b429',
   network: '#22d3ee',
+  ai: '#f472b6',
 };
 
 export const DEFAULT_SAMPLE_META: SampleMeta = { category: 'logic', icon: 'log', tag: 'STARTER', flow: [] };
@@ -69,5 +70,13 @@ export const SAMPLE_META: Record<string, SampleMeta> = {
   'tpl_starter-webhook-receiver': {
     category: 'trigger', icon: 'webhook', tag: 'WEBHOOK · TRIGGER',
     flow: [{ label: 'Webhook', icon: 'webhook', cat: 'trigger' }, log],
+  },
+  'tpl_starter-ai-support-triage': {
+    category: 'ai', icon: 'ai', tag: 'AI · TRIAGE',
+    flow: [
+      { label: 'AI Extract', icon: 'ai', cat: 'ai' },
+      { label: 'AI Router', icon: 'ai', cat: 'ai' },
+      { label: 'AI Draft', icon: 'ai', cat: 'ai' },
+    ],
   },
 };

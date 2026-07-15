@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-ai-summarize",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "AI Summarize",
+  "author": "Knotarium",
+  "description": "The smallest possible AI node example: one AI Prompt call that turns a block of text into three concise bullet points, logged at the end. A clean starting point for any 'run text through a model' workflow — swap the sample text for your own upstream data with {{ }}. Requires an AI provider under Settings → AI Provider (local OpenAI-compatible endpoints work too).",
+  "tags": ["starter", "ai", "prompt", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-15T00:00:00.0000000Z",
+  "sourceWorkflowName": "AI Summarize",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

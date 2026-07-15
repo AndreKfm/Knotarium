@@ -6,6 +6,7 @@ import { getTypeColor, getNodeIcon, renderPropertiesSummary, getStatusBadge, isL
 import { SubflowLanes, type SubflowInterface } from './SubflowLanes';
 import { ExternalDeviceLanes } from './ExternalDeviceLanes';
 import { readDeviceSurface } from '../node-editor/externalDevicePins';
+import { aiRouterOutputHandles } from '../node-editor/aiRouterPorts';
 import { useSubflowOpenStore } from '../stores/useSubflowOpenStore';
 import { canRenameNode, applyNodeRename } from '../node-editor/nodeRename';
 
@@ -13,6 +14,17 @@ export function getNodeDataOutputs(nodeType: string, properties?: Record<string,
   const type = nodeType.toLowerCase();
   if (type === 'httprequest') {
     return ['body', 'statusCode', 'isSuccess'];
+  }
+  if (type === 'aiverify') {
+    // status = overall verdict, result = full audited record, claims = per-claim breakdown.
+    return ['status', 'result', 'claims'];
+  }
+  if (type === 'airouter') {
+    return ['category', 'reply'];
+  }
+  if (type === 'aidiff') {
+    // changeType = overall verdict, materialChanges = the meaningful diffs, result = full record.
+    return ['changeType', 'materialChanges', 'result'];
   }
   if (type.startsWith('openapi.') || type === 'restcaller') {
     return ['body', 'statusCode'];
@@ -310,6 +322,14 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
   const primaryOutputHandle = outputHandles[0];
   const statusBadge = getStatusBadge(execStatus);
 
+  // AI Classify node: one branch handle per configured category label plus the 'otherwise'
+  // fallback — derived from the node's own properties (see aiRouterPorts.ts), not the manifest,
+  // so the handles follow the config live while editing.
+  const isAiRouter = type === 'aiRouter';
+  const aiRouterHandles = isAiRouter
+    ? aiRouterOutputHandles(data?.properties as Record<string, unknown> | undefined)
+    : [];
+
   // External device node: pins are derived from the selected events/actions (not static ports).
   // Pure inbound surface — events AND incoming actions are both source pins (right). See externalDevicePins.ts.
   const isExternalDevice = type === 'externalDevice';
@@ -482,6 +502,23 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
     boxShadow: '0 0 0 1.5px rgba(16, 185, 129, 0.6), 0 0 20px rgba(16, 185, 129, 0.4)',
   } : {};
 
+  // Nodes that render branch/verdict labels down the right edge (AI Verify's 4, AI Diff's 3, AI Router's
+  // dynamic categories) need a right gutter on the OUTPUTS chip section so the promotable-output chips don't
+  // slide under those labels. The header title is short and left-aligned, so it does NOT get the gutter
+  // (padding it would squeeze the title in the execution view, where a status badge shares the header row,
+  // and wrap it onto 3 lines). For AI Router the gutter is sized to the longest category (labels ellipsize
+  // at 45% of the node, so it is capped accordingly).
+  const rightBranchCount = type === 'aiVerify' ? 4 : type === 'aiDiff' ? 3 : isAiRouter ? aiRouterHandles.length : 0;
+  const branchLabelGutter = type === 'aiVerify' ? 104
+    : type === 'aiDiff' ? 92
+    : type === 'httpRequest' ? 46  // short DONE/FAIL labels — just enough to clear the isSuccess chip
+    : isAiRouter && aiRouterHandles.length > 0
+      ? Math.min(150, Math.max(...aiRouterHandles.map((h) => h.length)) * 7 + 18)
+      : 0;
+  // Give branch-heavy nodes a little more height so 3–4 labels spread down the right edge with breathing
+  // room instead of stacking tightly (they were reading as "condensed").
+  const branchMinHeight = rightBranchCount >= 3 ? rightBranchCount * 30 + 44 : undefined;
+
   return (
     <div
       className={nodeClass}
@@ -491,6 +528,11 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
       style={{
         width: isContainer ? '100%' : undefined,
         height: isContainer ? '100%' : undefined,
+        minHeight: isContainer ? undefined : branchMinHeight,
+        // Cap a normal node's width so long config values (e.g. a Set Variable holding a paragraph)
+        // wrap and grow the card DOWNWARD instead of stretching it across the canvas. Containers are
+        // user-resizable, so they opt out.
+        maxWidth: isContainer ? undefined : 340,
         borderWidth: (selected || isDragOver || isProducerActive) ? '2px' : '1.5px',
         borderColor: isDragOver ? 'var(--color-accent)' : selected ? 'var(--color-accent)' : undefined,
         boxShadow: isDragOver
@@ -804,7 +846,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
             </div>
           );
         })() : getNodeDataOutputs(type, props as any).length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '6px', marginTop: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '6px', marginTop: '6px', paddingRight: branchLabelGutter || undefined }}>
             <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
               Outputs (Drag to Promote)
             </span>
@@ -947,6 +989,43 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
+      {isAiRouter && (
+        <>
+          {aiRouterHandles.map((handle, index) => {
+            // Distribute the branch handles evenly down the right edge; the trailing
+            // 'otherwise' fallback renders muted so real categories stand out.
+            const top = `${Math.round(((index + 1) / (aiRouterHandles.length + 1)) * 100)}%`;
+            const isOtherwise = index === aiRouterHandles.length - 1;
+            const color = isOtherwise ? 'var(--text-muted, #6b7280)' : 'var(--color-accent)';
+            return (
+              <span key={handle}>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id={handle}
+                  style={{ top, background: color, borderColor: color, ...glowFor(handle) }}
+                  {...portA11yProps(`${displayName} ${handle} branch output`)}
+                />
+                <span style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: `calc(${top} - 7px)`,
+                  fontSize: '0.6rem',
+                  fontWeight: 800,
+                  color,
+                  maxWidth: '45%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {handle}
+                </span>
+              </span>
+            );
+          })}
+        </>
+      )}
+
       {type === 'httpRequest' && (
         <>
           {/* Success Port */}
@@ -982,6 +1061,56 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
           <span style={{ position: 'absolute', right: '12px', top: '62%', fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-error)' }}>
             FAIL
           </span>
+        </>
+      )}
+
+      {type === 'aiVerify' && (
+        <>
+          {/* Evidence-gate verdict branches — fixed vocabulary, evenly spaced down the right edge.
+              Verified = success green, Contradicted = error red, Unsupported/Uncertain = muted. */}
+          {([
+            ['verified', 'var(--color-success)', 'VERIFIED', '20%'],
+            ['unsupported', 'var(--color-warning)', 'UNSUPPORTED', '40%'],
+            ['contradicted', 'var(--color-error)', 'CONTRADICTED', '60%'],
+            ['uncertain', 'var(--text-muted, #6b7280)', 'UNCERTAIN', '80%'],
+          ] as const).map(([id, color, label, top]) => (
+            <span key={id}>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={id}
+                style={{ top, background: color, borderColor: color, ...glowFor(id) }}
+                {...portA11yProps(`${displayName} ${id} branch output`)}
+              />
+              <span style={{ position: 'absolute', right: '12px', top: `calc(${top} - 8px)`, fontSize: '0.6rem', fontWeight: 800, color }}>
+                {label}
+              </span>
+            </span>
+          ))}
+        </>
+      )}
+
+      {type === 'aiDiff' && (
+        <>
+          {/* Semantic-diff verdict branches — fixed vocabulary. Material = attention, none = success. */}
+          {([
+            ['material', 'var(--color-warning)', 'MATERIAL', '25%'],
+            ['cosmetic', 'var(--text-muted, #6b7280)', 'COSMETIC', '50%'],
+            ['none', 'var(--color-success)', 'NO CHANGE', '75%'],
+          ] as const).map(([id, color, label, top]) => (
+            <span key={id}>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={id}
+                style={{ top, background: color, borderColor: color, ...glowFor(id) }}
+                {...portA11yProps(`${displayName} ${id} branch output`)}
+              />
+              <span style={{ position: 'absolute', right: '12px', top: `calc(${top} - 8px)`, fontSize: '0.6rem', fontWeight: 800, color }}>
+                {label}
+              </span>
+            </span>
+          ))}
         </>
       )}
 
@@ -1096,7 +1225,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && !isContainer && type !== 'end' && !isExternalDevice && (
+      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && type !== 'aiVerify' && type !== 'aiDiff' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && (
         <Handle
           type="source"
           position={Position.Right}

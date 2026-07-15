@@ -1,0 +1,15 @@
+{
+  "templateId": "tpl_starter-ai-support-triage",
+  "templateVersion": "1.0.0",
+  "schemaVersion": 1,
+  "name": "AI Support Triage",
+  "author": "Knotarium",
+  "description": "Turns a raw customer email into structured data, a routed decision, and a ready-to-send reply — three AI skills in one run. AI Prompt extracts JSON facts (name, order number, sentiment, urgency), AI Router routes the message down a Complaint / Question / Praise branch, and a second AI Prompt drafts an empathetic reply that chains the extracted facts into its prompt. Self-contained sample message included — just press Run. Requires an AI provider under Settings → AI Provider (local OpenAI-compatible endpoints work too).",
+  "tags": ["starter", "ai", "triage", "example"],
+  "category": "starter",
+  "minEngineVersion": null,
+  "createdAtUtc": "2026-07-14T00:00:00.0000000Z",
+  "sourceWorkflowName": "AI Support Triage",
+  "workflowChecksum": "",
+  "credentialSlots": []
+}

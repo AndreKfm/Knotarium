@@ -1,4 +1,5 @@
 using Knotarium.Core.Contracts;
+using Knotarium.Core.Contracts.Ai;
 using Knotarium.Features.Execution;
 
 // .NET convention: DI registration extensions live in Microsoft.Extensions.DependencyInjection
@@ -53,6 +54,11 @@ public static class ExecutionServiceCollectionExtensions
         // Alias the seam to the same scoped instance so the Notifications error-workflow worker can
         // enqueue an error run without depending on the Execution slice.
         services.AddScoped<IErrorWorkflowRunEnqueuer>(sp => sp.GetRequiredService<ErrorWorkflowRunEnqueuer>());
+
+        // Agent tool runner: drives an aiAgent node's tool call as a synchronous, seeded child run in its
+        // own DI scope. Depends only on singletons (IServiceScopeFactory + TimeProvider) and creates its own
+        // scopes, so it is itself a singleton. Overrides the fail-closed fallback from AddBuiltInNodes.
+        services.AddSingleton<IAgentToolRunner, AgentToolRunner>();
         return services;
     }
 }
