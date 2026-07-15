@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import type { DragEvent, CSSProperties } from 'react';
+import type { DragEvent } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -73,6 +73,8 @@ import { useVersioning } from './canvas/useVersioning';
 import { useSignalFields } from './canvas/useSignalFields';
 import { useAutoConnect } from './canvas/useAutoConnect';
 import { useCanvasKeyboardShortcuts } from './canvas/useCanvasKeyboardShortcuts';
+import { CanvasLayoutToolbar } from './canvas/CanvasLayoutToolbar';
+import { CanvasDensityPopover } from './canvas/CanvasDensityPopover';
 import { acceptsMultipleIncoming } from '../node-editor/connectionSemantics';
 import { isApiError, getErrorMessage, getErrorDiagnostics } from '../utils/apiErrors';
 import { decorateEdgesWithDiagnostics } from '../utils/edgeDiagnostics';
@@ -85,7 +87,6 @@ import { EmptyCanvasHint } from './EmptyCanvasHint';
 import { CanvasImportModal } from './CanvasImportModal';
 import { useCanvasStore } from '../stores/useCanvasStore';
 import type { NodePackageSummary, WorkflowDefinition } from '../types';
-import { CircleHelp, Eye, Hash, History, Maximize2, StickyNote, Group, Ungroup, LayoutTemplate, Crosshair, Combine } from 'lucide-react';
 import { analyzeMultiExtraction, planParametrizedExtraction, type ExNode, type ExEdge } from '../node-editor/extractSubflow';
 
 // ── Per-workflow viewport persistence ───────────────────────────────────────
@@ -174,38 +175,6 @@ interface CanvasProps {
   armed?: boolean | null;
 }
 
-// Floating layout-tools toolbar styles (Tidy + Align/Distribute).
-const layoutToolbarStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '2px',
-  padding: '4px',
-  background: 'var(--bg-surface-opaque, #101625)',
-  border: '1px solid var(--border-color)',
-  borderRadius: '10px',
-  boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
-};
-const layoutBtnStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: '4px',
-  minWidth: '28px',
-  height: '28px',
-  padding: '0 8px',
-  background: 'transparent',
-  border: 'none',
-  borderRadius: '6px',
-  color: 'var(--text-primary, #e5e7eb)',
-  fontSize: '0.9rem',
-  cursor: 'pointer',
-};
-const layoutDividerStyle: CSSProperties = {
-  width: '1px',
-  height: '18px',
-  background: 'var(--border-color)',
-  margin: '0 2px',
-};
 
 function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTriggered, onSimulated, onWorkflowLoadFailed, onOpenSubflow, isSubflow, registerSubflowExit, registerGetDefinition, onWatchLiveRuns, armed }: CanvasProps) {
   const { screenToFlowPosition, getInternalNode, getNodes, setCenter, fitView, getZoom, setViewport, getViewport } = useReactFlow();
@@ -2320,261 +2289,37 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
               />
             )}
 
-            {/* Layout tools: Tidy (auto-layout) always; Align/Distribute when ≥2 selected. */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '12px',
-                right: '12px',
-                zIndex: 900,
-                display: 'flex',
-                gap: '8px',
-                alignItems: 'flex-start',
-              }}
-            >
-              {selectedNodeCount >= 2 && (
-                <div style={layoutToolbarStyle}>
-                  <button type="button" style={layoutBtnStyle} title="Align left" onClick={() => alignSelection('left')}>⊢</button>
-                  <button type="button" style={layoutBtnStyle} title="Align horizontal centres" onClick={() => alignSelection('centerX')}>↔</button>
-                  <button type="button" style={layoutBtnStyle} title="Align right" onClick={() => alignSelection('right')}>⊣</button>
-                  <span style={layoutDividerStyle} />
-                  <button type="button" style={layoutBtnStyle} title="Align top" onClick={() => alignSelection('top')}>⊤</button>
-                  <button type="button" style={layoutBtnStyle} title="Align vertical centres" onClick={() => alignSelection('centerY')}>↕</button>
-                  <button type="button" style={layoutBtnStyle} title="Align bottom" onClick={() => alignSelection('bottom')}>⊥</button>
-                  {selectedNodeCount >= 3 && (
-                    <>
-                      <span style={layoutDividerStyle} />
-                      <button type="button" style={layoutBtnStyle} title="Distribute horizontally" onClick={() => distributeSelection('horizontal')}>⇿</button>
-                      <button type="button" style={layoutBtnStyle} title="Distribute vertically" onClick={() => distributeSelection('vertical')}>⇕</button>
-                    </>
-                  )}
-                </div>
-              )}
-              <div className="lt-group">
-                <button
-                  type="button"
-                  className="lt-btn"
-                  title="Center / fit all nodes in view"
-                  onClick={() => fitView({ padding: 0.15, duration: 400 })}
-                >
-                  <span className="lt-btn-icon"><Crosshair size={15} /></span>
-                  Center
-                </button>
-                <button
-                  type="button"
-                  className="lt-btn"
-                  title="Tidy layout (auto-arrange left → right)"
-                  onClick={runAutoLayout}
-                >
-                  <span className="lt-btn-icon"><Maximize2 size={15} /></span>
-                  Tidy
-                </button>
-                <button
-                  type="button"
-                  className={`lt-btn${snapEnabled ? ' lt-active' : ''}`}
-                  aria-pressed={snapEnabled}
-                  title={snapEnabled ? 'Snap to grid: on' : 'Snap to grid: off'}
-                  onClick={() => setSnapEnabled((v) => !v)}
-                >
-                  <span className="lt-btn-icon"><Hash size={15} /></span>
-                  Grid
-                </button>
-                {!readOnly && (
-                  <button
-                    type="button"
-                    className="lt-btn"
-                    title="Add a sticky note"
-                    aria-label="Add a sticky note"
-                    onClick={addStickyNote}
-                  >
-                    <span className="lt-btn-icon"><StickyNote size={15} /></span>
-                    Note
-                  </button>
-                )}
-                {!readOnly && (
-                  <button
-                    type="button"
-                    className="lt-btn"
-                    title="Insert a template's nodes into this workflow"
-                    aria-label="Insert from template"
-                    onClick={() => setTemplatePickerOpen(true)}
-                  >
-                    <span className="lt-btn-icon"><LayoutTemplate size={15} /></span>
-                    Template
-                  </button>
-                )}
-                {!readOnly && selectedNodeCount >= 2 && (
-                  <button
-                    type="button"
-                    className="lt-btn"
-                    title="Group selected nodes"
-                    aria-label="Group selected nodes"
-                    onClick={groupSelection}
-                  >
-                    <span className="lt-btn-icon"><Group size={15} /></span>
-                    Group
-                  </button>
-                )}
-                {!readOnly && selectedNodeCount >= 1 && (
-                  <button
-                    type="button"
-                    className="lt-btn"
-                    title="Extract the selected nodes into a new subflow"
-                    aria-label="Extract selection to a subflow"
-                    onClick={extractToSubflow}
-                    disabled={extracting}
-                  >
-                    <span className="lt-btn-icon"><Combine size={15} /></span>
-                    {extracting ? 'Extracting…' : 'Extract'}
-                  </button>
-                )}
-                {!readOnly && canUngroupSelection && (
-                  <button
-                    type="button"
-                    className="lt-btn"
-                    title="Ungroup"
-                    aria-label="Ungroup"
-                    onClick={ungroupSelection}
-                  >
-                    <span className="lt-btn-icon"><Ungroup size={15} /></span>
-                    Ungroup
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className={`lt-btn${historyOpen ? ' lt-active' : ''}`}
-                  aria-pressed={historyOpen}
-                  title="Version history (Ctrl/⌘+Shift+H)"
-                  aria-label="Version history"
-                  onClick={() => (historyOpen ? closeVersionOverview() : setHistoryOpen(true))}
-                >
-                  <span className="lt-btn-icon"><History size={15} /></span>
-                  History
-                </button>
-                <span className="lt-divider" />
-                <button
-                  type="button"
-                  className="lt-btn lt-help"
-                  title="Keyboard shortcuts (?)"
-                  aria-label="Keyboard shortcuts"
-                  onClick={() => setShortcutsOpen(true)}
-                >
-                  <CircleHelp size={16} />
-                </button>
-              </div>
-            </div>
+            {/* Floating layout-tools toolbar (align/distribute/center/tidy/grid/note/group). See canvas/CanvasLayoutToolbar. */}
+            <CanvasLayoutToolbar
+              selectedNodeCount={selectedNodeCount}
+              readOnly={readOnly}
+              extracting={extracting}
+              canUngroupSelection={canUngroupSelection}
+              snapEnabled={snapEnabled}
+              historyOpen={historyOpen}
+              alignSelection={alignSelection}
+              distributeSelection={distributeSelection}
+              fitView={fitView}
+              runAutoLayout={runAutoLayout}
+              setSnapEnabled={setSnapEnabled}
+              addStickyNote={addStickyNote}
+              setTemplatePickerOpen={setTemplatePickerOpen}
+              groupSelection={groupSelection}
+              extractToSubflow={extractToSubflow}
+              ungroupSelection={ungroupSelection}
+              closeVersionOverview={closeVersionOverview}
+              setHistoryOpen={setHistoryOpen}
+              setShortcutsOpen={setShortcutsOpen}
+            />
 
-            {/* Density Popover & Trigger Button */}
-            <div ref={popoverRef} style={{ position: 'absolute', bottom: '16px', right: '90px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-              {isDensityPopoverOpen && (
-                <div
-                  style={{
-                    background: 'rgba(16, 22, 37, 0.95)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '10px',
-                    padding: '12px 16px',
-                    width: '240px',
-                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.7)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    marginBottom: '8px',
-                  }}
-                >
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Data Wire Density
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {[
-                      {
-                        mode: 'reveal' as const,
-                        label: 'Reveal on demand',
-                        desc: 'Canvas shows execution flow only. Hover/click nodes to trace.',
-                      },
-                      {
-                        mode: 'dots' as const,
-                        label: 'Compact dots',
-                        desc: 'Dashed wires always on, with collapsed midpoint diamonds.',
-                      },
-                      {
-                        mode: 'boxes' as const,
-                        label: 'Always-on value boxes',
-                        desc: 'Dashed wires and value tokens always visible.',
-                      },
-                    ].map((opt) => (
-                      <button
-                        key={opt.mode}
-                        onClick={() => {
-                          setDensityMode(opt.mode);
-                          setIsDensityPopoverOpen(false);
-                        }}
-                        style={{
-                          background: densityMode === opt.mode ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                          border: densityMode === opt.mode ? '1px solid var(--color-accent)' : '1px solid transparent',
-                          borderRadius: '6px',
-                          padding: '8px 10px',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          color: '#fff',
-                          transition: 'all 0.15s ease',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '2px',
-                        }}
-                        onMouseOver={(e) => {
-                          if (densityMode !== opt.mode) {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                          }
-                        }}
-                        onMouseOut={(e) => {
-                          if (densityMode !== opt.mode) {
-                            e.currentTarget.style.background = 'transparent';
-                          }
-                        }}
-                      >
-                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: densityMode === opt.mode ? 'var(--color-accent)' : '#fff' }}>
-                          {opt.label}
-                        </span>
-                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: '1.25' }}>
-                          {opt.desc}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              <button
-                onClick={() => setIsDensityPopoverOpen(!isDensityPopoverOpen)}
-                title="Data Wire Density Settings"
-                style={{
-                  background: 'rgba(16, 22, 37, 0.85)',
-                  backdropFilter: 'blur(10px)',
-                  border: '1px solid var(--border-color)',
-                  color: '#fff',
-                  borderRadius: '8px',
-                  width: '38px',
-                  height: '38px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
-                  transition: 'background 0.2s, border-color 0.2s',
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.background = 'rgba(16, 22, 37, 0.95)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.background = 'rgba(16, 22, 37, 0.85)';
-                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                }}
-              >
-                <Eye size={18} color={densityMode !== 'reveal' ? 'var(--color-accent)' : '#fff'} />
-              </button>
-            </div>
+            {/* Data-wire density picker (floating trigger + popover). See canvas/CanvasDensityPopover. */}
+            <CanvasDensityPopover
+              popoverRef={popoverRef}
+              isOpen={isDensityPopoverOpen}
+              setIsOpen={setIsDensityPopoverOpen}
+              densityMode={densityMode}
+              setDensityMode={setDensityMode}
+            />
 
             <style>{`
               @keyframes drag-hint-pulse {
