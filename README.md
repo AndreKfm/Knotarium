@@ -8,7 +8,7 @@
 
 > **Status:** early / active development. The project name is provisional and may change.
 
-<!-- Add a dashboard / canvas screenshot or GIF here. -->
+![The Knotarium canvas editor: a branching workflow (manual trigger → HTTP request → condition → set-variable / log) laid out on the node canvas, with the node palette on the left and the property inspector on the right](assets/editor.png)
 
 ---
 
