@@ -94,6 +94,10 @@ Found a vulnerability? Please follow the process in [SECURITY.md](SECURITY.md) r
 
 .NET 10 (modular-monolith backend, SQLite) · React 19 + Vite + React Flow (frontend). ~1,750 automated tests.
 
+## Development
+
+Knotarium is built with heavy use of **AI-assisted development** (Claude Code). Every change is human-reviewed, gated on CI, and maintained by [@AndreKfm](https://github.com/AndreKfm).
+
 ## License
 
 [Apache License 2.0](LICENSE) — see [NOTICE](NOTICE) for attribution and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for bundled open-source components.
