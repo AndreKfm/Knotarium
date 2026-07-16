@@ -1,6 +1,6 @@
 import { memo, useDeferredValue, useEffect, useState } from 'react';
 import type { DragEvent } from 'react';
-import { ChevronDown, ChevronRight, LayoutTemplate, Pin, Search, Upload } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, LayoutTemplate, Pin, Search, Upload } from 'lucide-react';
 import type { GalleryTemplate, NodePackageSummary } from '../types';
 import { api } from '../utils/api';
 import { useCanvasStore } from '../stores/useCanvasStore';
@@ -36,8 +36,33 @@ interface PaletteNodeItem {
 
 type PaletteCategory = 'Trigger' | 'Logic' | 'Data' | 'Network' | 'Ai' | 'Utility';
 type PaletteSection = 'RecentPinned' | PaletteCategory | 'Advanced';
+/** Every reorderable palette panel, including Templates (which has its own renderer). */
+type PaletteSectionKey = PaletteSection | 'Templates';
 
 const orderedCategories: PaletteCategory[] = ['Trigger', 'Logic', 'Data', 'Network', 'Ai', 'Utility'];
+
+// Default panel order, tuned for usage likelihood: your own nodes first, then the core building
+// blocks (trigger → logic → data → network → ai → utility), with the browse-y Templates panel and
+// the collapsed Advanced escape-hatches last. Users can drag panels to reorder (persisted below).
+const DEFAULT_SECTION_ORDER: PaletteSectionKey[] = ['RecentPinned', 'Trigger', 'Logic', 'Data', 'Network', 'Ai', 'Utility', 'Templates', 'Advanced'];
+const PALETTE_SECTION_ORDER_KEY = 'knotarium-palette-section-order';
+
+/** Load the persisted panel order, reconciled against the current known panels (forward/back compatible). */
+function loadPaletteSectionOrder(): PaletteSectionKey[] {
+  const known = new Set<string>(DEFAULT_SECTION_ORDER);
+  try {
+    const raw = localStorage.getItem(PALETTE_SECTION_ORDER_KEY);
+    if (!raw) return [...DEFAULT_SECTION_ORDER];
+    const saved = JSON.parse(raw) as unknown;
+    if (!Array.isArray(saved)) return [...DEFAULT_SECTION_ORDER];
+    // Keep the saved order (valid keys only), then append any panels added since (so new panels show up).
+    const ordered = saved.filter((k): k is PaletteSectionKey => typeof k === 'string' && known.has(k));
+    for (const k of DEFAULT_SECTION_ORDER) if (!ordered.includes(k)) ordered.push(k);
+    return ordered;
+  } catch {
+    return [...DEFAULT_SECTION_ORDER];
+  }
+}
 
 // Editor-only annotation node types are inserted from the canvas toolbar (a note button,
 // "group selection"), never dragged from the palette — so hide them here even though the
@@ -114,6 +139,67 @@ function SidebarPaletteImpl({ availableNodes, onAddNode, onDragStart, onImportOp
   const queryTokens = deferredSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
   // While searching, empty groups are noise — hide them (and show one global "no matches" line instead).
   const isSearching = queryTokens.length > 0;
+
+  // ── Reorderable panels ── The panel order is user-adjustable (drag a panel's grip) and persisted.
+  const [sectionOrder, setSectionOrder] = useState<PaletteSectionKey[]>(loadPaletteSectionOrder);
+  const [draggingSection, setDraggingSection] = useState<PaletteSectionKey | null>(null);
+  const [dragOverSection, setDragOverSection] = useState<PaletteSectionKey | null>(null);
+  useEffect(() => {
+    try { localStorage.setItem(PALETTE_SECTION_ORDER_KEY, JSON.stringify(sectionOrder)); } catch { /* non-fatal */ }
+  }, [sectionOrder]);
+
+  // Move `from` to sit just before `target` in the order.
+  const moveSection = (from: PaletteSectionKey, target: PaletteSectionKey) => {
+    if (from === target) return;
+    setSectionOrder((current) => {
+      const next = current.filter((key) => key !== from);
+      const targetIndex = next.indexOf(target);
+      if (targetIndex < 0) return current;
+      next.splice(targetIndex, 0, from);
+      return next;
+    });
+  };
+
+  // Drag props for a panel's grip handle (the drag source).
+  const gripProps = (key: PaletteSectionKey) => ({
+    draggable: true,
+    onDragStart: (event: DragEvent<HTMLElement>) => {
+      setDraggingSection(key);
+      event.dataTransfer.setData('application/knotarium-palette-section', key);
+      event.dataTransfer.effectAllowed = 'move';
+    },
+    onDragEnd: () => { setDraggingSection(null); setDragOverSection(null); },
+  });
+
+  // Drag props for a panel body (the drop target) — only reacts to a panel drag, never a node/template drag.
+  const sectionDropProps = (key: PaletteSectionKey) => ({
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      if (draggingSection && draggingSection !== key) { event.preventDefault(); setDragOverSection(key); }
+    },
+    onDrop: (event: DragEvent<HTMLElement>) => {
+      if (!draggingSection) return;
+      event.preventDefault();
+      moveSection(draggingSection, key);
+      setDraggingSection(null);
+      setDragOverSection(null);
+    },
+    onDragLeave: () => setDragOverSection((current) => (current === key ? null : current)),
+  });
+
+  // A drag-handle grip rendered at the left of each panel header.
+  const renderGrip = (key: PaletteSectionKey) => (
+    <span
+      {...gripProps(key)}
+      onClick={(event) => event.stopPropagation()}
+      role="button"
+      tabIndex={-1}
+      aria-label="Drag to reorder panel"
+      title="Drag to reorder"
+      style={{ display: 'inline-flex', alignItems: 'center', cursor: 'grab', color: 'rgba(148,163,184,0.7)', marginRight: '-2px' }}
+    >
+      <GripVertical size={14} />
+    </span>
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -245,9 +331,11 @@ function SidebarPaletteImpl({ availableNodes, onAddNode, onDragStart, onImportOp
     // "Advanced" starts collapsed (escape hatches stay out of the way until sought).
     const isCollapsed = collapsedCategories[section] ?? section === 'Advanced';
 
+    const headerBg = section === 'RecentPinned' ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255,255,255,0.03)';
     return (
       <section
         key={section}
+        {...sectionDropProps(section)}
         data-testid={`palette-category-${section === 'RecentPinned' ? 'recent-pinned' : section.toLowerCase()}`}
         style={{
           marginBottom: '10px',
@@ -255,34 +343,39 @@ function SidebarPaletteImpl({ availableNodes, onAddNode, onDragStart, onImportOp
           border: '1px solid rgba(255,255,255,0.07)',
           background: section === 'RecentPinned' ? 'rgba(56, 189, 248, 0.06)' : 'rgba(255,255,255,0.025)',
           overflow: 'hidden',
+          opacity: draggingSection === section ? 0.5 : 1,
+          boxShadow: dragOverSection === section ? 'inset 0 3px 0 0 var(--color-accent, #6f6cf0)' : undefined,
         }}
       >
-        <button
-          type="button"
-          onClick={() => setCollapsedCategories(current => ({ ...current, [section]: !(current[section] ?? section === 'Advanced') }))}
-          aria-expanded={!isCollapsed}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 14px',
-            border: 'none',
-            background: section === 'RecentPinned' ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255,255,255,0.03)',
-            color: '#e2e8f0',
-            cursor: 'pointer',
-            fontWeight: 700,
-            fontSize: '0.8rem',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-          }}
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-            {label}
-          </span>
-          <span style={{ color: 'rgba(148,163,184,0.9)' }}>{items.length}</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'stretch', background: headerBg }}>
+          <span style={{ display: 'flex', alignItems: 'center', paddingLeft: '10px' }}>{renderGrip(section)}</span>
+          <button
+            type="button"
+            onClick={() => setCollapsedCategories(current => ({ ...current, [section]: !(current[section] ?? section === 'Advanced') }))}
+            aria-expanded={!isCollapsed}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 14px 12px 8px',
+              border: 'none',
+              background: 'transparent',
+              color: '#e2e8f0',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '0.8rem',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+              {label}
+            </span>
+            <span style={{ color: 'rgba(148,163,184,0.9)' }}>{items.length}</span>
+          </button>
+        </div>
 
         {!isCollapsed && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px' }}>
@@ -350,28 +443,35 @@ function SidebarPaletteImpl({ availableNodes, onAddNode, onDragStart, onImportOp
     if (isSearching && filteredTemplates.length === 0) return null;
     return (
     <section
+      key="Templates"
+      {...sectionDropProps('Templates')}
       data-testid="palette-category-templates"
       style={{
         marginBottom: '10px', borderRadius: '14px', border: '1px solid rgba(139,124,240,0.18)',
         background: 'rgba(139, 124, 240, 0.06)', overflow: 'hidden',
+        opacity: draggingSection === 'Templates' ? 0.5 : 1,
+        boxShadow: dragOverSection === 'Templates' ? 'inset 0 3px 0 0 var(--color-accent, #6f6cf0)' : undefined,
       }}
     >
-      <button
-        type="button"
-        onClick={() => setTemplatesCollapsed((c) => !c)}
-        aria-expanded={!templatesCollapsed}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 14px', border: 'none', background: 'rgba(139, 124, 240, 0.08)', color: '#e2e8f0',
-          cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase',
-        }}
-      >
-        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {templatesCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-          Templates
-        </span>
-        <span style={{ color: 'rgba(148,163,184,0.9)' }}>{filteredTemplates.length}</span>
-      </button>
+      <div style={{ display: 'flex', alignItems: 'stretch', background: 'rgba(139, 124, 240, 0.08)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', paddingLeft: '10px' }}>{renderGrip('Templates')}</span>
+        <button
+          type="button"
+          onClick={() => setTemplatesCollapsed((c) => !c)}
+          aria-expanded={!templatesCollapsed}
+          style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 14px 12px 8px', border: 'none', background: 'transparent', color: '#e2e8f0',
+            cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {templatesCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+            Templates
+          </span>
+          <span style={{ color: 'rgba(148,163,184,0.9)' }}>{filteredTemplates.length}</span>
+        </button>
+      </div>
 
       {!templatesCollapsed && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px' }}>
@@ -471,10 +571,12 @@ function SidebarPaletteImpl({ availableNodes, onAddNode, onDragStart, onImportOp
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 20px' }}>
-        {renderSection('RecentPinned', 'Recent / Pinned', recentAndPinnedItems)}
-        {renderTemplatesSection()}
-        {orderedCategories.map(category => renderSection(category, category, groupedItems[category]))}
-        {advancedItems.length > 0 && renderSection('Advanced', 'Advanced', advancedItems)}
+        {sectionOrder.map((key) => {
+          if (key === 'Templates') return renderTemplatesSection();
+          if (key === 'RecentPinned') return renderSection('RecentPinned', 'Recent / Pinned', recentAndPinnedItems);
+          if (key === 'Advanced') return advancedItems.length > 0 ? renderSection('Advanced', 'Advanced', advancedItems) : null;
+          return renderSection(key, key, groupedItems[key]);
+        })}
         {isSearching && filteredItems.length === 0 && filteredTemplates.length === 0 && (
           <div style={{ padding: '16px 12px', color: 'rgba(148,163,184,0.9)', fontSize: '0.85rem', textAlign: 'center' }}>
             No nodes or templates match “{deferredSearchQuery.trim()}”.

@@ -89,6 +89,37 @@ describe('SidebarPalette', () => {
     );
   });
 
+  it('orders panels by usage — Recent/Pinned first, Templates below the node categories', async () => {
+    render(
+      <SidebarPalette availableNodes={availableNodes} onAddNode={vi.fn()} onDragStart={vi.fn()} />,
+    );
+    await screen.findByTestId('palette-category-templates');
+    const order = Array.from(document.querySelectorAll('[data-testid^="palette-category-"]'))
+      .map((el) => el.getAttribute('data-testid'));
+    expect(order.indexOf('palette-category-recent-pinned')).toBeLessThan(order.indexOf('palette-category-trigger'));
+    expect(order.indexOf('palette-category-trigger')).toBeLessThan(order.indexOf('palette-category-templates'));
+  });
+
+  it('reorders panels by dragging a grip and persists the new order', async () => {
+    render(
+      <SidebarPalette availableNodes={availableNodes} onAddNode={vi.fn()} onDragStart={vi.fn()} />,
+    );
+    const templatesSection = await screen.findByTestId('palette-category-templates');
+    const triggerSection = screen.getByTestId('palette-category-trigger');
+    const templatesGrip = within(templatesSection).getByLabelText('Drag to reorder panel');
+
+    fireEvent.dragStart(templatesGrip, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+    fireEvent.dragOver(triggerSection);
+    fireEvent.drop(triggerSection);
+
+    const order = Array.from(document.querySelectorAll('[data-testid^="palette-category-"]'))
+      .map((el) => el.getAttribute('data-testid'));
+    expect(order.indexOf('palette-category-templates')).toBeLessThan(order.indexOf('palette-category-trigger'));
+
+    const saved = JSON.parse(localStorage.getItem('knotarium-palette-section-order') || '[]');
+    expect(saved.indexOf('Templates')).toBeLessThan(saved.indexOf('Trigger'));
+  });
+
   it('marks a template that has a required parameter as needing configuration', async () => {
     vi.mocked(api.listGalleryTemplates).mockResolvedValue([
       galleryTemplate('Needs Config', [{ key: 'token', label: 'Token', description: null, type: 'string', options: null, default: null, required: true }]),
