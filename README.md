@@ -34,7 +34,7 @@ Prerequisites: **.NET 10 SDK** and **Node 22+**.
 # Terminal 1 — backend (API on http://localhost:43120)
 dotnet run --project Backend/Knotarium.Api
 
-# Terminal 2 — frontend (UI on http://localhost:5280, proxies /api to the backend)
+# Terminal 2 — frontend (UI on http://localhost:5273, proxies /api to the backend)
 cd Frontend && npm install && npm run dev
 ```
 
