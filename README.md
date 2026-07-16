@@ -4,7 +4,9 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-**Self-hosted, visual workflow automation.** Build automations as a graph of nodes on a canvas — HTTP, database, files, email, conditionals, loops, sub-flows, scheduled and webhook triggers — then run, version, and monitor them. One .NET process serves the API and the UI; data lives in a local SQLite file.
+**Self-hosted, visual workflow automation.** Design automations as a graph of nodes on a canvas — HTTP, databases, files, email, message queues, AI/LLM steps and inline C#, with conditionals, `switch`, loops and parallel fan-out/fan-in, and reusable sub-flows. Start them from manual, scheduled, webhook or polling triggers, then run, version (history · diff · restore), and monitor them — with per-workflow credentials, shareable templates, failure alerts, and a dead-letter view with replay.
+
+One .NET process serves both the API and the UI. Storage sits behind a pluggable database-provider seam: **SQLite by default** — zero setup, all data in one local file — with the provider interface already in place for others (a Postgres provider is scaffolded).
 
 > **Status:** early / active development. The project name is provisional and may change.
 
@@ -50,7 +52,7 @@ Set via environment variables (double-underscore = nested config):
 | `Security__PackageSigning__HostPrivateKeyBase64` | Base64 key to *sign* exported bundles (only needed if you use bundle export). |
 | `Auth__Enabled` | Cookie auth. Default `true` (first run creates the admin). |
 | `Storage__DataDirectory` | Machine-wide home for the SQLite DB + auto-generated credential key (Docker sets `/data`; defaults to `%ProgramData%\Knotarium` on Windows, `CommonApplicationData/Knotarium` elsewhere). Set it so a Windows service and an interactive run share one DB + key. |
-| `Database__ConnectionString` | Overrides the SQLite location entirely (e.g. a Postgres connection string). Otherwise the DB lives at `<DataDirectory>/Knotarium.db`. |
+| `Database__ConnectionString` | Overrides the SQLite database file location. Otherwise the DB lives at `<DataDirectory>/Knotarium.db`. (Only the SQLite provider is implemented today; the provider seam has a scaffolded Postgres stub for the future.) |
 
 For local development, copy `Backend/Knotarium.Api/appsettings.Development.json.example` to `appsettings.Development.json` (gitignored) and fill in your own keys.
 
