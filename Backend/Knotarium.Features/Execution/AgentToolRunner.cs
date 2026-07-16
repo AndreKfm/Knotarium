@@ -211,14 +211,19 @@ public sealed class AgentToolRunner : IAgentToolRunner
         }
 
         var json = JsonSerializer.Serialize(projection);
-        if (json.Length > MaxResultBytes)
+        // Cap on real UTF-8 bytes, not UTF-16 code units — otherwise the byte budget is wrong for
+        // non-ASCII content (a char can be 1–4 bytes). Keep the payload valid JSON by wrapping a preview.
+        if (System.Text.Encoding.UTF8.GetByteCount(json) > MaxResultBytes)
         {
-            // Keep the payload valid JSON: wrap a preview + an explicit marker rather than cutting mid-object.
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            // Truncate on a byte boundary (may drop a trailing partial char → a replacement char, which
+            // JSON-encodes fine); this is only a human-readable preview marker, not machine-parsed data.
+            var preview = System.Text.Encoding.UTF8.GetString(bytes, 0, MaxResultBytes);
             json = JsonSerializer.Serialize(new
             {
                 __truncated = true,
                 __note = "the tool result exceeded the size cap and was truncated",
-                preview = json[..MaxResultBytes],
+                preview,
             });
         }
         return json;

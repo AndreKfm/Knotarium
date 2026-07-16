@@ -687,7 +687,7 @@ export function ExecutionSidebar({
                             </div>
 
                             {/* AI Agent: render the per-iteration tool-call trail from the node's `steps`
-                                output as a nested list, with click-through to each tool's child run. */}
+                                output as a nested list — each call's status, name, and its child run id. */}
                             {group.nodeType === 'aiAgent' && (() => {
                               const payload = group.latestPayload as Record<string, unknown> | null;
                               const steps = payload && Array.isArray(payload.steps) ? (payload.steps as unknown[]) : null;
@@ -708,7 +708,7 @@ export function ExecutionSidebar({
                                             const call = c as { tool?: string; ok?: boolean; childExecutionId?: string; error?: string };
                                             return (
                                               <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontFamily: 'monospace', color: '#f8fafc' }}>
-                                                <span style={{ color: call.ok === false ? '#f87171' : '#34d399' }}>{call.ok === false ? '✗' : '✓'}</span>
+                                                <span style={{ color: call.ok === false ? '#f87171' : call.ok === true ? '#34d399' : '#94a3b8' }}>{call.ok === false ? '✗' : call.ok === true ? '✓' : '•'}</span>
                                                 <span>{call.tool ?? 'tool'}</span>
                                                 {call.error && <span style={{ color: '#f87171' }}>— {call.error}</span>}
                                                 {call.childExecutionId && call.childExecutionId !== '00000000-0000-0000-0000-000000000000' && (
