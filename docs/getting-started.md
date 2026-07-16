@@ -3,7 +3,7 @@
 This guide takes you from a running instance to your first workflow that calls an API
 and logs the result — in about five minutes.
 
-If you haven't started Knotarium yet, see the [Quickstart in the README](../README.md#quickstart-docker).
+If you haven't started Knotarium yet, see [Download & run](/install).
 
 ---
 
@@ -34,7 +34,8 @@ A workflow is a **graph of nodes** connected by **edges**:
 - **Nodes** do the work — HTTP request, log, delay, set a variable, conditionals, loops,
   database query, file read/write, email, inline C# code, and more.
 - **Edges** carry the flow (and data) from one node's output port to the next node's input.
-  A node references an upstream node's output with `{{ $node.<id>.output.<field> }}`.
+  A node references an upstream node's output with a `$node`-based expression — see
+  [Core concepts](/guide/concepts).
 
 Some nodes **branch**: the HTTP Request node has a **success** and an **error** port, so you can
 handle failures explicitly (the *Fetch from an API* starter logs each).
@@ -73,7 +74,7 @@ down by default:
 - **File Read/Write** is **deny-by-default**; grant specific directories under
   *Settings → File Access*.
 
-See the [Security section of the README](../README.md#security) before exposing an instance.
+See the [Security section of the README](https://github.com/AndreKfm/Knotarium#security) before exposing an instance.
 
 ## Where to go next
 
@@ -82,6 +83,6 @@ See the [Security section of the README](../README.md#security) before exposing 
   channels (webhook / Slack / email).
 - **Import** — generate nodes from an OpenAPI spec, or a whole workflow from a natural-language
   description (AI).
-- **Configuration** — see the [Configuration table in the README](../README.md#configuration).
+- **Configuration** — see the [Configuration table in the README](https://github.com/AndreKfm/Knotarium#configuration).
 
 Questions or a rough edge? Open an issue.

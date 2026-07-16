@@ -1,0 +1,15 @@
+{
+  "name": "knotarium-docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Knotarium user guide (VitePress). Builds to static HTML for online (GitHub Pages) and offline (bundled with the app) delivery.",
+  "scripts": {
+    "docs:dev": "vitepress dev",
+    "docs:build": "vitepress build",
+    "docs:preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3"
+  }
+}
