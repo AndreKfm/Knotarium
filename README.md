@@ -14,6 +14,18 @@ One .NET process serves both the API and the UI. Storage sits behind a pluggable
 
 ---
 
+## Why Knotarium?
+
+A few things set it apart from the usual JavaScript-based automation tools:
+
+- **One self-contained process — no external runtime or services.** No Node.js, no Python, no separate database server: the API, the UI, and an embedded SQLite database ship as a single self-hosted .NET binary. Run it from a folder, a Docker image, or as a Windows service.
+- **Node logic is C#, compiled at runtime.** The inline-code node and custom node packages are real C# compiled with Roslyn on the fly — not a sandboxed scripting layer bolted onto the host.
+- **Deterministic gates around AI.** Beyond prompt/router/agent nodes, `AI Verify` and `AI Diff` turn an LLM's answer into structured data that a deterministic rule — *your* logic, not the model — accepts or rejects. The `AI Agent` node's tools are your own allow-listed workflows.
+- **Time-travel run inspection + live condition preview.** Step through any past run and see each node's inputs, outputs, and the variables before/after it ran; the condition editor resolves `{{ $node.… }}` references against the last real run, so you can see how a branch will evaluate before you publish.
+- **Secure by default.** File access is deny-by-default, the code and database node capabilities are off until you switch them on, and outbound HTTP is checked against an SSRF egress policy.
+
+---
+
 ## Quickstart (Docker)
 
 ```bash
@@ -58,13 +70,14 @@ For local development, copy `Backend/Knotarium.Api/appsettings.Development.json.
 
 ## Features
 
+- **Self-contained** — a single .NET process serves the API and UI over an embedded SQLite database; no Node.js, Python, or external services to run. Ship it as a folder, a Docker image, or a Windows service.
 - **Visual canvas** — drag/connect nodes, auto-layout, undo/redo, node search, sub-flow drill-down, sticky notes & groups.
 - **Nodes** — HTTP, database query, file read/write, email (SMTP/IMAP), MQTT publish, conditionals, loops (incl. parallel), delay, inline C# code, and custom node packages.
 - **Triggers** — manual, webhook, cron schedule, polling, error-handler, and event-driven device blocks.
-- **Execution** — journaled runs with a step-through / replay visualizer; runtime versioning (publish + activate).
+- **Execution & debugging** — journaled runs with a time-travel inspector (step through each node's inputs, outputs, and variables before/after); live condition preview against the last run; runtime versioning (publish + activate, with history · diff · restore).
 - **Reliability** — global error workflow, dead-letter queue with replay, failure-alert channels (webhook/Slack/email).
 - **Portability** — export/import single-workflow templates and multi-package bundles; full encrypted backup/restore; import from an OpenAPI spec.
-- **AI** — generate a workflow from a natural-language description.
+- **AI** — prompt, router, and agent nodes (the agent's tools are your own allow-listed workflows); deterministic `Verify` / `Diff` gates that turn LLM output into pass/fail on *your* rules; and one-shot workflow generation from a natural-language description.
 - **Security** — deny-by-default file-access policy, capability gating for code/database nodes, cookie auth, and privileged-node warnings on import (see below).
 
 ## Security
