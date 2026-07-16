@@ -10,7 +10,7 @@ in a local SQLite file. Pick the option that fits your setup — then head to
 docker compose up --build
 ```
 
-Open **http://localhost:8080**. On first run you create an admin account. The SQLite database **and**
+Open **http://localhost:43120**. On first run you create an admin account. The SQLite database **and**
 the auto-generated credential-encryption key persist in the `knotarium-data` volume, so credentials
 survive restarts with no extra setup.
 
@@ -27,7 +27,7 @@ executable — it's a self-contained folder build, so there's no separate runtim
 - **Windows:** run `Knotarium.Api.exe` (or the bundled start script).
 - **Linux / macOS:** run `./Knotarium.Api`.
 
-Open the address it logs on startup (by default **http://localhost:8080**). Data — the SQLite
+Open the address it logs on startup (by default **http://localhost:43120**). Data — the SQLite
 database and the credential key — lives in a machine-wide data directory
 (`%ProgramData%\Knotarium` on Windows), so it survives restarts and is shared with a service
 install of the same version. Set the port, data directory, and auth via environment variables or
