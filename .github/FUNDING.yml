@@ -1,0 +1,7 @@
+# Adds a "Sponsor" button to the repository.
+# Fill in the platforms you actually use; remove this file if you don't want the button.
+github: [AndreKfm]
+# ko_fi: your-handle
+# buy_me_a_coffee: your-handle
+# open_collective: your-project
+# custom: ["https://your-donation-link"]
