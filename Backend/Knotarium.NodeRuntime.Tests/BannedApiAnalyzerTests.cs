@@ -166,6 +166,174 @@ public class BannedApiAnalyzerTests
         Assert.Empty(diags);
     }
 
+    // ---- Bypass / hardening regression tests (semantic analysis) ---------------------------
+
+    [Fact]
+    public void Analyze_WithAliasedBannedNamespace_IsDetected()
+    {
+        // `using S = System;` then S.IO.File.* is syntactically not "System.IO" but resolves to it.
+        var code = @"
+            using S = System;
+            using Knotarium.Core.Contracts;
+
+            public class AliasExecutor : INodeExecutor
+            {
+                public System.Threading.Tasks.ValueTask<NodeResult> ExecuteAsync(
+                    NodeInput input, INodeContext context, System.Threading.CancellationToken cancellationToken)
+                {
+                    var text = S.IO.File.ReadAllText(""secret.txt"");
+                    return default;
+                }
+            }
+        ";
+
+        var diags = BannedApiAnalyzer.Analyze(code);
+
+        Assert.Contains(diags, d => d.Code == "BANNED_API");
+    }
+
+    [Fact]
+    public void Analyze_WithNewlyBannedNamespaces_IsDetected()
+    {
+        foreach (var access in new[]
+                 {
+                     "System.Runtime.InteropServices.NativeLibrary.Load(\"x\");",
+                     "System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyName(null);",
+                     "Microsoft.Win32.Registry.LocalMachine.OpenSubKey(\"x\");"
+                 })
+        {
+            var diags = BannedApiAnalyzer.Analyze(BuildExecutorCode(access));
+            Assert.Contains(diags, d => d.Code == "BANNED_API");
+        }
+    }
+
+    [Fact]
+    public void Analyze_WithStaticMutableStateInsideExecutor_IsForbidden()
+    {
+        // Static mutable state is forbidden EVERYWHERE, including inside the executor itself.
+        var code = @"
+            using System.Collections.Generic;
+            using Knotarium.Core.Contracts;
+
+            public class StatefulExecutor : INodeExecutor
+            {
+                public static Dictionary<string, object> GlobalState = new();
+
+                public System.Threading.Tasks.ValueTask<NodeResult> ExecuteAsync(
+                    NodeInput input, INodeContext context, System.Threading.CancellationToken cancellationToken)
+                {
+                    return default;
+                }
+            }
+        ";
+
+        var diags = BannedApiAnalyzer.Analyze(code);
+
+        Assert.Contains(diags, d => d.Code == "STATIC_MUTABLE_STATE");
+    }
+
+    [Fact]
+    public void Analyze_WithStaticReadonlyMutableCollection_IsForbidden()
+    {
+        // `readonly` prevents reassignment, not mutation of the referenced object.
+        var helperCode = @"
+            using System.Collections.Generic;
+            public static class Cache
+            {
+                public static readonly Dictionary<string, object> State = new();
+            }
+        ";
+        var code = BuildExecutorCode("Cache.State[\"k\"] = 1;", helperCode);
+
+        var diags = BannedApiAnalyzer.Analyze(code);
+
+        Assert.Contains(diags, d => d.Code == "STATIC_MUTABLE_STATE");
+    }
+
+    [Fact]
+    public void Analyze_WithGetOnlyStaticMutableProperty_IsForbidden()
+    {
+        var helperCode = @"
+            using System.Collections.Generic;
+            public static class Store
+            {
+                public static List<string> Values { get; } = new();
+            }
+        ";
+        var code = BuildExecutorCode("Store.Values.Add(\"x\");", helperCode);
+
+        var diags = BannedApiAnalyzer.Analyze(code);
+
+        Assert.Contains(diags, d => d.Code == "STATIC_MUTABLE_STATE");
+    }
+
+    [Fact]
+    public void Analyze_WithStaticEvent_IsForbidden()
+    {
+        var helperCode = @"
+            using System;
+            public static class Bus
+            {
+                public static event EventHandler? Changed;
+            }
+        ";
+        var code = BuildExecutorCode("var _ = 1;", helperCode);
+
+        var diags = BannedApiAnalyzer.Analyze(code);
+
+        Assert.Contains(diags, d => d.Code == "STATIC_MUTABLE_STATE");
+    }
+
+    [Fact]
+    public void Analyze_WithHelperNamedExecuteAsync_DoesNotWhitelistStaticState()
+    {
+        // A random class exposing an ExecuteAsync method used to be treated as the executor and
+        // thereby allowed to hold static state. It must not be.
+        var helperCode = @"
+            public class RandomHelper
+            {
+                public static int Counter = 0;
+                public void ExecuteAsync() { }
+            }
+        ";
+        var code = BuildExecutorCode("RandomHelper.Counter++;", helperCode);
+
+        var diags = BannedApiAnalyzer.Analyze(code);
+
+        Assert.Contains(diags, d => d.Code == "STATIC_MUTABLE_STATE");
+    }
+
+    [Fact]
+    public void Analyze_ReportsSourcePosition()
+    {
+        var code = BuildExecutorCode("System.IO.File.ReadAllText(\"x\");");
+
+        var diag = BannedApiAnalyzer.Analyze(code).First(d => d.Code == "BANNED_API");
+
+        Assert.True(diag.StartLine > 0);
+        Assert.True(diag.StartColumn > 0);
+    }
+
+    [Fact]
+    public void Analyze_DeduplicatesNestedBannedAccess()
+    {
+        var code = BuildExecutorCode("System.IO.File.ReadAllText(\"x\");");
+
+        var banned = BannedApiAnalyzer.Analyze(code).Where(d => d.Code == "BANNED_API").ToList();
+
+        Assert.Single(banned);
+    }
+
+    [Fact]
+    public void Analyze_WithOverlongSource_IsRejected()
+    {
+        var huge = new string('x', 600_000);
+
+        var diags = BannedApiAnalyzer.Analyze(huge);
+
+        Assert.Contains(diags, d => d.Code == "SOURCE_TOO_LARGE");
+    }
+
     [Property(MaxTest = 20)]
     public bool FsCheck_Banned_Api_Static_Analysis_Coverage(NonNull<string> randomString)
     {

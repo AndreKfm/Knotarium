@@ -143,7 +143,7 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
     {
         logs.Add("[ROSLYN] Running banned API analyzer.");
         var staticDiagnostics = BannedApiAnalyzer.Analyze(request.ExecutorCode, request.PackageId)
-            .Where(d => string.Equals(d.Severity, "Error", StringComparison.OrdinalIgnoreCase))
+            .Where(d => d.Severity == AnalysisSeverity.Error)
             .ToList();
 
         if (staticDiagnostics.Count > 0)

@@ -99,7 +99,7 @@ public class BuiltInNodesVerificationTests
 
             // 1. Roslyn static analysis (Banned API verification)
             var analysisResult = BannedApiAnalyzer.Analyze(sourceCode, dir);
-            var errors = analysisResult.Where(r => r.Severity.Equals("Error", StringComparison.OrdinalIgnoreCase)).ToList();
+            var errors = analysisResult.Where(r => r.Severity == AnalysisSeverity.Error).ToList();
             Assert.Empty(errors);
 
             // 2. Roslyn compilation verification
