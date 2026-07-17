@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useState } from 'react';
 import { X, Trash2, UserPlus, KeyRound } from 'lucide-react';
 import { api } from '../../utils/api';

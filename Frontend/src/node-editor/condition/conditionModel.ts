@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // The editor's Condition models and the pure transforms between them. Three shapes:
 //   • DraftCondition  — what the editor edits: textual, possibly incomplete (literals held as strings).
 //   • ConditionLogic  — the PERSISTED runtime model (mirror of the backend ConditionLogic records;

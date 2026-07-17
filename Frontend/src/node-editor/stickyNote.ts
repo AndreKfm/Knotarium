@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Pure helpers for sticky-note annotation nodes (#13). A sticky note is an
  * editor-only, inert node type ('stickyNote'): it has no ports and is never

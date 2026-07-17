@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNodeOptions } from '../../hooks/useNodeOptions';
 import type { DynamicOptionMultiValue, DynamicOptionValue, OptionItem, ParameterDefinition } from '../../types';

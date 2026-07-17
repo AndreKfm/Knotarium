@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { ArrowLeft, Upload, Play, Radio, Activity, Zap, AlertTriangle } from 'lucide-react';
 import type { ActiveWorkflowVersion, WorkflowVersionSummary } from '../types';
 import { VersionRuntimeSelect } from './VersionRuntimeSelect';

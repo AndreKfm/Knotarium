@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Custom @xyflow/react node components for the auto-laid-out flow editor (Phase 8 redesign). Reuses the
 // original node visuals (amber comparator cards, type-colored input cards, TRUE/FALSE output) and adds
 // GroupNode (AND/OR) + NotNode for nesting. All editing flows through ConditionTreeContext; DATA comes

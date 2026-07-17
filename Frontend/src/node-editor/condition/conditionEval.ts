@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // The pure, type-aware Condition evaluator — the frontend half of the spec, mirroring the backend
 // Backend/Knotarium.Features/Nodes/Condition/ConditionEvaluator.cs. Both halves are pinned by the
 // shared conformance fixture (test-fixtures/condition/condition-conformance.fixture.json, B2) so the editor's

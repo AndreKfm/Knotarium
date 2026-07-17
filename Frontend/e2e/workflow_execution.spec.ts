@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { test, expect } from '@playwright/test';
 
 test.describe('Knotarium Visual Flow E2E Integration', () => {

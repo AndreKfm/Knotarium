@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { MarkerType } from '@xyflow/react';
 import type { Edge } from '@xyflow/react';
 import type { CompilationDiagnostic } from '../types';

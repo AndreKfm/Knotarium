@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Returns a React state-updater that swaps in `next` only when it differs
  * (by structural JSON equality) from the previous value. When unchanged it

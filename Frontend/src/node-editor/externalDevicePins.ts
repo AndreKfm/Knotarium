@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pin model for the generic `externalDevice` node (firewall-clean — no provider names here).
 //
 // A device block is a pure INBOUND surface: ticked external signals become output (source) pins you

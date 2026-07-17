@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Extract-to-subflow: the pure, framework-free core behind the editor's "Extract selection into a
 // subflow" action. Given a node/edge graph and a set of selected node ids, it (1) validates that the
 // selection can be replaced by a single subflow CALL node without changing behavior, (2) works out the

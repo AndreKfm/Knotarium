@@ -30,10 +30,14 @@ cd Frontend && npm install && npm test && npm run build
 - Match the style of the surrounding code (naming, comments, structure).
 - Describe *what* changed and *why* in the PR body.
 
-## Contributor License Agreement
+## Licensing of contributions
 
-A CLA will be required before contributions can be merged (it will be added here shortly). By opening a pull
-request you agree that your contribution may be licensed under the project's [Apache-2.0 License](LICENSE).
+No CLA is required. Per **Apache-2.0 §5**, any contribution intentionally submitted for inclusion is
+licensed under the project's [Apache-2.0 License](LICENSE) automatically, unless explicitly stated otherwise.
+
+We use the **Developer Certificate of Origin** ([DCO](https://developercertificate.org/)): by opening a pull
+request you certify that you wrote the change or otherwise have the right to submit it under Apache-2.0.
+Adding a `Signed-off-by:` line (`git commit -s`) is welcome but not enforced.
 
 ## Reporting bugs vs. security issues
 

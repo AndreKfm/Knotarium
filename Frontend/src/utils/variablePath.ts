@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Mirrors the backend VariablePath grammar (head + .name / ["key"] / [index] segments)
  * just enough for the editor to know the *container* variable a Set Variable write targets.

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import type { FitViewOptions } from '@xyflow/react'
 import { Crosshair, Maximize2, Hash, StickyNote, LayoutTemplate, Group, Combine, Ungroup, History, CircleHelp } from 'lucide-react'

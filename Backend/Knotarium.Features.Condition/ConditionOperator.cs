@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 namespace Knotarium.Features.Condition;
 
 /// <summary>The shipped legacy operator vocabulary. Kept so legacy <c>left/operator/right</c> nodes

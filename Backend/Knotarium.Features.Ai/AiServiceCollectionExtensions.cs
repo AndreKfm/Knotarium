@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 using Knotarium.Core.Contracts.Ai;
 using Knotarium.Features.Ai;
 using Knotarium.Features.Ai.Providers;

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useState } from 'react';
 import { AlertTriangle, RotateCcw, X, CheckCircle2 } from 'lucide-react';
 import type { RestoreVersionResult } from '../types';

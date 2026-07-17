@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Pure helper (Feature #10) that explains *why* a connection drop didn't wire
  * up, so the canvas can show an actionable toast instead of silently doing

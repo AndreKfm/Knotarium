@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import { VariablesPanel } from './VariablesPanel';

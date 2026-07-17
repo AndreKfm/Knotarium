@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Shared context for the v2 nested-box editor (Phase 8.3, N1-a). Kept separate from the node
 // components so Fast Refresh stays happy. Carries leaf-editing + tree-structure handlers, the
 // inline-popover open state, the data the inline editors need, and the live per-leaf statuses.

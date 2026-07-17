@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 using System.Net.Http;
 using Knotarium.Core.Contracts;
 using Knotarium.Core.Contracts.OpenApi;

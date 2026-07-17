@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { findOpenExpression, type ExpressionCompletion } from '../../utils/expressionCompletions';
 

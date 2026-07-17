@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 export const DEFAULT_DECLARATIVE_MANIFEST = `id: custom.declarative.node
 version: 1.0.0
 displayName: Custom Declarative Node

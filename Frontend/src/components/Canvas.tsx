@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { startTransition, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import type { DragEvent } from 'react';
 import {

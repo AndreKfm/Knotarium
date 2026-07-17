@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure, framework-agnostic undo/redo stacks.
 //
 // The canvas itself is the live "present" state; this structure only holds the

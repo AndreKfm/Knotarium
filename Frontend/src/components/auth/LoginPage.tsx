@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useState, type FormEvent } from 'react';
 import { Activity, Lock } from 'lucide-react';
 import { api } from '../../utils/api';

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Node as RFNode } from '@xyflow/react';
 import type { NodePackageMetadata } from '../utils/nodePackages';
 import { FORLOOP_DEFAULT_WIDTH, FORLOOP_DEFAULT_HEIGHT, isContainerNodeType } from './canvasGeometry';

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { NodeState } from '../../types';
 
 /** Parse a `variablesBefore` JSON snapshot into a plain object (null when absent/invalid). */

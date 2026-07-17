@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { CSSProperties } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Radio, Zap } from 'lucide-react';

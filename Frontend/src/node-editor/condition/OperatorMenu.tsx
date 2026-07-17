@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Inline operator picker (slice 2) — opens from a comparator's operator pill. Type-aware: only
 // operators valid for the left operand's known type are listed (operatorsForType). Grouped + searchable,
 // marks unary ops and the current selection, and enforces the edit-time ordering guards: a cross-type

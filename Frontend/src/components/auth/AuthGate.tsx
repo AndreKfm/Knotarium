@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { LoginPage } from './LoginPage';

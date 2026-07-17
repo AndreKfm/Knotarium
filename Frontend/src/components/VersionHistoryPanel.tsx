@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useRef } from 'react';
 import { History, RotateCcw, X, Eye, GitCompareArrows } from 'lucide-react';
 import type { WorkflowVersionSummary, WorkflowVersionOrigin } from '../types';

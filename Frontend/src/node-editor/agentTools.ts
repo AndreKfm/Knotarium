@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure helpers for the AI Agent node's `tools` property: a list of tool bindings, each pointing at a
 // workflow the agent may call as a tool. This mirrors the backend contract in AiAgentNodeTask.TryParseTools
 // / IsValidToolName (Backend/Knotarium.Features/Nodes/AiAgentNodeTask.cs) — the editor validates the same

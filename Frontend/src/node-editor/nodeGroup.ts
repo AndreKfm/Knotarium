@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Pure helpers for visual node groups (#14). A group is an editor-only, inert
  * container node type ('group'): like the sticky note it has no ports and is

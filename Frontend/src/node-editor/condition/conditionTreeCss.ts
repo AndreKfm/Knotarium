@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Styles for the v2 flow editor's NEW node kinds (group + not) and the per-node action tools.
 // Complements CONDITION_EDITOR_CSS (input/comparator/output cards, op pill, chips, popovers). Loaded
 // after it so these win where they overlap.

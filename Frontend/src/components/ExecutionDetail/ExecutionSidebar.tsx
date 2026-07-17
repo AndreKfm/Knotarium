@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { Fragment, type RefObject, useMemo, useState } from 'react';
 import { ChevronDown, Clock3, Copy, Eye, EyeOff, FolderLock, OctagonX, Play, RotateCcw, ShieldAlert, ShieldCheck, SkipForward } from 'lucide-react';
 import type { ExecutionInstance, WorkflowScheduleSummary } from '../../types';

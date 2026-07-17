@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../utils/api';
 import type { Node as FlowNode, Edge as FlowEdge } from '@xyflow/react';

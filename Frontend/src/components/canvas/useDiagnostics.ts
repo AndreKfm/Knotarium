@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 import type { Edge, InternalNode, Node as RFNode, SetCenter } from '@xyflow/react'

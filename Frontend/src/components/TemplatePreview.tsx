@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useMemo } from 'react';
 import { ReactFlow, ReactFlowProvider, Handle, Position, type Node, type Edge, type NodeProps } from '@xyflow/react';
 import { computeAutoLayout, DEFAULT_NODE_WIDTH } from '../node-editor/autoLayout';

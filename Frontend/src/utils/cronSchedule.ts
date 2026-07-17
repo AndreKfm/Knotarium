@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure helpers for the Cron Scheduler's "simple" builder: convert between a friendly schedule spec and a
 // standard 5-field cron expression (minute hour day-of-month month day-of-week). Day-of-week matches the
 // backend (Cronos): Sunday=0 … Saturday=6, so weekdays are 1-5. Kept dependency-free and pure so the

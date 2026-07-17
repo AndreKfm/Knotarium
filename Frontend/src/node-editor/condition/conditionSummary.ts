@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure read-only summary of a persisted ConditionLogic for the properties panel (Phase 4). Turns the
 // stored logic into human-readable rows (operand A · operator · operand B) so the panel can show what
 // the condition does without opening the full editor or running an evaluation. No React, no live

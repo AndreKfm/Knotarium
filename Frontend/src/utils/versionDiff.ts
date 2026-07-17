@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure, unit-tested client-side diff between two workflow-version payloads (plan §7.4).
 //
 // Compares two definitions (the backend NodeDefinition / EdgeDefinition shape that

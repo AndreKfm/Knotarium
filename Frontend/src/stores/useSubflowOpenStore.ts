@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { create } from 'zustand';
 
 // Bridges a subflow-node "open" gesture (the drill-down icon on the card, or a

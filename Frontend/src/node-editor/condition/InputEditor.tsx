@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Inline input editor (slice 2) — opens from an input node. Tabbed Reference / Literal:
 //   • Reference: pick an upstream variable (typed, from the variable store). Because Phase 3 runs on
 //     "manual sample only", the chosen reference also gets an inline SAMPLE value field so the live
