@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Schema-driven expression references: for a selected node, enumerate the data its UPSTREAM nodes expose,
  * as ready-to-insert `{{ $node.<id>.output.<field> }}` expressions. Powers the properties-panel reference

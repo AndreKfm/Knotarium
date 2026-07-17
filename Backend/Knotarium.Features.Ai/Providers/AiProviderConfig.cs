@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 namespace Knotarium.Features.Ai.Providers;
 
 /// <summary>Supported LLM vendor keys. The stored <see cref="AiProviderConfig.Vendor"/> is one of these.</summary>

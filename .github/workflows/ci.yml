@@ -16,6 +16,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  license-headers:
+    name: SPDX license headers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Apache-2.0 §4(c) only protects copyright notices that exist — this gate makes sure
+      # no new first-party source file slips in without one.
+      - name: Check SPDX headers
+        run: |
+          missing=$(find . -type f \( -name '*.cs' -o -name '*.ts' -o -name '*.tsx' \) \
+            -not -path '*/node_modules/*' -not -path '*/obj/*' -not -path '*/bin/*' \
+            -not -path '*/dist/*' -not -path './.git/*' \
+            -exec sh -c 'head -c 400 "$1" | grep -q "SPDX-License-Identifier" || echo "$1"' _ {} \;)
+          if [ -n "$missing" ]; then
+            echo "::error::Source files missing the SPDX license header:"
+            echo "$missing"
+            echo ""
+            echo "Add to the top of each file:"
+            echo "// Copyright 2026 Andre Kaufmann"
+            echo "// SPDX-License-Identifier: Apache-2.0"
+            exit 1
+          fi
+          echo "All source files carry the SPDX header."
+
   architecture-tests:
     name: Architecture / drift guard
     runs-on: ubuntu-latest

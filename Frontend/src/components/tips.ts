@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 export interface Tip {
   /** A single, self-contained tip sentence. Keep it one line, actionable, and feature-accurate. */
   text: string;

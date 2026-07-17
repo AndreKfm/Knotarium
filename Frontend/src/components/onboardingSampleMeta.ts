@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Presentation metadata for the onboarding sample cards. The gallery API returns only a manifest
 // (name, description), so the category accent, tile icon, tag, and node-flow chips live here — keyed
 // by the built-in templateId. Templates without an entry fall back to a neutral default.

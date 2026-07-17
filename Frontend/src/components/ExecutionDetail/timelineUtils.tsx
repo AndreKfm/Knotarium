@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { CSSProperties } from 'react';
 import { Check, Clock, FileText, GitBranch, Globe, OctagonX, Play, RefreshCw, RotateCcw, ShieldCheck, SkipForward, Square, Variable, Zap } from 'lucide-react';
 import type { ExecutionInstance, ExecutionJournal, ExecutionStatus, NodeStatus, WorkflowDefinition } from '../../types';

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { renderPropertiesSummary } from './CustomNodes.helpers';

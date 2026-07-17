@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Test-mode presets: derive temporary signal-value samples that force each comparator to pass or fail,
 // so an author can sanity-check the logic without a real run. Pure — operates on the draft tree and
 // returns a { ref -> sample } map fed to the manual preview provider; the evaluator coerces the string

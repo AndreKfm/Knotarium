@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // The Condition node's properties-panel field (Phase 3, slice 2b — minimal entry; the richer
 // read-only summary is Phase 4). Replaces the generic ManifestForm rendering of the condition node's
 // raw `logic`/`left`/`operator`/`right` params with a one-line status + an "Edit logic" button that

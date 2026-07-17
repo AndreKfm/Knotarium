@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { Node as RFNode, Edge as RFEdge } from '@xyflow/react';
 import { Trash2, ShieldAlert, Link, Plus } from 'lucide-react';

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useMemo, useState } from 'react';
 import type { ImportedSpec, ParameterDefinition, ServerConfigInfo, SpecDetail } from '../types';
 import { listServerConfigs } from '../utils/serverConfigClient';

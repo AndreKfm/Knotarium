@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Infer loop-container membership from wiring, for graphs that carry no saved parentId — e.g. an
 // AI-generated workflow (the model emits no coordinates/containment). Loop membership is otherwise
 // authored spatially (drop a node into the container → parentId) and persisted in each node's _metadata;

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /** Minimal view of a variable record needed to build its read expression. */
 export interface VariableRefLike {
   name: string;

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useState } from 'react';
 import { TemplateGallery } from './TemplateGallery';
 import { TemplateImporter } from './TemplateImporter';

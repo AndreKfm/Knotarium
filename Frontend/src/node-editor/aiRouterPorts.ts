@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Port derivation for the AI Router node. Its output branches come from the node's own
 // 'categories' property (one branch per label) plus the always-present 'otherwise' fallback,
 // so the manifest declares no outputs and the canvas derives handles here instead.

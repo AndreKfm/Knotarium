@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useMemo, useState } from 'react';
 import { GitCompareArrows, X, ChevronDown, ChevronRight } from 'lucide-react';
 import type { VersionDiff, NodeDiff, FieldChange } from '../utils/versionDiff';

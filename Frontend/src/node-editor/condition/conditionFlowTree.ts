@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure builder: an evaluated draft TREE → the node + edge DATA the flow editor renders on
 // @xyflow/react, auto-laid-out left→right with Dagre (Phase 8 redesign, N1 auto-laid-out dataflow).
 // Recursive: comparator leaves wire into their parent group/NOT, nested groups wire into their parent,

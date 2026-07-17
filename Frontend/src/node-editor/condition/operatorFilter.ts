@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Edit-time operator helpers for the inline OperatorMenu and the ordering guardrails (spec §4).
 // Pure; the UI sits on top. Two named FIXes live here:
 //   • type-aware operator filtering — when the left operand's type is known, only operators whose

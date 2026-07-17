@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { CSSProperties } from 'react';
 import { Play, GitBranch, Variable, Globe, Clock, FileText, Square, Check, AlertCircle, RotateCcw, ShieldAlert, Ban, Repeat, Layers, GitMerge, Code, Database, Zap, Send, Hourglass } from 'lucide-react';
 

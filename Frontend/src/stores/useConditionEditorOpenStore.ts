@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { create } from 'zustand';
 
 // Bridges a canvas gesture (double-click a Condition node) to the full-screen logic editor,

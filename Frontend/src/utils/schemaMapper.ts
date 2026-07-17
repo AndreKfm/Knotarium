@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Node as RFNode, Edge as RFEdge } from '@xyflow/react';
 import type { WorkflowDefinition, NodeDefinition, EdgeDefinition } from '../types';
 import { orderParentsBeforeChildren } from '../node-editor/loopContainment';

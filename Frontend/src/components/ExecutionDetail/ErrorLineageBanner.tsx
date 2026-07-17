@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { AlertTriangle, ArrowRight, ShieldCheck } from 'lucide-react';
 import type { HandlerRun } from './useHandlerRun';
 

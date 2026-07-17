@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure, framework-agnostic editor-mode state machine (plan §7.3).
 //
 // The workflow editor canvas is normally in `Draft` mode: the user's live,

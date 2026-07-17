@@ -1,6 +1,10 @@
 <Project>
 
   <PropertyGroup>
+    <!-- License + attribution metadata, inherited by every project in Backend/. -->
+    <Authors>Andre Kaufmann</Authors>
+    <Copyright>Copyright 2026 Andre Kaufmann</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Package-vulnerability audit warnings stay warnings: they surface upstream
          advisories that appear without any code change and are handled by

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { lazy, memo, Suspense, useEffect, useMemo, useState } from 'react';
 import { api } from '../../utils/api';
 import type { ParameterDefinition, NodeManifest, NotificationChannel } from '../../types';

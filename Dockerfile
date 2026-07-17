@@ -26,6 +26,11 @@ RUN dotnet publish Backend/Knotarium.Api/Knotarium.Api.csproj \
 
 # ---- 3. Runtime image ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+LABEL org.opencontainers.image.title="Knotarium" \
+      org.opencontainers.image.description="Self-hosted, visual workflow automation" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.authors="Andre Kaufmann" \
+      org.opencontainers.image.source="https://github.com/AndreKfm/Knotarium"
 WORKDIR /app
 COPY --from=backend /app/publish ./
 # The backend serves the SPA from ./wwwroot (same origin) when present.

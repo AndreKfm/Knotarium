@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { TOUR_STEPS } from './tourSteps';

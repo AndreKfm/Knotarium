@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Node as RFNode } from '@xyflow/react';
 import type { NodeFieldSchema, NodePackageManifestSummary, NodePackageSummary, NodeSocketSchema } from '../types';
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Per-node binding of inbound external-signal fields. The inbound `signal` is ONE instance per run —
 // seeded at the device-block pin (or Event/Action Trigger) that started the run — so its `params.<key>`
 // fields belong to that specific action/event, not to the canvas as a whole. Registering them as global

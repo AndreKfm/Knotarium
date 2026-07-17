@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useVariableStore } from '../stores/useVariableStore';
 import type { VariableRecord } from '../stores/useVariableStore';

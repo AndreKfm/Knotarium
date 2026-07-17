@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Curated per-vendor model suggestions for the editable model combo. These are only *suggestions* — the
 // field always accepts free text (custom / self-hosted / fine-tuned models), and the "load live" button in
 // the AI provider settings can merge the vendor's actual model list on top. Keep this list short and current;

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, RefreshCw, Trash2, ExternalLink } from 'lucide-react';
 import type { ExecutionInstance } from '../types';

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 export interface TourStep {
   /** CSS selector of the element to spotlight. Omit for a centered, target-less step. */
   selector?: string;

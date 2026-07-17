@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // The frontend operator catalog — the FE half of the shared FE/BE source of truth (B2).
 //
 // This MUST stay equivalent (per id/group/label/symbol/arity/accepts/rightKind, and group order)

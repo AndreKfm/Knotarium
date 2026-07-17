@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { SVGProps } from 'react';
 
 // Feather-style inline icons for the Templates screen (stroke 2, round caps/joins),

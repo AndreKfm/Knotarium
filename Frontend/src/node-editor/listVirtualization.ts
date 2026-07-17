@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Pure windowing math for virtualizing a long, vertically-scrolling list of
  * fixed-height rows. Kept free of React / DOM so the slice + spacer arithmetic

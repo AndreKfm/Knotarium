@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Scoped styles for the Condition editor, injected via an inline <style> (the NodeEditorShell
 // precedent). Values come from the design handoff README "Design Tokens" — the condition editor has
 // its own palette (string=green, number=teal, boolean=amber, TRUE=green, FALSE=red) distinct from the

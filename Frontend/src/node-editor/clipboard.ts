@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Node as RFNode, Edge } from '@xyflow/react';
 
 // Pure subgraph cloning for copy/paste/duplicate.

@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Bridge between the editor's draft model and the pure evaluator, for the always-on LIVE preview.
 // Turns a DraftCondition + a value provider into a ResolvedCondition that evaluateCondition can run.
 //

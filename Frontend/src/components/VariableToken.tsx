@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import React from 'react';
 import { X, Pin } from 'lucide-react';
 import { useVariableStore } from '../stores/useVariableStore';

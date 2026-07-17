@@ -5,7 +5,7 @@
 **Please do not open a public issue for security problems.**
 
 Report privately via GitHub's **[Private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)**
-(the *Security* tab → *Report a vulnerability*), or by email to `<SECURITY-CONTACT>`.
+(the *Security* tab → *Report a vulnerability*).
 
 Include what you did, what you observed, and ideally a minimal reproduction. We aim to acknowledge reports
 promptly. This is an early-stage project maintained on a best-effort basis — please set expectations accordingly.

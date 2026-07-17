@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Pure helpers for inline node renaming (double-click the card label to edit
  * the name in place). Kept free of React / React Flow so the trimming, commit,

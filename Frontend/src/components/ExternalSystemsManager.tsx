@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useState } from 'react';
 import { Plus, Edit2, Trash2, RefreshCw, Plug, Camera, Radio, Zap, Activity } from 'lucide-react';
 import type {

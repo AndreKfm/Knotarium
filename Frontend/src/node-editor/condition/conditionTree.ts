@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // The v2 nestable-logic tree for the editor (Phase 8) — pure model + transforms, mirroring the backend
 // Backend/Knotarium.Features/Nodes/Condition/{ConditionLogic,ConditionLogicParser}.cs and spec §10.
 // The draft tree is what the (nested-box, N1-a) editor edits; coerceTreeToLogic produces the persisted

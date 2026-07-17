@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Fan-in points that accept MULTIPLE incoming branches instead of the usual single input:
 // a container's 'end' loopback (parallelForEach / forLoop body converging back) and the join
 // node's input (wait-for-all). Every other input still replaces its existing wire.

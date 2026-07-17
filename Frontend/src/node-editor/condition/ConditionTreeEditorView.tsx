@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 // Full-screen v2 logic editor — auto-laid-out dataflow FLOW (Phase 8 redesign, user-chosen over nested
 // boxes). The draft tree is built into a @xyflow/react graph (inputs → comparators → groups/NOTs →
 // TRUE/FALSE output) by conditionFlowTree + Dagre; every edit re-resolves and re-routes synchronously.
