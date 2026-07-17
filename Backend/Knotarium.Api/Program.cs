@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -414,6 +417,17 @@ using (var scope = app.Services.CreateScope())
     Knotarium.Api.Services.StartupInitializer.MigrateSchema(db);
     await Knotarium.Api.Services.StartupInitializer.VerifyAuditChainAsync(db);
     await Knotarium.Api.Services.StartupInitializer.HealSocketMappingsAsync(db, startupLogger);
+
+    // Restore the persisted arming state (the operator's last explicit choice via the arming endpoint).
+    // Precedence: persisted value > "Runtime:Armed" config seed > disarmed. A fresh install therefore
+    // never starts armed on its own, but an instance armed once stays armed across restarts.
+    var globalSettings = scope.ServiceProvider.GetRequiredService<Knotarium.Features.Settings.GlobalSettingsService>();
+    if (await globalSettings.GetAsync(Knotarium.Core.Domain.AppSettingKeys.RuntimeArmed) is { } persistedArmed)
+    {
+        var armed = string.Equals(persistedArmed, "true", StringComparison.OrdinalIgnoreCase);
+        scope.ServiceProvider.GetRequiredService<RuntimeArmingState>().SetArmed(armed);
+        startupLogger.LogInformation("Restored persisted runtime arming state: {Armed}.", armed);
+    }
 
     // Optional headless bootstrap: seed the first admin from configuration when no users exist yet
     // (Auth:InitialAdmin:Username/Password). Without it, the first admin is created via the SPA's
