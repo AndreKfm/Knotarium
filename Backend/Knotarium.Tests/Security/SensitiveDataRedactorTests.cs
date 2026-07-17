@@ -31,6 +31,32 @@ public class SensitiveDataRedactorTests
         Assert.Equal(3, result["count"]);
     }
 
+    [Theory]
+    [InlineData("passwd")]
+    [InlineData("db_pwd")]
+    [InlineData("passphrase")]
+    [InlineData("x-api-key")]
+    [InlineData("privateKey")]
+    [InlineData("private_key")]
+    [InlineData("bearerToken")]
+    [InlineData("Cookie")]
+    public void IsSensitiveKey_matches_broadened_secret_indicators(string key)
+    {
+        Assert.True(SensitiveDataRedactor.IsSensitiveKey(key));
+    }
+
+    [Theory]
+    [InlineData("passenger")]   // must not match a bare "pass"
+    [InlineData("author")]      // must not match a bare "auth"
+    [InlineData("credentialRef")] // a slot reference is not a secret value
+    [InlineData("primaryKey")]  // must not match a bare "key"
+    [InlineData("endpoint")]
+    [InlineData("region")]
+    public void IsSensitiveKey_does_not_over_match_benign_keys(string key)
+    {
+        Assert.False(SensitiveDataRedactor.IsSensitiveKey(key));
+    }
+
     [Fact]
     public void Redact_recurses_into_nested_json_objects()
     {

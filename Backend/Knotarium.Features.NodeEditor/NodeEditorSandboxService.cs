@@ -21,6 +21,18 @@ namespace Knotarium.Features.NodeEditor;
 /// </summary>
 public sealed class NodeEditorSandboxService : INodeEditorSandboxService
 {
+    // A draft test run compiles and executes user C# in-process. Cancellation is cooperative — a truly
+    // non-cooperative CPU-bound executor can't be hard-killed without process isolation (out of scope by
+    // design) — but this bounds every case that awaits or observes the token.
+    private const int TestRunTimeoutSeconds = 15;
+
+    private readonly ICapabilityPolicy _capabilities;
+
+    public NodeEditorSandboxService(ICapabilityPolicy capabilities)
+    {
+        _capabilities = capabilities;
+    }
+
     public async Task<NodeEditorTestResponse> RunTestsAsync(NodeEditorTestRequest request, CancellationToken cancellationToken)
     {
         var logs = new List<string>();
@@ -42,9 +54,24 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
             return new NodeEditorTestResponse(false, logs, cases);
         }
 
-        if (manifest.GetTier() == NodeTier.Compiled && string.IsNullOrWhiteSpace(request.ExecutorCode))
+        if (manifest.GetTier() == NodeTier.Compiled)
         {
-            return Fail("Validation", "Executor source code is required for compiled nodes.", logs, cases);
+            // Compiling + running a custom executor is arbitrary in-process code execution — the same
+            // privileged capability the inline-code and compiled-node tasks gate on. The banned-API
+            // analyzer is authoring UX, not a security boundary, so this path must fail closed too.
+            if (!await _capabilities.IsEnabledAsync(NodeCapabilities.CodeExecution, cancellationToken))
+            {
+                return Fail(
+                    "Capability",
+                    "Testing a compiled node runs its executor as real code, which requires the 'code execution' capability. " +
+                    "It is off by default; an administrator can enable it under Settings → Capabilities.",
+                    logs, cases);
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ExecutorCode))
+            {
+                return Fail("Validation", "Executor source code is required for compiled nodes.", logs, cases);
+            }
         }
 
         var testCases = SandboxYamlParser.ParseTests(request.TestsYaml, logs, cases);
@@ -79,7 +106,21 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
                 }
             }
 
-            var allPassed = await RunTestCasesAsync(executor, testCases, declaredCapabilities, logs, cases, cancellationToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(TestRunTimeoutSeconds));
+
+            bool allPassed;
+            try
+            {
+                allPassed = await RunTestCasesAsync(executor, testCases, declaredCapabilities, logs, cases, timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                cases.Add(new NodeEditorTestCaseResult("Timeout", "fail",
+                    $"The test run exceeded the {TestRunTimeoutSeconds}s sandbox limit and was aborted."));
+                logs.Add($"[SANDBOX] Test run timed out after {TestRunTimeoutSeconds}s.");
+                return new NodeEditorTestResponse(false, logs, cases);
+            }
 
             logs.Add("[SANDBOX] Unloading temporary sandbox assembly context.");
             return new NodeEditorTestResponse(allPassed, logs, cases);

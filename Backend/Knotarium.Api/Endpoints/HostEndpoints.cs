@@ -3,10 +3,12 @@
 
 using System;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Knotarium.Api.Services.Auth;
 using Knotarium.Features.NodeEditor;
 
 namespace Knotarium.Api;
@@ -20,8 +22,13 @@ public static class HostEndpoints
 {
     public static void MapHostEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/node-editor/test", async (NodeEditorTestRequest request, INodeEditorSandboxService sandbox, INodeEditorSessionGate gate, CancellationToken cancellationToken) =>
+        app.MapPost("/api/node-editor/test", async (NodeEditorTestRequest request, INodeEditorSandboxService sandbox, INodeEditorSessionGate gate, AuthOptions auth, ClaimsPrincipal user, CancellationToken cancellationToken) =>
         {
+            // Authoring/testing a compiled node compiles + runs C# in-process — an admin-only action,
+            // consistent with node-package install. The sandbox also enforces the code-execution
+            // capability gate; this is the outer, defence-in-depth check (a no-op when auth is disabled).
+            if (auth.RequireAdmin(user) is { } denied) return denied;
+
             var result = await sandbox.RunTestsAsync(request, cancellationToken);
 
             if (result.Success)

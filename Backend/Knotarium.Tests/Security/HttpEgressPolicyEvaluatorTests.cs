@@ -53,6 +53,10 @@ public class HttpEgressPolicyEvaluatorTests
     [InlineData("192.168.0.9")]  // private class C
     [InlineData("169.254.169.254")] // link-local / cloud metadata
     [InlineData("127.0.0.1")]    // loopback
+    [InlineData("0.0.0.0")]      // "this host" — routes to localhost on many stacks
+    [InlineData("0.1.2.3")]      // 0.0.0.0/8 "this network"
+    [InlineData("100.64.0.1")]   // carrier-grade NAT / shared address space (RFC 6598)
+    [InlineData("100.127.255.254")] // upper edge of 100.64/10
     public async Task ResolveAndValidateAsync_RejectsPrivateOrLoopbackLiteralAddresses(string host)
     {
         var evaluator = new HttpEgressPolicyEvaluator(new HttpEgressPolicyOptions());
