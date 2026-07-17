@@ -27,11 +27,23 @@ public static class SensitiveDataRedactor
         {
             return false;
         }
+        // Substring match, so only high-signal secret indicators are listed — short/ambiguous fragments
+        // ("pass", "pin", bare "key"/"auth") are deliberately excluded to avoid masking benign fields
+        // (passenger, shipping, credentialRef, author, …). Type-based masking of SecretValue is the
+        // stronger guarantee; this is the best-effort key heuristic for loosely-typed blobs.
         return key.Contains("secret", StringComparison.OrdinalIgnoreCase)
             || key.Contains("token", StringComparison.OrdinalIgnoreCase)
             || key.Contains("password", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("passwd", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("pwd", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("passphrase", StringComparison.OrdinalIgnoreCase)
             || key.Contains("apikey", StringComparison.OrdinalIgnoreCase)
             || key.Contains("api_key", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("api-key", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("privatekey", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("private_key", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("bearer", StringComparison.OrdinalIgnoreCase)
+            || key.Contains("cookie", StringComparison.OrdinalIgnoreCase)
             || key.Contains("authorization", StringComparison.OrdinalIgnoreCase);
     }
 

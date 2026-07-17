@@ -5,10 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Knotarium.Api.Services.Auth;
 using Knotarium.Features.Bundles;
 using Knotarium.Features.Execution;
 using Knotarium.Features.Portability;
@@ -41,8 +43,14 @@ public static class ImportProviderEndpoints
         app.MapPost("/api/imports/{providerId}/preview", async (
             string providerId,
             HttpRequest request,
-            Knotarium.NodeRuntime.HostPluginRegistry plugins) =>
+            Knotarium.NodeRuntime.HostPluginRegistry plugins,
+            AuthOptions auth,
+            ClaimsPrincipal user) =>
         {
+            // Import provisions/creates workflows (and can act on discovered servers) — an admin action,
+            // consistent with the other install/mutation endpoints (no-op when auth is disabled).
+            if (auth.RequireAdmin(user) is { } denied) return denied;
+
             var provider = plugins.ImportProviders.FirstOrDefault(p =>
                 string.Equals(p.Descriptor.Id, providerId, StringComparison.OrdinalIgnoreCase));
             if (provider is null) return Results.NotFound(new { message = $"No import provider '{providerId}'." });
@@ -82,8 +90,12 @@ public static class ImportProviderEndpoints
             HttpRequest request,
             Knotarium.NodeRuntime.HostPluginRegistry plugins,
             WorkflowPublisher workflowPublisher,
-            AppDbContext db) =>
+            AppDbContext db,
+            AuthOptions auth,
+            ClaimsPrincipal user) =>
         {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
+
             var provider = plugins.ImportProviders.FirstOrDefault(p =>
                 string.Equals(p.Descriptor.Id, providerId, StringComparison.OrdinalIgnoreCase));
             if (provider is null) return Results.NotFound(new { message = $"No import provider '{providerId}'." });

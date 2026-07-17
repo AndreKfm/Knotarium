@@ -209,7 +209,20 @@ public sealed class HttpEgressPolicyEvaluator
         {
             var bytes = ipAddress.GetAddressBytes();
 
+            // "This host on this network" 0.0.0.0/8 — 0.0.0.0 in particular routes to localhost on many
+            // stacks, so it's an SSRF bypass if left reachable.
+            if (bytes[0] == 0)
+            {
+                return true;
+            }
+
             if (bytes[0] == 10)
+            {
+                return true;
+            }
+
+            // Carrier-grade NAT / shared address space 100.64.0.0/10 (RFC 6598) — not public, treat as internal.
+            if (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127)
             {
                 return true;
             }
