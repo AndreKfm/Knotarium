@@ -8,8 +8,12 @@
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
-    <PackageReference Include="Microsoft.OpenApi" Version="2.4.1" />
-    <PackageReference Include="Microsoft.OpenApi.YamlReader" Version="2.0.0" />
+    <!-- 2.4.1 is affected by GHSA-v5pm-xwqc-g5wc; fixed in the 2.x line at 2.7.5 (no 3.x major bump needed). -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
+    <PackageReference Include="Microsoft.OpenApi.YamlReader" Version="2.11.0" />
+    <!-- Force the transitive native SQLite bundle (pulled by EntityFrameworkCore.Sqlite) off 2.1.11,
+         which is affected by GHSA-2m69-gcr7-jv3q. bundle_e_sqlite3 aligns the whole SQLitePCLRaw graph. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -77,7 +77,8 @@ public class SmtpSendNodeTask : INodeTask
 
             return new LegacyNodeResult.Success(new Dictionary<string, object>
             {
-                ["result"] = new Dictionary<string, object> { ["messageId"] = message.MessageId, ["sent"] = true },
+                // MimeMessage.MessageId is nullable in MimeKit 4.17+; fall back to empty for the result payload.
+                ["result"] = new Dictionary<string, object> { ["messageId"] = message.MessageId ?? string.Empty, ["sent"] = true },
             });
         }
         catch (OperationCanceledException)

@@ -15,8 +15,12 @@
   <ItemGroup>
     <PackageReference Include="Cronos" Version="0.11.1" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
-    <PackageReference Include="MailKit" Version="4.8.0" />
+    <!-- 4.8.0 → GHSA-9j88-vvj5-vhgr (MailKit) + transitive MimeKit GHSA-g7hc-96xr-gvvx; both fixed by 4.17.0. -->
+    <PackageReference Include="MailKit" Version="4.17.0" />
+    <PackageReference Include="MimeKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+    <!-- Force the transitive native SQLite bundle off 2.1.11 (GHSA-2m69-gcr7-jv3q). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
