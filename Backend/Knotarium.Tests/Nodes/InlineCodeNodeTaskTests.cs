@@ -100,6 +100,23 @@ public class InlineCodeNodeTaskTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_GetNodeOutput_FailsWithHelpfulMessage()
+    {
+        // GetNodeOutput used to return null silently from a script context (a footgun — reads as "no
+        // output"). It now throws NotSupportedException, which the wrapper turns into a clear failure.
+        var task = CreateTask();
+        var ctx = Context(new Dictionary<string, object>
+        {
+            ["code"] = "var x = context.State.GetNodeOutput(new NodeId(\"n\"), \"out\"); return Success();"
+        });
+
+        var result = await task.ExecuteAsync(ctx, CancellationToken.None);
+
+        var failure = Assert.IsType<LegacyNodeResult.Failure>(result);
+        Assert.Contains("not available", failure.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_InsideSubflow_ScopesVariableAccessByNodeId()
     {
         var task = CreateTask();
