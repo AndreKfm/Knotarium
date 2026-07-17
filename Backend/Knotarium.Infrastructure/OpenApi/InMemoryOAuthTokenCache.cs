@@ -57,7 +57,10 @@ public sealed class InMemoryOAuthTokenCache : IOAuthTokenCache
         IReadOnlyList<string> scopes,
         CancellationToken ct)
     {
-        var http = _httpClientFactory.CreateClient();
+        // The token endpoint URL comes from stored server config, so it must go through the same
+        // SSRF/private-network egress guard as every other outbound call — use the guarded client,
+        // never the default factory client.
+        var http = _httpClientFactory.CreateClient("HttpNode");
 
         var body = new List<KeyValuePair<string, string>>
         {

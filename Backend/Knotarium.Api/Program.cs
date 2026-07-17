@@ -119,36 +119,47 @@ builder.Services.AddScoped<ISecretResolver>(sp => sp.GetRequiredService<Credenti
 builder.Services.AddScoped<ICredentialAccessor>(sp => sp.GetRequiredService<CredentialAccessor>());
 builder.Services.AddSingleton<HttpEgressPolicyEvaluator>();
 builder.Services.AddTransient<HttpEgressPolicyHandler>();
-builder.Services.AddHttpClient("HttpNode")
-    .AddHttpMessageHandler<HttpEgressPolicyHandler>()
-    // Primary handler validates every connection (DNS-aware) and pins the socket to a vetted address, so
-    // redirect hops and DNS-rebinding can't reach private/metadata IPs — see HttpEgressPolicyEvaluator.
-    .ConfigurePrimaryHttpMessageHandler(sp =>
-    {
-        var evaluator = sp.GetRequiredService<HttpEgressPolicyEvaluator>();
-        return new System.Net.Http.SocketsHttpHandler
+
+// Every named HTTP client that can reach a user- or config-supplied URL MUST be registered through
+// this helper. The egress message handler validates the literal URI, and the primary handler
+// validates every physical connection (DNS-aware) and pins the socket to a vetted address, so
+// redirect hops and DNS-rebinding can't reach private/metadata IPs — see HttpEgressPolicyEvaluator.
+// A plain factory.CreateClient()/CreateClient("unregistered") is NOT guarded, so it must never be
+// used for outbound requests to a destination the caller doesn't fully control.
+void AddEgressGuardedHttpClient(string name, bool allowInsecureCertificate = false)
+{
+    builder.Services.AddHttpClient(name)
+        .AddHttpMessageHandler<HttpEgressPolicyHandler>()
+        .ConfigurePrimaryHttpMessageHandler(sp =>
         {
-            ConnectCallback = (context, ct) => evaluator.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, ct),
-        };
-    });
-// Dedicated client for reaching a server that presents a self-signed / untrusted certificate.
-// Used only when explicitly opted in (per-import flag, or a ServerConfig with
-// AllowInsecureCertificate). It still runs through the egress policy (SSRF/private-network rules
-// apply, including the DNS-aware connect check); it just skips TLS chain validation.
-builder.Services.AddHttpClient("InsecureHttp")
-    .AddHttpMessageHandler<HttpEgressPolicyHandler>()
-    .ConfigurePrimaryHttpMessageHandler(sp =>
-    {
-        var evaluator = sp.GetRequiredService<HttpEgressPolicyEvaluator>();
-        return new System.Net.Http.SocketsHttpHandler
-        {
-            ConnectCallback = (context, ct) => evaluator.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, ct),
-            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            var evaluator = sp.GetRequiredService<HttpEgressPolicyEvaluator>();
+            var handler = new System.Net.Http.SocketsHttpHandler
             {
-                RemoteCertificateValidationCallback = (_, _, _, _) => true,
-            },
-        };
-    });
+                ConnectCallback = (context, ct) => evaluator.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, ct),
+            };
+            if (allowInsecureCertificate)
+            {
+                // Skip TLS *chain* validation only; the egress/private-network rules still apply.
+                handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+                {
+                    RemoteCertificateValidationCallback = (_, _, _, _) => true,
+                };
+            }
+
+            return handler;
+        });
+}
+
+// General-purpose egress-guarded client (http/httpRequest node, OpenAPI caller, polling, AI
+// providers, dynamic-options loaders, OAuth token fetch, inline/compiled scripts' context.Http).
+AddEgressGuardedHttpClient("HttpNode");
+// Dedicated client for reaching a server that presents a self-signed / untrusted certificate.
+// Used only when explicitly opted in (per-import flag, or a ServerConfig with AllowInsecureCertificate).
+AddEgressGuardedHttpClient("InsecureHttp", allowInsecureCertificate: true);
+// Outbound failure-alert / notification channels post to admin-configured URLs — still SSRF sinks,
+// so they run through the egress guard like everything else.
+AddEgressGuardedHttpClient("NotificationWebhook");
+AddEgressGuardedHttpClient("NotificationSlack");
 builder.Services.AddNodeEditor();
 builder.Services.AddSingleton<ICorrelationTokenCrypto, CorrelationTokenCrypto>();
 builder.Services.AddSingleton(TimeProvider.System);
