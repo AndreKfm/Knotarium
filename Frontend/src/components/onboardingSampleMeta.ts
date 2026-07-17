@@ -82,4 +82,26 @@ export const SAMPLE_META: Record<string, SampleMeta> = {
       { label: 'AI Draft', icon: 'ai', cat: 'ai' },
     ],
   },
+  'tpl_starter-ai-summarize': {
+    category: 'ai', icon: 'ai', tag: 'AI · SUMMARIZE',
+    flow: [{ label: 'AI Prompt', icon: 'ai', cat: 'ai' }, log],
+  },
+  'tpl_starter-ai-evidence-check': {
+    category: 'ai', icon: 'ai', tag: 'AI · VERIFY',
+    flow: [{ label: 'AI Verify', icon: 'ai', cat: 'ai' }, log],
+  },
+  'tpl_starter-ai-contract-diff': {
+    category: 'ai', icon: 'ai', tag: 'AI · DIFF',
+    flow: [{ label: 'AI Diff', icon: 'ai', cat: 'ai' }, log],
+  },
+  'tpl_starter-ai-agent-order-concierge': {
+    category: 'ai', icon: 'ai', tag: 'AI · AGENT',
+    flow: [{ label: 'AI Agent', icon: 'ai', cat: 'ai' }, log],
+  },
+  // A plain workflow the concierge agent calls as an allow-listed tool — no AI node itself,
+  // but it belongs to the AI story, so it's grouped with the AI samples.
+  'tpl_starter-ai-agent-tool-order-status': {
+    category: 'ai', icon: 'ai', tag: 'AI · AGENT TOOL',
+    flow: [{ label: 'Order Lookup', icon: 'variable', cat: 'data' }],
+  },
 };
