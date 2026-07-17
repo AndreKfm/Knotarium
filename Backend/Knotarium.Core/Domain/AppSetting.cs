@@ -1,3 +1,6 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 namespace Knotarium.Core.Domain;
 
 /// <summary>
@@ -27,4 +30,10 @@ public static class AppSettingKeys
     /// <summary>JSON blob listing the enabled privileged node capabilities (e.g. code execution, database).
     /// Unset ⇒ all switchable capabilities off.</summary>
     public const string CapabilityPolicy = "CapabilityPolicy";
+
+    /// <summary>Persisted runtime arming state ("true"/"false"): the last value set explicitly via the
+    /// arming endpoint, restored on startup so an armed instance stays armed across restarts. Unset ⇒
+    /// fall back to the "Runtime:Armed" configuration value (default: disarmed). Transient safety
+    /// disarms (e.g. the disk-space guard) deliberately do NOT write this key.</summary>
+    public const string RuntimeArmed = "RuntimeArmed";
 }

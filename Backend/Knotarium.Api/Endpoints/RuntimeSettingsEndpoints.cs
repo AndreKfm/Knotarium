@@ -1,9 +1,13 @@
+// Copyright 2026 Andre Kaufmann
+// SPDX-License-Identifier: Apache-2.0
+
 using System.Security.Claims;
 using System.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Knotarium.Api.Services;
 using Knotarium.Api.Services.Auth;
+using Knotarium.Core.Domain;
 using Knotarium.Features.Settings;
 
 namespace Knotarium.Api;
@@ -21,12 +25,16 @@ public static class RuntimeSettingsEndpoints
         app.MapGet("/api/runtime/arming", (RuntimeArmingState armingState) =>
             Results.Ok(new { armed = armingState.IsArmed }));
 
-        app.MapPost("/api/runtime/arming", (SetArmingRequest request, RuntimeArmingState armingState, AuthOptions auth, ClaimsPrincipal user) =>
+        app.MapPost("/api/runtime/arming", async (SetArmingRequest request, RuntimeArmingState armingState, GlobalSettingsService settings, AuthOptions auth, ClaimsPrincipal user, CancellationToken ct) =>
         {
             // Arming is the master switch that enables anonymous webhook/external triggers, so flipping it
             // is an admin action (a no-op gate when auth is disabled).
             if (auth.RequireAdmin(user) is { } denied) return denied;
             armingState.SetArmed(request.Armed);
+            // Persist the explicit operator choice so it survives restarts (restored in Program.cs after
+            // schema migration). Only this endpoint writes the key: transient safety disarms (disk-space
+            // guard) stay in-memory so a low-disk blip can't permanently disarm the instance.
+            await settings.SetAsync(AppSettingKeys.RuntimeArmed, request.Armed ? "true" : "false", ct);
             return Results.Ok(new { armed = armingState.IsArmed });
         });
 
