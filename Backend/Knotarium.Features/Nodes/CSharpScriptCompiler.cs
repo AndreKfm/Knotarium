@@ -42,9 +42,31 @@ public sealed class ScriptCompilationException : Exception
 /// </summary>
 public sealed class CSharpScriptCompiler
 {
-    // Cache compiled types to avoid re-compiling the same source on every run session.
-    private static readonly ConcurrentDictionary<string, (Type Type, CollectibleAssemblyLoadContext LoadContext)> _compiledCache
-        = new(StringComparer.OrdinalIgnoreCase);
+    // Compiled types are cached so identical source compiles only once per process. Each entry keeps its
+    // collectible load context so eviction can Unload() it. Bounded to avoid unbounded growth on a
+    // long-running server that sees many distinct inline scripts / package versions.
+    private sealed class CompiledEntry
+    {
+        public required Type Type { get; init; }
+        public required CollectibleAssemblyLoadContext LoadContext { get; init; }
+        public long Sequence { get; init; }
+    }
+
+    // Ordinal, not OrdinalIgnoreCase: cache keys are opaque (a SHA-256 hash for inline code, a
+    // "type_version_ticks" string for compiled packages). Case-folding them risks collapsing two keys
+    // that should map to distinct compiled types.
+    private static readonly ConcurrentDictionary<string, Lazy<CompiledEntry>> _compiledCache
+        = new(StringComparer.Ordinal);
+    private static long _sequenceCounter;
+    private static readonly object _evictionLock = new();
+
+    // Max distinct compiled types held at once. Internal + mutable only so tests can shrink it; the
+    // default holds in production. Eviction Unload()s the oldest entry's load context — safe even while a
+    // run still uses the type, because Unload() only *requests* collection once no strong refs remain.
+    internal static int MaxCachedTypes = 256;
+    internal static int CachedTypeCount => _compiledCache.Count;
+    internal static bool ContainsCompiledKey(string key)
+        => _compiledCache.TryGetValue(key, out var lazy) && lazy.IsValueCreated;
 
     /// <summary>True when the source is already a full INodeExecutor class (vs. a bare script body).</summary>
     public static bool IsFullExecutor(string source)
@@ -60,9 +82,29 @@ public sealed class CSharpScriptCompiler
         if (string.IsNullOrWhiteSpace(source))
             throw new ScriptCompilationException("Script source code is missing.");
 
-        if (_compiledCache.TryGetValue(cacheKey, out var cached))
-            return cached.Type;
+        // Lazy makes the same key compile exactly once even under concurrent first-use: other callers
+        // block on the same Lazy instead of racing to build (and orphan) a second load context.
+        var lazy = _compiledCache.GetOrAdd(cacheKey,
+            _ => new Lazy<CompiledEntry>(() => Compile(cacheKey, source), LazyThreadSafetyMode.ExecutionAndPublication));
 
+        CompiledEntry entry;
+        try
+        {
+            entry = lazy.Value;
+        }
+        catch
+        {
+            // A failed compile must not poison the cache — drop this exact lazy so a later call retries.
+            _compiledCache.TryRemove(new KeyValuePair<string, Lazy<CompiledEntry>>(cacheKey, lazy));
+            throw;
+        }
+
+        EvictIfNeeded();
+        return entry.Type;
+    }
+
+    private static CompiledEntry Compile(string cacheKey, string source)
+    {
         string codeToCompile = IsFullExecutor(source) ? source : WrapScriptCode(source);
 
         var syntaxTree = CSharpSyntaxTree.ParseText(codeToCompile);
@@ -88,19 +130,66 @@ public sealed class CSharpScriptCompiler
 
         var assemblyBytes = ms.ToArray();
         var loadContext = new CollectibleAssemblyLoadContext($"DynamicRun_{cacheKey}");
-        var assembly = loadContext.LoadFromBytes(assemblyBytes);
-        var executorType = assembly.GetTypes()
-            .FirstOrDefault(t => typeof(INodeExecutor).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
-
-        if (executorType == null)
+        try
         {
-            loadContext.Unload();
-            throw new ScriptCompilationException("No class implementing INodeExecutor found in the compiled assembly.");
-        }
+            var assembly = loadContext.LoadFromBytes(assemblyBytes);
+            var executorType = assembly.GetTypes()
+                .FirstOrDefault(t => typeof(INodeExecutor).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
 
-        var entry = (executorType, loadContext);
-        _compiledCache[cacheKey] = entry;
-        return executorType;
+            if (executorType == null)
+                throw new ScriptCompilationException("No class implementing INodeExecutor found in the compiled assembly.");
+
+            return new CompiledEntry
+            {
+                Type = executorType,
+                LoadContext = loadContext,
+                Sequence = Interlocked.Increment(ref _sequenceCounter),
+            };
+        }
+        catch
+        {
+            // Any failure after LoadFromBytes (a ReflectionTypeLoadException from GetTypes, or no executor
+            // found) must unload the context so a failed compile never leaks a collectible ALC.
+            loadContext.Unload();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Keep the compiled-type cache bounded. Evicts the oldest entries (by compile sequence) and unloads
+    /// their load contexts. Runs off the hot path (only after a fresh compile), under a lock so concurrent
+    /// compiles don't over-evict or double-unload.
+    /// </summary>
+    private static void EvictIfNeeded()
+    {
+        if (_compiledCache.Count <= MaxCachedTypes)
+            return;
+
+        lock (_evictionLock)
+        {
+            while (_compiledCache.Count > MaxCachedTypes)
+            {
+                string? oldestKey = null;
+                var oldestSeq = long.MaxValue;
+                foreach (var kvp in _compiledCache)
+                {
+                    if (!kvp.Value.IsValueCreated)
+                        continue; // still compiling on another thread — leave it alone
+                    var seq = kvp.Value.Value.Sequence;
+                    if (seq < oldestSeq)
+                    {
+                        oldestSeq = seq;
+                        oldestKey = kvp.Key;
+                    }
+                }
+
+                if (oldestKey == null)
+                    break;
+
+                if (_compiledCache.TryRemove(oldestKey, out var removed) && removed.IsValueCreated)
+                    removed.Value.LoadContext.Unload();
+            }
+        }
     }
 
     /// <summary>
@@ -149,7 +238,21 @@ public sealed class CSharpScriptCompiler
         var recordingHttpClient = new TaskHttpClient(httpClientFactory);
         var recordingContext = new TaskNodeContext(logger, recordingState, recordingHttpClient, credentialAccessor, externalSignals);
 
-        var result = await executor.ExecuteAsync(nodeInput, recordingContext, cancellationToken);
+        NodeResult result;
+        try
+        {
+            result = await executor.ExecuteAsync(nodeInput, recordingContext, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A full-executor (non-wrapped) source can throw straight out of ExecuteAsync; the wrapped-
+            // script path already normalizes internally, so mirror it here to keep both tiers consistent.
+            return new LegacyNodeResult.Failure("Execution cancelled.");
+        }
+        catch (Exception ex)
+        {
+            return new LegacyNodeResult.Failure(ex.Message);
+        }
 
         var dictPayload = new Dictionary<string, object>();
         if (result.Payload != null && result.Payload.Value.ValueKind != JsonValueKind.Null)
@@ -358,6 +461,16 @@ public class DynamicScriptExecutor : INodeExecutor
 
     private sealed class TaskWorkflowState : IWorkflowState
     {
+        // Reused across every GetVariable call — JsonSerializerOptions is immutable once used and
+        // expensive to allocate, so a single shared instance avoids per-read allocation.
+        private static readonly JsonSerializerOptions VariableJsonOptions = CreateVariableJsonOptions();
+        private static JsonSerializerOptions CreateVariableJsonOptions()
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+            return options;
+        }
+
         private readonly NodeExecutionContext _context;
         // When this node was inlined from a subflow, its id is prefixed (e.g. "subflow-a/inline-1").
         // Variable names accessed from Inline Code by string literal aren't rewritten by the compiler,
@@ -383,9 +496,7 @@ public class DynamicScriptExecutor : INodeExecutor
             {
                 try
                 {
-                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                    options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-                    return JsonSerializer.Deserialize<T>(element.GetRawText(), options);
+                    return JsonSerializer.Deserialize<T>(element.GetRawText(), VariableJsonOptions);
                 }
                 catch { return default; }
             }
@@ -402,7 +513,12 @@ public class DynamicScriptExecutor : INodeExecutor
             if (value == null) _context.GlobalVariables.Remove(scopedName);
             else _context.GlobalVariables[scopedName] = value;
         }
-        public JsonElement? GetNodeOutput(NodeId nodeId, string outputName) => null;
+        public JsonElement? GetNodeOutput(NodeId nodeId, string outputName)
+            // Previously returned null silently, which read as "this node produced no output" — a footgun.
+            // Inline/compiled scripts should reference upstream outputs via inputs or workflow variables.
+            => throw new NotSupportedException(
+                "GetNodeOutput is not available inside inline/compiled script nodes. " +
+                "Reference upstream node outputs through the node's inputs or workflow variables instead.");
     }
 
     private sealed class TaskHttpClient : IHttpClient
