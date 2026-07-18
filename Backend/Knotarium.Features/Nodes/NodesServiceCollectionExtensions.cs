@@ -65,6 +65,21 @@ public static class NodesServiceCollectionExtensions
 
         // Shared Roslyn compiler for inline-code + custom-package C# (owns a process-wide compile cache).
         services.AddSingleton<CSharpScriptCompiler>();
+
+        // Where user-authored C# executes. Defaults to in-process (today's behavior); the host binds
+        // Security:Sandbox at startup, the settings store overlays the persisted operator choice, and
+        // the switchable runner routes per-call by the CURRENT mode — so the Settings UI takes effect
+        // without a restart.
+        services.TryAddSingleton(new Knotarium.Features.Nodes.Sandbox.SandboxOptions());
+        services.TryAddSingleton<Knotarium.Features.Nodes.Sandbox.ISandboxRunner>(sp =>
+            new Knotarium.Features.Nodes.Sandbox.SwitchableSandboxRunner(
+                sp.GetRequiredService<Knotarium.Features.Nodes.Sandbox.SandboxOptions>(),
+                sp.GetRequiredService<CSharpScriptCompiler>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Knotarium.Features.Nodes.Sandbox.ProcessSandboxRunner>>()));
+
+        // Settings-API store: persists the operator's sandbox choices and applies them to the live
+        // options (scoped — it writes through the scoped GlobalSettingsService).
+        services.AddScoped<Knotarium.Features.Nodes.Sandbox.SandboxSettingsStore>();
         return services;
     }
 }

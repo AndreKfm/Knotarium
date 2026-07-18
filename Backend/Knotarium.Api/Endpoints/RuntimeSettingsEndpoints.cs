@@ -86,6 +86,20 @@ public static class RuntimeSettingsEndpoints
             return Results.Ok(await store.GetDtoAsync(ct));
         });
 
+        // --- Sandbox for user-authored node code (execution mode, worker limits, credential proxy) ---
+        // Mode changes apply immediately (the switchable runner routes per call); WorkerCount only
+        // sizes a pool created after the change; per-worker limits apply to newly spawned workers.
+
+        app.MapGet("/api/settings/sandbox", async (Knotarium.Features.Nodes.Sandbox.SandboxSettingsStore store, CancellationToken ct) =>
+            Results.Ok(await store.GetDtoAsync(ct)));
+
+        app.MapPut("/api/settings/sandbox", async (Knotarium.Features.Nodes.Sandbox.SandboxSettingsDto request, Knotarium.Features.Nodes.Sandbox.SandboxSettingsStore store, AuthOptions auth, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            // Where (and how confined) arbitrary C# runs is a security decision — admin only.
+            if (auth.RequireAdmin(user) is { } denied) return denied;
+            return Results.Ok(await store.SetDtoAsync(request, ct));
+        });
+
         // --- Privileged capability switch (inline code / database), off by default ---
 
         app.MapGet("/api/settings/capabilities", async (CapabilityPolicyStore store, CancellationToken ct) =>

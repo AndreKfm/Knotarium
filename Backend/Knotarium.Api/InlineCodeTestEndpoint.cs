@@ -47,7 +47,7 @@ public static class InlineCodeTestEndpoint
         // so "Test run" behaves exactly like a real execution — minus the surrounding workflow.
         app.MapPost("/api/inline-code/test", async (
             InlineCodeTestRequest request,
-            CSharpScriptCompiler compiler,
+            Knotarium.Features.Nodes.Sandbox.ISandboxRunner sandbox,
             IHttpClientFactory httpClientFactory,
             ICredentialAccessor credentialAccessor,
             ICapabilityPolicy capabilities,
@@ -55,8 +55,9 @@ public static class InlineCodeTestEndpoint
         {
             var logs = new List<string>();
             var logger = new CapturingLogger(logs);
-            // The design-time test runs the SAME task, so it is gated by the same capability switch.
-            var task = new InlineCodeNodeTask(httpClientFactory, credentialAccessor, logger, compiler, capabilities);
+            // The design-time test runs the SAME task, so it is gated by the same capability switch
+            // and executes wherever Security:Sandbox:Mode says real runs execute.
+            var task = new InlineCodeNodeTask(httpClientFactory, credentialAccessor, logger, sandbox, capabilities);
 
             var inputs = new Dictionary<string, object>
             {

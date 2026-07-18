@@ -1,0 +1,63 @@
+# Knotarium — systemd unit for the Linux copy-and-run (folder) build.
+# See deploy/linux/README.md for the full install steps. In short:
+#   sudo useradd --system --home /var/lib/knotarium --shell /usr/sbin/nologin knotarium
+#   sudo mkdir -p /opt/knotarium /var/lib/knotarium
+#   # unzip the release into /opt/knotarium, then:
+#   sudo chown -R knotarium:knotarium /opt/knotarium /var/lib/knotarium
+#   sudo cp deploy/linux/knotarium.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now knotarium
+
+[Unit]
+Description=Knotarium — self-hosted visual workflow automation
+Documentation=https://github.com/AndreKfm/Knotarium
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=knotarium
+Group=knotarium
+
+# Where the release was unzipped (contains Knotarium.Api and wwwroot/).
+WorkingDirectory=/opt/knotarium
+ExecStart=/opt/knotarium/Knotarium.Api
+
+# The SQLite DB and the auto-generated at-rest credential key both live here. The CommonApplicationData
+# default (/usr/share) is not a good home for a service; anchor both at a persistent state dir.
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:43120
+Environment=Storage__DataDirectory=/var/lib/knotarium
+# Auth is ON by default (first run creates the admin via the browser). Uncomment ONLY for a throwaway
+# instance on a trusted host:
+# Environment=Auth__Enabled=false
+# Bring your own at-rest credential key to share one across instances (keep it stable — data encrypted
+# under an old key can't be decrypted). Prefer an EnvironmentFile over inlining the secret here:
+# EnvironmentFile=/etc/knotarium/knotarium.env
+
+Restart=on-failure
+RestartSec=5
+
+# --- Sandboxing (defence in depth; complements the app's own Process-mode node sandbox) ---
+# The service only needs to write its state directory. Everything else is locked down.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# MUST stay false: the workflow engine JIT-compiles inline code / dynamic nodes with Roslyn at
+# runtime, which needs writable-then-executable memory. Setting this to true breaks those features.
+MemoryDenyWriteExecute=false
+# StateDirectory grants writable /var/lib/knotarium (0750, owned by the service user) under ProtectSystem=strict.
+StateDirectory=knotarium
+ReadWritePaths=/var/lib/knotarium
+# Outbound HTTP nodes need the network; drop everything that isn't IP.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

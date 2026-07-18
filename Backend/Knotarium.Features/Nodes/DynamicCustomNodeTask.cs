@@ -27,6 +27,7 @@ public class DynamicCustomNodeTask : INodeTask
     private readonly IOAuthTokenCache? _oAuthTokenCache;
     private readonly IOpenApiInterpreterExecutorFactory? _interpreterFactory;
     private readonly ICapabilityPolicy? _capabilities;
+    private readonly Sandbox.ISandboxRunner? _sandbox;
     private readonly CSharpScriptCompiler _compiler = new();
 
     public DynamicCustomNodeTask(
@@ -39,7 +40,8 @@ public class DynamicCustomNodeTask : INodeTask
         IServerConfigStore? serverConfigStore = null,
         IOAuthTokenCache? oAuthTokenCache = null,
         IOpenApiInterpreterExecutorFactory? interpreterFactory = null,
-        ICapabilityPolicy? capabilities = null)
+        ICapabilityPolicy? capabilities = null,
+        Sandbox.ISandboxRunner? sandbox = null)
     {
         _nodeType            = nodeType;
         _packageStore        = packageStore;
@@ -51,6 +53,7 @@ public class DynamicCustomNodeTask : INodeTask
         _oAuthTokenCache     = oAuthTokenCache;
         _interpreterFactory  = interpreterFactory;
         _capabilities        = capabilities;
+        _sandbox             = sandbox;
     }
 
     public async Task<LegacyNodeResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken)
@@ -127,15 +130,26 @@ public class DynamicCustomNodeTask : INodeTask
                 }
 
                 var cacheKey = $"{_nodeType}_{latestVersion.Version}_{latestVersion.CreatedAt.Ticks}";
-                _logger.LogInformation("Compiling custom C# node '{NodeType}'...", _nodeType);
-                var executorType = _compiler.GetOrCompile(cacheKey, latestVersion.Source);
-
                 var knownServices = new Dictionary<Type, object?>
                 {
                     [typeof(IOpenApiSpecStore)]  = _openApiSpecStore,
                     [typeof(IServerConfigStore)] = _serverConfigStore,
                     [typeof(IOAuthTokenCache)]   = _oAuthTokenCache,
                 };
+
+                // When a sandbox runner is wired (the DI path), delegate compile+run to it so the
+                // operator's Security:Sandbox:Mode decides where this code executes. The runner
+                // falls back in-process automatically for service-injected executors.
+                if (_sandbox is not null)
+                {
+                    _logger.LogInformation("Running custom C# node '{NodeType}' via sandbox runner...", _nodeType);
+                    return await _sandbox.RunAsync(
+                        cacheKey, latestVersion.Source, manifest.DefaultTimeoutSeconds, context,
+                        _httpClientFactory, _credentialAccessor, _logger, extraInputs, knownServices, cancellationToken);
+                }
+
+                _logger.LogInformation("Compiling custom C# node '{NodeType}'...", _nodeType);
+                var executorType = _compiler.GetOrCompile(cacheKey, latestVersion.Source);
                 executor = _compiler.Instantiate(executorType, knownServices);
             }
             catch (ScriptCompilationException ex)

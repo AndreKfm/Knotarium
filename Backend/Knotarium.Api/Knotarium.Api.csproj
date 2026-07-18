@@ -46,6 +46,9 @@
     <ProjectReference Include="..\Knotarium.Infrastructure\Knotarium.Infrastructure.csproj" />
     <ProjectReference Include="..\Knotarium.Core\Knotarium.Core.csproj" />
     <ProjectReference Include="..\Knotarium.NodeRuntime\Knotarium.NodeRuntime.csproj" />
+    <!-- Sandbox worker: not referenced by code, but the ProjectReference makes its exe land next
+         to the host binaries so the Process sandbox mode can spawn it. -->
+    <ProjectReference Include="..\Knotarium.SandboxWorker\Knotarium.SandboxWorker.csproj" />
   </ItemGroup>
 
 </Project>

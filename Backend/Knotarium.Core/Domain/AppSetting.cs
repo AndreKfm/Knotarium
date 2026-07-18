@@ -31,6 +31,11 @@ public static class AppSettingKeys
     /// Unset ⇒ all switchable capabilities off.</summary>
     public const string CapabilityPolicy = "CapabilityPolicy";
 
+    /// <summary>JSON blob holding the operator's sandbox configuration for user-authored node code
+    /// (execution mode, worker limits, restricted token, credential proxying). Unset ⇒ the
+    /// Security:Sandbox configuration section (and its secure defaults) applies unchanged.</summary>
+    public const string SandboxSettings = "SandboxSettings";
+
     /// <summary>Persisted runtime arming state ("true"/"false"): the last value set explicitly via the
     /// arming endpoint, restored on startup so an armed instance stays armed across restarts. Unset ⇒
     /// fall back to the "Runtime:Armed" configuration value (default: disarmed). Transient safety

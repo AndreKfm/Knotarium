@@ -107,6 +107,26 @@ export interface CapabilityPolicyDto {
   enabledCapabilities: string[];
 }
 
+/**
+ * Sandbox configuration for user-authored node code (Settings → Sandbox).
+ * `mode: 'Process'` runs Inline Code / custom-package C# in pooled, OS-confined worker
+ * processes; `'InProcess'` is the compatible legacy behavior. Mirrors the backend
+ * SandboxSettingsDto — numeric fields are clamped server-side.
+ */
+export interface SandboxSettingsDto {
+  mode: 'InProcess' | 'Process';
+  analyzeAtRuntime: boolean;
+  workerCount: number;
+  memoryLimitMb: number;
+  cpuPercent: number;
+  maxRunSeconds: number;
+  killGraceSeconds: number;
+  recycleAfterRuns: number;
+  restrictedToken: boolean;
+  proxyCredentials: boolean;
+  maxHttpResponseMb: number;
+}
+
 /** The active AI provider config (Settings → AI Provider). The API key itself is never returned. */
 export interface AiProviderConfigResponse {
   vendor: string | null;

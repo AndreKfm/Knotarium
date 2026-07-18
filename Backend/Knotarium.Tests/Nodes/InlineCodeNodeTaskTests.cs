@@ -39,7 +39,7 @@ public class InlineCodeNodeTaskTests
         new StubHttpClientFactory(),
         new StubCredentialAccessor(),
         NullLogger<InlineCodeNodeTask>.Instance,
-        new CSharpScriptCompiler(),
+        new Knotarium.Features.Nodes.Sandbox.InProcessSandboxRunner(new CSharpScriptCompiler()),
         new StubCapabilityPolicy(codeEnabled),
         timeoutSeconds);
 

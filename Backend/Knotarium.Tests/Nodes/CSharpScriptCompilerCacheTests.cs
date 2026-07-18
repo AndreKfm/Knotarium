@@ -118,4 +118,55 @@ public class Boom : INodeExecutor {
         var failure = Assert.IsType<LegacyNodeResult.Failure>(result);
         Assert.Contains("kaboom", failure.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
+
+    // A full executor that always compiles but is rejected by BannedApiAnalyzer (static mutable state).
+    private const string StatefulExecutor = @"
+using System.Threading; using System.Threading.Tasks;
+using Knotarium.Core.Contracts; using Knotarium.Core.Domain;
+public class Stateful : INodeExecutor {
+    static int Counter = 0;
+    public ValueTask<NodeResult> ExecuteAsync(NodeInput input, INodeContext context, CancellationToken ct)
+        => default;
+}";
+
+    [Fact]
+    public void Runtime_compile_rejects_banned_source_when_screening_enabled()
+    {
+        var compiler = new CSharpScriptCompiler();
+        var original = CSharpScriptCompiler.EnforceBannedApiAnalysis;
+        try
+        {
+            CSharpScriptCompiler.EnforceBannedApiAnalysis = true;
+
+            var ex = Assert.Throws<ScriptCompilationException>(
+                () => compiler.GetOrCompile("banned-on-" + Guid.NewGuid().ToString("N"), StatefulExecutor));
+
+            // The runtime path now applies the same gate as the editor — screening happens before compile.
+            Assert.Contains("security analysis", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            CSharpScriptCompiler.EnforceBannedApiAnalysis = original;
+        }
+    }
+
+    [Fact]
+    public void Runtime_compile_allows_banned_source_when_screening_disabled()
+    {
+        var compiler = new CSharpScriptCompiler();
+        var original = CSharpScriptCompiler.EnforceBannedApiAnalysis;
+        try
+        {
+            CSharpScriptCompiler.EnforceBannedApiAnalysis = false;
+
+            // Same source that was rejected above compiles cleanly once the operator opts out of screening,
+            // proving the gate is the only thing rejecting it (the source itself is valid C#).
+            var type = compiler.GetOrCompile("banned-off-" + Guid.NewGuid().ToString("N"), StatefulExecutor);
+            Assert.NotNull(type);
+        }
+        finally
+        {
+            CSharpScriptCompiler.EnforceBannedApiAnalysis = original;
+        }
+    }
 }

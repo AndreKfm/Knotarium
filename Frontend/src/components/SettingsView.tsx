@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from 'react';
-import { Bell, Database, FolderLock, Plug, ShieldAlert, Sparkles } from 'lucide-react';
+import { Bell, Box, Database, FolderLock, Plug, ShieldAlert, Sparkles } from 'lucide-react';
 import { ErrorWorkflowSetting } from './ErrorWorkflowSetting';
 import { NotificationChannelManager } from './NotificationChannelManager';
 import { BackupRestorePanel } from './BackupRestorePanel';
@@ -11,14 +11,16 @@ import { AiProviderSetting } from './AiProviderSetting';
 import { FileAccessSetting } from './FileAccessSetting';
 import { usePendingFileAccessGrantStore } from '../stores/usePendingFileAccessGrantStore';
 import { CapabilitiesSetting } from './CapabilitiesSetting';
+import { SandboxSetting } from './SandboxSetting';
 
-type SettingsSection = 'notifications' | 'ai' | 'fileAccess' | 'capabilities' | 'systems' | 'backup';
+type SettingsSection = 'notifications' | 'ai' | 'fileAccess' | 'capabilities' | 'sandbox' | 'systems' | 'backup';
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Bell }[] = [
   { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'ai', label: 'AI Provider', icon: Sparkles },
   { key: 'fileAccess', label: 'File Access', icon: FolderLock },
   { key: 'capabilities', label: 'Capabilities', icon: ShieldAlert },
+  { key: 'sandbox', label: 'Sandbox', icon: Box },
   { key: 'systems', label: 'External Systems', icon: Plug },
   { key: 'backup', label: 'Backup & Restore', icon: Database },
 ];
@@ -115,6 +117,20 @@ export function SettingsView({ armed, onDisarm }: SettingsViewProps) {
                 </p>
               </div>
               <CapabilitiesSetting />
+            </>
+          )}
+
+          {section === 'sandbox' && (
+            <>
+              <div className="iset-head">
+                <h1><span className="ih-ic"><Box size={20} /></span> Sandbox</h1>
+                <p>
+                  Decide where user-authored C# — the Inline Code node and custom node packages — runs,
+                  and how hard the operating system confines it. Complements the Capabilities switch:
+                  that decides <i>whether</i> code may run, this decides <i>how safely</i>.
+                </p>
+              </div>
+              <SandboxSetting />
             </>
           )}
 
