@@ -40,6 +40,7 @@ Get /api/settings/ai-provider
 Get /api/settings/capabilities
 Get /api/settings/error-workflow
 Get /api/settings/file-access
+Get /api/settings/sandbox
 Get /api/templates/gallery
 Get /api/templates/gallery/{templateId}
 Get /api/templates/gallery/{templateId}/payload
@@ -67,6 +68,7 @@ Post /api/auth/logout
 Post /api/auth/setup
 Post /api/auth/users
 Post /api/ai/generate
+Post /api/ai/inline-code
 Post /api/bundles/export
 Post /api/bundles/install
 Post /api/credentials
@@ -125,6 +127,7 @@ Put /api/settings/ai-provider
 Put /api/settings/capabilities
 Put /api/settings/error-workflow
 Put /api/settings/file-access
+Put /api/settings/sandbox
 Put /api/workflow-groups
 Put /api/workflows/{id}
 Put /api/workflows/{id}/webhook-secret

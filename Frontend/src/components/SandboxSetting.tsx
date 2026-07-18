@@ -206,9 +206,14 @@ export function SandboxSetting() {
 
       {/* Numeric limits — only meaningful in Process mode */}
       <div style={{ opacity: isProcess ? 1 : 0.45 }}>
-        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff', marginBottom: 8 }}>
+        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff', marginBottom: 4 }}>
           Worker limits{!isProcess && <span style={{ fontWeight: 400, color: '#94a3b8' }}> — isolated mode only</span>}
         </div>
+        <p style={{ margin: '0 0 10px', fontSize: '0.72rem', color: 'var(--text-secondary, #94a3b8)', maxWidth: 640, lineHeight: 1.5 }}>
+          These limits apply <strong>only in isolated (Process) mode</strong>; in in-process mode they have no effect.
+          Timeout and the hard kill are always enforced. Memory and CPU caps are best-effort at the OS level
+          {' '}(Windows Job Object / Linux cgroup v2) — on Linux without cgroup v2 the CPU cap is not enforced.
+        </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
           {NUMERIC_FIELDS.map(({ key, label, hint, min, max }) => (
             <div key={key}>

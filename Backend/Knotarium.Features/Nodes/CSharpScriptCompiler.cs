@@ -335,6 +335,16 @@ public sealed class CSharpScriptCompiler
 
         if (result.Status == NodeExecutionStatus.Succeeded)
         {
+            // The node's generic output port is `result`, and the data-reference picker inserts
+            // {{ $node.<id>.output.result }}. But an object return (Success(new { a, b })) is spread
+            // into top-level fields (output.a, output.b), so `result` would resolve to nothing. Expose
+            // the whole return value under `result` too, so the suggested reference works — additive,
+            // so existing per-field references keep resolving. Never clobber a user-provided `result`.
+            if (result.Payload is { } payload && payload.ValueKind != JsonValueKind.Null
+                && !dictPayload.ContainsKey("result"))
+            {
+                dictPayload["result"] = payload;
+            }
             dictPayload["selectedPort"] = result.OutputName;
             return new LegacyNodeResult.Success(dictPayload);
         }

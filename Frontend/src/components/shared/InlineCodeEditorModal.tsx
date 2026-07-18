@@ -114,7 +114,29 @@ export function registerCsharpInlineCompletions(monaco: any) {
         ] };
       }
 
-      // (c) Default: top-level helpers the wrapper injects.
+      // (b2) Common BCL member access. This is NOT true IntelliSense — Monaco ships no C#
+      // language server — but it hand-covers the handful of framework types inline scripts
+      // actually reach for (e.g. Console.WriteLine, DateTimeOffset.UtcNow, JsonSerializer.*).
+      const bclMatch = /(?:^|[^\w])([A-Za-z_]\w*)\.\w*$/.exec(line);
+      if (bclMatch) {
+        const mth = (label: string, insertText: string, detail = '') => ({ label, kind: k.Method, detail, insertText, insertTextRules: snip, range });
+        const prp = (label: string, detail = '') => ({ label, kind: k.Property, detail, insertText: label, range });
+        const BCL: Record<string, unknown[]> = {
+          Console: [mth('WriteLine', 'WriteLine(${1:value})', 'Write a line to the run log'), mth('Write', 'Write(${1:value})', 'Write to the run log')],
+          DateTime: [prp('UtcNow', 'Current UTC time'), prp('Now', 'Current local time'), prp('Today', "Today's date"), mth('Parse', 'Parse(${1:s})', 'Parse a date string')],
+          DateTimeOffset: [prp('UtcNow', 'Current UTC time'), prp('Now', 'Current local time'), mth('Parse', 'Parse(${1:s})', 'Parse a date string')],
+          Math: [mth('Min', 'Min(${1:a}, ${2:b})'), mth('Max', 'Max(${1:a}, ${2:b})'), mth('Abs', 'Abs(${1:x})'), mth('Round', 'Round(${1:x})'), mth('Floor', 'Floor(${1:x})'), mth('Ceiling', 'Ceiling(${1:x})')],
+          Guid: [mth('NewGuid', 'NewGuid()', 'A new GUID')],
+          JsonSerializer: [mth('Serialize', 'Serialize(${1:obj})', 'Object → JSON string'), mth('Deserialize', 'Deserialize<${1:T}>(${2:json})', 'JSON string → object'), mth('SerializeToElement', 'SerializeToElement(${1:obj})', 'Object → JsonElement')],
+          JsonDocument: [mth('Parse', 'Parse(${1:json})', 'Parse a JSON string')],
+          Convert: [mth('ToInt32', 'ToInt32(${1:value})'), mth('ToDouble', 'ToDouble(${1:value})'), mth('ToString', 'ToString(${1:value})'), mth('ToBoolean', 'ToBoolean(${1:value})')],
+          string: [mth('Format', 'Format(${1:format}, ${2:args})'), mth('Join', 'Join(${1:sep}, ${2:values})'), mth('IsNullOrEmpty', 'IsNullOrEmpty(${1:s})'), mth('IsNullOrWhiteSpace', 'IsNullOrWhiteSpace(${1:s})')],
+        };
+        const members = BCL[bclMatch[1]];
+        if (members) return { suggestions: members };
+      }
+
+      // (c) Default: top-level helpers the wrapper injects, plus the framework types above.
       const suggestions = [
         { label: 'Input.Get', kind: k.Method, detail: 'Read an input/variable by name',
           documentation: 'Input.Get<T>(name) — deserialize a node input/sample variable.',
@@ -141,6 +163,9 @@ export function registerCsharpInlineCompletions(monaco: any) {
           insertText: 'foreach (var ${1:item} in ${2:items})\n{\n\t$0\n}', insertTextRules: snip, range },
         { label: 'if', kind: k.Snippet, detail: 'if block',
           insertText: 'if (${1:condition})\n{\n\t$0\n}', insertTextRules: snip, range },
+        // Framework types with curated members (type the name, then '.' for its members).
+        ...['Console', 'DateTime', 'DateTimeOffset', 'Math', 'Guid', 'JsonSerializer', 'JsonDocument', 'Convert', 'string']
+          .map(t => ({ label: t, kind: k.Class, detail: 'framework type', insertText: t, range })),
       ];
       return { suggestions };
     },
@@ -202,6 +227,48 @@ function canvasCenter(): { x: number; y: number } {
   return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 }
 
+// ── Resizable modal size (persisted) ─────────────────────────────────────────
+const SIZE_KEY = 'kg-inline-editor-size';
+const MIN_W = 520, MIN_H = 360;
+
+// ── Horizontal split between the CODE panel and the TEST column (persisted) ───
+// Stored as the left (code) panel's fraction of the flexible width. Default ≈ 1.45 : 1.
+const SPLIT_KEY = 'kg-inline-editor-split';
+const MIN_SPLIT = 0.3, MAX_SPLIT = 0.8, DEFAULT_SPLIT = 0.592;
+
+function loadSplit(): number {
+  try {
+    const raw = localStorage.getItem(SPLIT_KEY);
+    if (raw != null) {
+      const v = Number(raw);
+      if (Number.isFinite(v)) return Math.max(MIN_SPLIT, Math.min(MAX_SPLIT, v));
+    }
+  } catch { /* disabled */ }
+  return DEFAULT_SPLIT;
+}
+
+function clampSize(w: number, h: number): { w: number; h: number } {
+  return {
+    w: Math.max(MIN_W, Math.min(w, Math.round(window.innerWidth * 0.96))),
+    h: Math.max(MIN_H, Math.min(h, Math.round(window.innerHeight * 0.94))),
+  };
+}
+
+function defaultSize(): { w: number; h: number } {
+  return clampSize(Math.min(1060, Math.round(window.innerWidth * 0.88)), Math.min(660, Math.round(window.innerHeight * 0.86)));
+}
+
+function loadSize(): { w: number; h: number } {
+  try {
+    const raw = localStorage.getItem(SIZE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw) as { w?: unknown; h?: unknown };
+      if (typeof s.w === 'number' && typeof s.h === 'number') return clampSize(s.w, s.h);
+    }
+  } catch { /* malformed / disabled */ }
+  return defaultSize();
+}
+
 interface InlineCodeEditorModalProps {
   open: boolean;
   code: string;
@@ -228,9 +295,12 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [center, setCenter] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [size, setSize] = useState<{ w: number; h: number }>(() => ({ w: 1060, h: 660 }));
+  const [split, setSplit] = useState<number>(DEFAULT_SPLIT);
 
   const modalRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
 
   // Insert a sample at the cursor (or replace the selection). Falls back to appending if the
@@ -273,6 +343,44 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
     }
   };
 
+  // Drag the bottom-right corner to resize. The modal is centred on `center` (translate -50%,-50%),
+  // so its corner moves at half the size change — grow by 2× the drag to keep the grip under the cursor.
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY, startW = size.w, startH = size.h;
+    const onMove = (ev: MouseEvent) => setSize(clampSize(startW + 2 * (ev.clientX - startX), startH + 2 * (ev.clientY - startY)));
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setSize(s => { try { localStorage.setItem(SIZE_KEY, JSON.stringify(s)); } catch { /* disabled */ } return s; });
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // Drag the vertical divider to change how the width is split between the CODE panel
+  // and the TEST column. `split` is the code panel's fraction of the body's content width.
+  const startSplit = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const onMove = (ev: MouseEvent) => {
+      const row = bodyRef.current;
+      if (!row) return;
+      const r = row.getBoundingClientRect();
+      if (r.width <= 0) return;
+      const frac = (ev.clientX - r.left) / r.width;
+      setSplit(Math.max(MIN_SPLIT, Math.min(MAX_SPLIT, frac)));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setSplit(s => { try { localStorage.setItem(SPLIT_KEY, String(s)); } catch { /* disabled */ } return s; });
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   const dirty = buffer !== savedCode || sampleInputs !== savedInputs;
 
   // Keep keystrokes inside the editor: the canvas (React Flow) has document-level key
@@ -300,6 +408,8 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
       setShowAi(false);
       setAiError(null);
       setCenter(canvasCenter());
+      setSize(loadSize());
+      setSplit(loadSplit());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -453,7 +563,7 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
           left: center.x, top: center.y,
           transform: 'translate(-50%, -50%) scale(0.6)',
           opacity: 0,
-          width: 'min(1060px, 88vw)', height: 'min(660px, 86vh)',
+          width: `${size.w}px`, height: `${size.h}px`,
           display: 'flex', flexDirection: 'column',
           background: C.base,
           border: `1px solid ${C.line}`, borderRadius: '18px',
@@ -562,9 +672,9 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
         </div>
 
         {/* Body: panels float on the modal base with gaps, no hard rules */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '12px', padding: '4px 14px 14px' }}>
+        <div ref={bodyRef} style={{ flex: 1, minHeight: 0, display: 'flex', gap: '6px', padding: '4px 14px 14px' }}>
           {/* CODE */}
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1.45 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 200, minHeight: 0, flexGrow: split, flexShrink: 1, flexBasis: 0 }}>
             <div style={{ ...panel, flex: 1 }}>
               <PanelLabel>Code</PanelLabel>
               <div style={{ flex: 1, minHeight: 0 }}>
@@ -587,8 +697,20 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
             </div>
           </div>
 
+          {/* Splitter — drag to rebalance CODE vs TEST widths */}
+          <div
+            onMouseDown={startSplit}
+            title="Drag to resize panels"
+            style={{
+              flex: 'none', width: '10px', minHeight: 0, cursor: 'col-resize',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch',
+            }}
+          >
+            <div style={{ width: '2px', height: '46px', borderRadius: '2px', background: C.line }} />
+          </div>
+
           {/* TEST */}
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: '320px', minHeight: 0, flex: 1, gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 260, minHeight: 0, flexGrow: 1 - split, flexShrink: 1, flexBasis: 0, gap: '12px' }}>
             <div style={{ ...panel, flex: 'none', height: '168px' }}>
               <PanelLabel>Sample inputs <span style={{ color: C.violetL, fontSize: '10.5px', textTransform: 'none', letterSpacing: 0, fontWeight: 600, fontFamily: 'ui-monospace, Menlo, monospace' }}>— readable via Input.Get&lt;T&gt;(name)</span></PanelLabel>
               <div style={{ flex: 1, minHeight: 0 }}>
@@ -655,6 +777,17 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
             </div>
           </div>
         )}
+
+        {/* Resize grip — drag the bottom-right corner. */}
+        <div
+          onMouseDown={startResize}
+          title="Drag to resize"
+          style={{ position: 'absolute', right: 0, bottom: 0, width: '20px', height: '20px', cursor: 'nwse-resize', zIndex: 20 }}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" style={{ position: 'absolute', right: 3, bottom: 3, opacity: 0.5 }} aria-hidden="true">
+            <path d="M18 8 L8 18 M18 13 L13 18 M18 3 L3 18" stroke={C.faint} strokeWidth="1.4" fill="none" strokeLinecap="round" />
+          </svg>
+        </div>
       </div>
 
       <style>{`@keyframes kg-scrim-in { from { opacity: 0 } to { opacity: 1 } }`}</style>
