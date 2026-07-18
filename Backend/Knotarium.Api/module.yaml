@@ -21,6 +21,9 @@ module:
     # NodePackageWatcher, HostPluginLoader). The prior manifest forbade this but the code has
     # always depended on it; aligned to reality. Revisit if runtime wiring moves behind a seam.
     - Knotarium.NodeRuntime
+    # The host launches and manages the out-of-process sandbox worker pool (ProcessSandboxRunner),
+    # so it references the worker project directly.
+    - Knotarium.SandboxWorker
   forbidden_project_dependencies: []
   component_map:
     - path: Backend/Knotarium.Api
