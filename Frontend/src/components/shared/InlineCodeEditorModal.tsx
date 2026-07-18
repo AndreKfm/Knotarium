@@ -223,6 +223,10 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
   const [localError, setLocalError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
+  const [showAi, setShowAi] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [center, setCenter] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const modalRef = useRef<HTMLDivElement>(null);
@@ -240,6 +244,32 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
       ed.focus();
     } else {
       setBuffer(prev => (prev && prev.trim() ? prev + '\n\n' + snippet : snippet));
+    }
+  };
+
+  // Generate the whole script from a prompt (current code passed as context so it can extend/refactor).
+  // Replaces the editor content via executeEdits so Ctrl+Z restores what was there.
+  const generateWithAi = async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt || aiBusy) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const generated = await api.generateInlineCode(prompt, buffer, language ?? 'csharp');
+      const ed = editorRef.current;
+      if (ed) {
+        const model = ed.getModel();
+        ed.executeEdits('inline-ai', [{ range: model.getFullModelRange(), text: generated, forceMoveMarkers: true }]);
+        ed.focus();
+      } else {
+        setBuffer(generated);
+      }
+      setShowAi(false);
+      setAiPrompt('');
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Generation failed.');
+    } finally {
+      setAiBusy(false);
     }
   };
 
@@ -267,6 +297,8 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
       setLocalError(null);
       setShowConfirm(false);
       setShowSamples(false);
+      setShowAi(false);
+      setAiError(null);
       setCenter(canvasCenter());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -444,7 +476,56 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
           </span>
           <span style={{ flex: 1 }} />
           <div style={{ position: 'relative' }}>
-            <button onClick={() => setShowSamples(s => !s)} style={closeBtn} title="Insert a ready-made snippet at the cursor">
+            <button
+              onClick={() => { setShowAi(v => !v); setShowSamples(false); }}
+              style={{ ...closeBtn, color: C.violetL, borderColor: 'rgba(124,108,240,0.4)', background: 'rgba(124,108,240,0.12)' }}
+              title="Generate this script from a description"
+            >
+              ✦ Generate with AI
+            </button>
+            {showAi && (
+              <>
+                <div onMouseDown={() => setShowAi(false)} style={{ position: 'fixed', inset: 0, zIndex: 5 }} />
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 6, width: '340px',
+                  background: C.base, border: `1px solid ${C.line}`, borderRadius: '10px',
+                  boxShadow: '0 20px 50px -20px rgba(0,0,0,0.8)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '9px',
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', color: C.faint, textTransform: 'uppercase' }}>
+                    Describe the script
+                  </div>
+                  <textarea
+                    autoFocus
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void generateWithAi(); } }}
+                    placeholder="e.g. Sum the 'amounts' input array and return the total, or Fail if it's empty."
+                    rows={3}
+                    style={{
+                      width: '100%', resize: 'vertical', minHeight: '58px', padding: '8px 10px', borderRadius: '8px',
+                      background: 'rgba(0,0,0,0.28)', border: `1px solid ${C.line}`, color: C.ink,
+                      fontFamily: 'inherit', fontSize: '12.5px', outline: 'none', boxSizing: 'border-box',
+                    }}
+                  />
+                  {aiError && <div style={{ fontSize: '11.5px', color: '#f0808f', lineHeight: 1.4 }}>{aiError}</div>}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontSize: '10.5px', color: C.faint }}>
+                      {buffer.trim() ? 'Replaces the current code · ⌘/Ctrl+Enter' : '⌘/Ctrl+Enter'}
+                    </span>
+                    <button
+                      onClick={() => void generateWithAi()}
+                      disabled={aiBusy || !aiPrompt.trim()}
+                      style={{ ...runBtn(aiBusy), opacity: (aiBusy || !aiPrompt.trim()) ? 0.6 : 1 }}
+                    >
+                      {aiBusy ? 'Generating…' : 'Generate'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => { setShowSamples(s => !s); setShowAi(false); }} style={closeBtn} title="Insert a ready-made snippet at the cursor">
               Samples ▾
             </button>
             {showSamples && (
