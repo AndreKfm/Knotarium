@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -383,6 +384,141 @@ public class Spawner : INodeExecutor {
         {
             CSharpScriptCompiler.EnforceBannedApiAnalysis = originalAnalyze;
         }
+    }
+
+    // A fresh, independent context per call — safe to use from concurrent runs (unlike the shared
+    // Context() helper, which reassigns the _globals field).
+    private static NodeExecutionContext FreshContext()
+        => new(WorkflowDefinitionId.New(), Guid.NewGuid(), new NodeId("sbx1"),
+            new Dictionary<string, object>(), new Dictionary<string, object>());
+
+    // Reports the OS process id of the worker that served the run — the natural per-worker identity
+    // used to observe pooling and recycling. Environment.ProcessId is not in the banned namespaces.
+    private const string ReportPidSource = @"
+using System.Text.Json; using System.Threading; using System.Threading.Tasks;
+using Knotarium.Core.Contracts; using Knotarium.Core.Domain;
+public class Pid : INodeExecutor {
+    public ValueTask<NodeResult> ExecuteAsync(NodeInput input, INodeContext ctx, CancellationToken ct)
+        => new(new NodeResult(""success"",
+            JsonSerializer.SerializeToElement(new { pid = System.Environment.ProcessId }), NodeExecutionStatus.Succeeded));
+}";
+
+    [Fact]
+    public async Task Worker_is_recycled_after_the_configured_run_count()
+    {
+        var options = new SandboxOptions
+        {
+            Mode = SandboxMode.Process,
+            WorkerCount = 1,
+            KillGraceSeconds = 2,
+            RecycleAfterRuns = 2
+        };
+        options.Clamp();
+        await using var runner = new ProcessSandboxRunner(
+            new CSharpScriptCompiler(), options, NullLogger<ProcessSandboxRunner>.Instance);
+
+        var pids = new List<string?>();
+        for (var i = 0; i < 4; i++)
+        {
+            var r = await runner.RunAsync(
+                "recycle-pid", ReportPidSource, 30, FreshContext(),
+                new StubHttpClientFactory(), new StubCredentialAccessor(), NullLogger.Instance,
+                extraInputs: null, knownServices: null, default);
+            pids.Add(Assert.IsType<LegacyNodeResult.Success>(r).Outputs!["pid"]?.ToString());
+        }
+
+        // WorkerCount=1, RecycleAfterRuns=2 → runs 1&2 share one worker, then it retires and
+        // runs 3&4 land on a fresh one: [A, A, B, B]. The two halves must be different processes.
+        Assert.Equal(pids[0], pids[1]);
+        Assert.Equal(pids[2], pids[3]);
+        Assert.NotEqual(pids[1], pids[2]);
+    }
+
+    [Fact]
+    public async Task Pool_never_exceeds_the_configured_worker_count()
+    {
+        var options = new SandboxOptions
+        {
+            Mode = SandboxMode.Process,
+            WorkerCount = 2,
+            KillGraceSeconds = 2
+        };
+        options.Clamp();
+        await using var runner = new ProcessSandboxRunner(
+            new CSharpScriptCompiler(), options, NullLogger<ProcessSandboxRunner>.Instance);
+
+        // Each run holds its worker briefly so several overlap; fire far more than the pool size.
+        const string busyPid = @"
+using System.Text.Json; using System.Threading; using System.Threading.Tasks;
+using Knotarium.Core.Contracts; using Knotarium.Core.Domain;
+public class BusyPid : INodeExecutor {
+    public async ValueTask<NodeResult> ExecuteAsync(NodeInput input, INodeContext ctx, CancellationToken ct)
+    {
+        await Task.Delay(150, ct);
+        return new NodeResult(""success"",
+            JsonSerializer.SerializeToElement(new { pid = System.Environment.ProcessId }), NodeExecutionStatus.Succeeded);
+    }
+}";
+        var tasks = Enumerable.Range(0, 6).Select(_ => runner.RunAsync(
+            "busy-pid", busyPid, 30, FreshContext(),
+            new StubHttpClientFactory(), new StubCredentialAccessor(), NullLogger.Instance,
+            extraInputs: null, knownServices: null, default)).ToArray();
+        var results = await Task.WhenAll(tasks);
+
+        var pids = results
+            .Select(r => Assert.IsType<LegacyNodeResult.Success>(r).Outputs!["pid"]?.ToString())
+            .Distinct()
+            .ToList();
+        // The pool caps concurrent workers at WorkerCount, so the whole burst can only ever have
+        // been served by at most that many distinct processes.
+        Assert.True(pids.Count <= options.WorkerCount,
+            $"pool used {pids.Count} distinct workers but the cap is {options.WorkerCount}");
+    }
+
+    [Fact]
+    public async Task Worker_exceeding_the_memory_cap_fails_without_growing_unbounded()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return; // Job Object gives a deterministic hard cap; Linux enforcement needs cgroup v2 / prlimit specifics
+        }
+
+        var options = new SandboxOptions
+        {
+            Mode = SandboxMode.Process,
+            WorkerCount = 1,
+            KillGraceSeconds = 2,
+            MemoryLimitMb = 512 // plenty for the worker to start; far below the 2 GB it tries to commit
+        };
+        options.Clamp();
+        await using var runner = new ProcessSandboxRunner(
+            new CSharpScriptCompiler(), options, NullLogger<ProcessSandboxRunner>.Instance);
+
+        // Commit ~2 GB, touching every page so the pages are actually backed. The Job Object memory
+        // limit denies the commit → the worker OOMs. Whether that surfaces as a caught exception or
+        // a dead worker, the host must report a Failure — never let the process grow past the cap.
+        const string hog = @"
+using System.Collections.Generic; using System.Threading; using System.Threading.Tasks;
+using Knotarium.Core.Contracts; using Knotarium.Core.Domain;
+public class Hog : INodeExecutor {
+    public ValueTask<NodeResult> ExecuteAsync(NodeInput input, INodeContext ctx, CancellationToken ct)
+    {
+        var blocks = new List<byte[]>();
+        for (var i = 0; i < 2048; i++)
+        {
+            var b = new byte[1024 * 1024];
+            for (var j = 0; j < b.Length; j += 4096) { b[j] = 1; }
+            blocks.Add(b);
+        }
+        return new(new NodeResult(""success"", null, NodeExecutionStatus.Succeeded));
+    }
+}";
+        var result = await runner.RunAsync(
+            "mem-hog", hog, 30, FreshContext(),
+            new StubHttpClientFactory(), new StubCredentialAccessor(), NullLogger.Instance,
+            extraInputs: null, knownServices: null, default);
+
+        Assert.IsType<LegacyNodeResult.Failure>(result);
     }
 
     [Fact]
