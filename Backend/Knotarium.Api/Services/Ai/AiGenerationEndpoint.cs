@@ -54,10 +54,77 @@ public sealed record AiGenerationJobResponse(
     int Attempts,
     string? Error);
 
+/// <summary>Generate/modify the body of an Inline Code node from a natural-language prompt.
+/// <see cref="CurrentCode"/> (optional) is the code already in the editor, given to the model as
+/// context so it can extend/refactor rather than start from scratch.</summary>
+public sealed record GenerateInlineCodeRequest(string Prompt, string? CurrentCode, string? Language);
+
+public sealed record GenerateInlineCodeResponse(string Code);
+
 public static class AiGenerationEndpoint
 {
+    // The Inline Code node wraps the script body in a method with these symbols in scope; the model
+    // must target exactly this contract, and only APIs the banned-API screen permits.
+    private const string InlineCodeSystemPrompt = """
+        You write the BODY of a C# "Inline Code" node for the Knotarium automation platform. Your code is
+        inserted verbatim into an async method, so write statements — not a class or a Main method.
+
+        In scope (already provided — do NOT redeclare):
+        - Input.Get<T>("name")  -> read a node input (e.g. var n = Input.Get<int>("count");)
+        - Logger                -> Microsoft.Extensions.Logging.ILogger (Logger.LogInformation(...))
+        - cancellationToken     -> pass to any awaited call
+        - Success(object? payload)  -> return this as the node's output, e.g. return Success(new { total });
+        - Fail(string error)        -> return this to fail the node, e.g. return Fail("no data");
+
+        Already imported (don't repeat): System, System.Collections.Generic, System.Linq, System.Text.Json,
+        System.Threading, System.Threading.Tasks, Microsoft.Extensions.Logging, Knotarium.Core.Contracts,
+        Knotarium.Core.Domain. You MAY add other `using` lines at the very top; they are hoisted.
+
+        End every path by returning Success(...) or Fail(...). The last statement is typically a return.
+
+        FORBIDDEN (the code is rejected before it runs): System.IO, System.Diagnostics, System.Reflection.Emit,
+        System.Net.Sockets, System.Runtime.InteropServices, System.Runtime.Loader, Microsoft.Win32, and any
+        static mutable state. HTTP is allowed via System.Net.Http.
+
+        Output ONLY the C# code. No markdown fences, no prose, no comments explaining what you did.
+        """;
+
     public static void MapAiGenerationEndpoints(this WebApplication app)
     {
+        // One-shot code generation for the Inline Code editor's "Generate with AI". Synchronous (a single
+        // completion, unlike the async workflow-generation job) so the editor can drop the result straight in.
+        app.MapPost("/api/ai/inline-code", async (
+            GenerateInlineCodeRequest request,
+            Knotarium.Core.Contracts.Ai.IChatCompletionService chat,
+            CancellationToken ct) =>
+        {
+            var prompt = request.Prompt?.Trim() ?? string.Empty;
+            if (prompt.Length == 0)
+            {
+                return Results.BadRequest(new { error = "Describe what the code should do." });
+            }
+            if (prompt.Length > 4000)
+            {
+                return Results.BadRequest(new { error = "Prompt exceeds the 4000-character maximum." });
+            }
+
+            var user = string.IsNullOrWhiteSpace(request.CurrentCode)
+                ? prompt
+                : $"Current code:\n```\n{request.CurrentCode!.Trim()}\n```\n\nModify or extend it to: {prompt}";
+
+            try
+            {
+                var reply = await chat.CompleteAsync(
+                    new Knotarium.Core.Contracts.Ai.ChatCompletionRequest(InlineCodeSystemPrompt, user), ct);
+                return Results.Ok(new GenerateInlineCodeResponse(StripCodeFences(reply)));
+            }
+            catch (System.InvalidOperationException ex)
+            {
+                // Not-configured / bad key / provider transport — not repairable by retrying. Surface plainly.
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
         // Start a generation job. Returns immediately with a job id; the hosted worker runs the
         // generate→compile→repair loop in the background and the client polls the GET endpoint.
         app.MapPost("/api/ai/generate", (
@@ -220,4 +287,23 @@ public static class AiGenerationEndpoint
 
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";
+
+    /// <summary>Models often wrap code in a ```csharp … ``` block despite instructions; peel it off so the
+    /// editor gets pure code. Leaves un-fenced replies untouched.</summary>
+    private static string StripCodeFences(string? reply)
+    {
+        var text = (reply ?? string.Empty).Trim();
+        if (!text.StartsWith("```", System.StringComparison.Ordinal))
+        {
+            return text;
+        }
+        var firstNewline = text.IndexOf('\n');
+        if (firstNewline < 0)
+        {
+            return text;
+        }
+        var body = text[(firstNewline + 1)..];
+        var lastFence = body.LastIndexOf("```", System.StringComparison.Ordinal);
+        return (lastFence >= 0 ? body[..lastFence] : body).Trim();
+    }
 }

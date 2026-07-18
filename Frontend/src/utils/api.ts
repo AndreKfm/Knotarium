@@ -352,6 +352,18 @@ export const api = {
     return { jobId: getString((data as JsonObject).jobId) };
   },
 
+  /** Generate/modify Inline Code node body from a prompt. Synchronous (one completion). Throws on a
+   *  provider/config error with the backend's message so the editor can show it inline. */
+  async generateInlineCode(prompt: string, currentCode?: string, language?: string): Promise<string> {
+    const response = await fetch(`${API_BASE}/ai/inline-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, currentCode: currentCode ?? null, language: language ?? null }),
+    });
+    const data = await handleResponse<{ code: string }>(response);
+    return getString((data as JsonObject).code);
+  },
+
   /** Poll a generation job. The workflow is mapped identically to getWorkflow so the canvas can load it. */
   async getGenerationJob(jobId: string): Promise<AiGenerationJobResult> {
     const response = await fetch(`${API_BASE}/ai/generate/${jobId}`);
