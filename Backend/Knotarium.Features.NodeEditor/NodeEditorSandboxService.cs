@@ -54,11 +54,14 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
             return new NodeEditorTestResponse(false, logs, cases);
         }
 
-        if (manifest.GetTier() == NodeTier.Compiled)
+        var tier = manifest.GetTier();
+        if (tier != NodeTier.Declarative)
         {
-            // Compiling + running a custom executor is arbitrary in-process code execution — the same
-            // privileged capability the inline-code and compiled-node tasks gate on. The banned-API
-            // analyzer is authoring UX, not a security boundary, so this path must fail closed too.
+            // Every non-declarative tier compiles + runs a custom executor as arbitrary in-process code
+            // execution — the same privileged capability the inline-code and compiled-node tasks gate on.
+            // Gating on `!= Declarative` (rather than `== Compiled`) keeps this fail-closed: any tier that
+            // reaches the compilation path must clear the capability check, including future/unknown tiers.
+            // The banned-API analyzer is authoring UX, not a security boundary, so this path must fail closed too.
             if (!await _capabilities.IsEnabledAsync(NodeCapabilities.CodeExecution, cancellationToken))
             {
                 return Fail(
@@ -86,24 +89,35 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
             logs.Add("[SANDBOX] No cases detected. Added one default validation case.");
         }
 
-        var declaredCapabilities = new HashSet<string>(manifest.Capabilities.Select(c => c.Trim().ToLowerInvariant()));
+        // Match the recorder's case-insensitive comparison (see CapabilityRecorder) so a declared
+        // capability like "http" is never flagged as undeclared when the executor records "Http".
+        var declaredCapabilities = new HashSet<string>(
+            manifest.Capabilities.Select(c => c.Trim()),
+            StringComparer.OrdinalIgnoreCase);
         CollectibleAssemblyLoadContext? loadContext = null;
+        INodeExecutor? executor = null;
 
         try
         {
-            INodeExecutor? executor;
-            if (manifest.GetTier() == NodeTier.Declarative)
+            switch (tier)
             {
-                logs.Add("[SANDBOX] Manifest tier is declarative. Skipping Roslyn compilation and using DeclarativeExecutor.");
-                executor = new DeclarativeExecutor(manifest.ToDomainManifest(request.PackageId));
-            }
-            else
-            {
-                (executor, loadContext) = CompileExecutor(request, logs, cases);
-                if (executor == null)
-                {
-                    return new NodeEditorTestResponse(false, logs, cases);
-                }
+                case NodeTier.Declarative:
+                    logs.Add("[SANDBOX] Manifest tier is declarative. Skipping Roslyn compilation and using DeclarativeExecutor.");
+                    executor = new DeclarativeExecutor(manifest.ToDomainManifest(request.PackageId));
+                    break;
+
+                case NodeTier.Compiled:
+                case NodeTier.Interpreted:
+                    (executor, loadContext) = CompileExecutor(request, logs, cases);
+                    if (executor == null)
+                    {
+                        return new NodeEditorTestResponse(false, logs, cases);
+                    }
+
+                    break;
+
+                default:
+                    return Fail("Validation", $"Unsupported node tier '{tier}'.", logs, cases);
             }
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -127,6 +141,19 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
         }
         finally
         {
+            // Release any handles/timers a well-behaved executor holds before unloading its context.
+            // (Untrusted code could still misbehave in Dispose; real containment is the out-of-process
+            // runtime sandbox, not this authoring-time test path.)
+            switch (executor)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+
             loadContext?.Unload();
         }
     }
@@ -232,6 +259,14 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
 
                 var result = await executor.ExecuteAsync(new NodeInput(parameters), context, cancellationToken);
 
+                if (result is null)
+                {
+                    allPassed = false;
+                    cases.Add(new NodeEditorTestCaseResult(caseName, "fail", "Executor returned a null result."));
+                    logs.Add($"[SANDBOX] {caseName} failed: executor returned a null result.");
+                    continue;
+                }
+
                 var undeclared = recorder.Invocations
                     .Where(cap => !declaredCapabilities.Contains(cap))
                     .OrderBy(cap => cap)
@@ -258,6 +293,12 @@ public sealed class NodeEditorSandboxService : INodeEditorSandboxService
 
                 cases.Add(new NodeEditorTestCaseResult(caseName, "pass", "Outputs and capability usage are valid."));
                 logs.Add($"[SANDBOX] {caseName} passed.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // A timeout or client abort must surface as a run-level cancellation, not be swallowed
+                // into a per-case failure — otherwise the outer timeout/cancel handler never runs.
+                throw;
             }
             catch (Exception ex)
             {

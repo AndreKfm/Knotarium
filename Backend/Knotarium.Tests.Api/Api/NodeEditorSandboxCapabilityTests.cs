@@ -45,6 +45,23 @@ public sealed class NodeEditorSandboxCapabilityTests
         Assert.DoesNotContain(response.Logs, l => l.Contains("Roslyn", System.StringComparison.OrdinalIgnoreCase));
     }
 
+    // Interpreted is the OTHER non-declarative tier: it also reaches the compile-and-run path, so it
+    // must be gated too. Regression against a fail-open `== Compiled` check that let it through ungated.
+    private const string InterpretedManifest = "name: Test Node\ntier: Interpreted\n";
+
+    [Fact]
+    public async Task Interpreted_test_is_refused_when_code_execution_capability_is_off()
+    {
+        var sut = new NodeEditorSandboxService(new FakeCapabilities(enabled: false));
+
+        var response = await sut.RunTestsAsync(
+            new("test-pkg", InterpretedManifest, "public class E {}", TestsYaml: ""), CancellationToken.None);
+
+        Assert.False(response.Success);
+        Assert.Contains(response.Cases, c => c.Message.Contains("code execution", System.StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(response.Logs, l => l.Contains("Roslyn", System.StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public async Task Compiled_test_proceeds_past_the_gate_when_capability_is_on()
     {
