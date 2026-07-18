@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { X, Trash2, UserPlus, KeyRound } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useAuth } from './AuthContext';
+import { useScrimClose } from '../../hooks/useScrimClose';
 import type { AuthUser } from '../../types';
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -22,18 +23,8 @@ export function UsersPanel({ onClose }: { onClose: () => void }) {
   const load = () => api.listUsers().then(setUsers).catch((err) => setError(message(err)));
   useEffect(() => { load(); }, []);
 
-  // Escape closes the modal (in addition to the ✕ and a backdrop click), so backing out of
-  // "add user" is unambiguous from the keyboard too. Capture so it wins over background handlers.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  // Backdrop dismissal (mousedown on the scrim, not a stray mouseup after a text selection) + Esc.
+  const onScrimMouseDown = useScrimClose(onClose);
 
   const addUser = async () => {
     setError(null);
@@ -74,7 +65,7 @@ export function UsersPanel({ onClose }: { onClose: () => void }) {
   const sectionTitle: React.CSSProperties = { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.55)', display: 'grid', placeItems: 'center' }}>
+    <div onMouseDown={onScrimMouseDown} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.55)', display: 'grid', placeItems: 'center' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 520, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: 24, borderRadius: 14, background: 'var(--bg-surface-opaque)', border: '1px solid var(--border-color)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#fff' }}>Users</h2>

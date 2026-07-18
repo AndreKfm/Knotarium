@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { AlertTriangle, History, X } from 'lucide-react';
+import { useScrimClose } from '../../hooks/useScrimClose';
 import type { ReplayResult, WorkflowVersionSummary } from '../../types';
 
 type ReplayDialogProps = {
@@ -34,6 +35,7 @@ export function ReplayDialog({
   const [mockSideEffects, setMockSideEffects] = useState(false);
 
   const sortedVersions = [...versions].sort((left, right) => right.versionNumber - left.versionNumber);
+  const onScrimMouseDown = useScrimClose(onClose, !busy);
 
   const handleConfirm = () => {
     onConfirm({
@@ -55,7 +57,7 @@ export function ReplayDialog({
         placeItems: 'center',
         zIndex: 1000,
       }}
-      onClick={busy ? undefined : onClose}
+      onMouseDown={onScrimMouseDown}
     >
       <div
         onClick={(event) => event.stopPropagation()}

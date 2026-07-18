@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../utils/api';
+import { useScrimClose } from '../hooks/useScrimClose';
 import type { WorkflowDefinition } from '../types';
 
 interface AiGenerateModalProps {
@@ -42,6 +43,9 @@ export function AiGenerateModal({ open, onClose, onGenerated, currentWorkflow }:
       cancelledRef.current = true;
     };
   }, [open]);
+
+  // Backdrop dismiss + Esc — suspended while a generation is in flight.
+  const onScrimMouseDown = useScrimClose(onClose, phase !== 'generating');
 
   if (!open) return null;
 
@@ -88,7 +92,7 @@ export function AiGenerateModal({ open, onClose, onGenerated, currentWorkflow }:
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(4,7,13,.85)', backdropFilter: 'blur(4px)', display: 'grid', placeItems: 'center', zIndex: 1000 }}
-      onClick={busy ? undefined : onClose}
+      onMouseDown={onScrimMouseDown}
     >
       <div
         style={{ background: '#0d1422', border: '1px solid #1e2a3a', borderRadius: 18, width: 560, maxWidth: '95vw', boxShadow: '0 20px 50px rgba(0,0,0,.6)' }}
