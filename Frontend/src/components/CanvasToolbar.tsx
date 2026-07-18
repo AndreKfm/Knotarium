@@ -24,6 +24,10 @@ interface CanvasToolbarProps {
   onHoverPreview?: (versionId: string | null) => void;
   /** Opens the compare/history surface from the picker's footer. */
   onCompareVersions?: () => void;
+  /** Make a version the live/active one directly from the picker (no run, no re-restore). */
+  onActivateVersion?: (versionId: string) => void;
+  /** Version id whose activation is currently in flight (drives the row spinner). */
+  activatingVersionId?: string | null;
   saving: boolean;
   handleSave: () => void;
   isDirty: boolean;
@@ -65,6 +69,8 @@ export function CanvasToolbar({
   onSelectVersion,
   onHoverPreview,
   onCompareVersions,
+  onActivateVersion,
+  activatingVersionId,
   saving,
   handleSave,
   isDirty,
@@ -166,6 +172,8 @@ export function CanvasToolbar({
                 onSelect={(versionId) => (onSelectVersion ?? setSelectedActivationVersionId)(versionId)}
                 onHoverPreview={(versionId) => onHoverPreview?.(versionId)}
                 onCompare={onCompareVersions}
+                onActivate={onActivateVersion}
+                activatingVersionId={activatingVersionId}
               />
             </div>
             <button

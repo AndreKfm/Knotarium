@@ -529,13 +529,15 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       style={{
-        width: isContainer ? '100%' : undefined,
+        // Normal nodes get a FIXED width, not content-sizing. Two reasons: (1) uniform width means the
+        // gap to the next node is the same everywhere — a content-sized card that grew (e.g. a long
+        // failure message in the execution view) used to swell to the auto-layout step (~340) and touch
+        // its neighbour, while short cards left a wide gap; (2) long values wrap/grow DOWNWARD instead of
+        // stretching across the canvas. 280 sits comfortably below the ~340 horizontal step, so every
+        // card clears the next. Containers are user-resizable, so they opt out.
+        width: isContainer ? '100%' : 280,
         height: isContainer ? '100%' : undefined,
         minHeight: isContainer ? undefined : branchMinHeight,
-        // Cap a normal node's width so long config values (e.g. a Set Variable holding a paragraph)
-        // wrap and grow the card DOWNWARD instead of stretching it across the canvas. Containers are
-        // user-resizable, so they opt out.
-        maxWidth: isContainer ? undefined : 340,
         borderWidth: (selected || isDragOver || isProducerActive) ? '2px' : '1.5px',
         borderColor: isDragOver ? 'var(--color-accent)' : selected ? 'var(--color-accent)' : undefined,
         boxShadow: isDragOver
@@ -664,7 +666,10 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
           />
         ) : (
           <span
-            style={{ flex: 1, textTransform: 'capitalize', cursor: canRename ? 'text' : undefined }}
+            // Don't grow to fill the header: a flex:1 title shoves the status badge to the far edge,
+            // leaving an awkward gap between a short name and its "Failed"/"Completed" pill. Sizing to
+            // content keeps the badge grouped right after the title; long names still shrink + ellipsis.
+            style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize', cursor: canRename ? 'text' : undefined }}
             title={canRename ? 'Double-click to rename' : undefined}
             onDoubleClick={canRename ? (e) => { e.stopPropagation(); beginRename(); } : undefined}
           >
@@ -708,6 +713,9 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
+              // The title no longer grows, so pin this action to the far right where a drill-in
+              // affordance is expected (the badges stay grouped by the title on the left).
+              marginLeft: 'auto',
               width: '22px',
               height: '22px',
               padding: 0,

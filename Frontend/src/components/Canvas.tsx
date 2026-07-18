@@ -508,6 +508,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     handleSelectVersion, handleHoverPreviewVersion,
     handleDiffAgainstDraft, handleDiffDraftVsActive,
     openRestoreDialog, confirmRestore,
+    handleActivateVersion, activatingVersionId,
   } = useVersioning({
     currentId, workflowName, nodesRef, edgesRef, availableNodeMetadataRef, setWorkflowStatusMessage,
   });
@@ -812,16 +813,44 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     const bottom = (bounds.y + bounds.height) * vp.zoom + vp.y;
     const overlapW = Math.min(right, width) - Math.max(left, 0);
     const overlapH = Math.min(bottom, height) - Math.max(top, 0);
-    return overlapW > 60 && overlapH > 60;
+    // Require a visible sliver, but scale the threshold to the graph's on-screen size: a short/narrow
+    // graph (e.g. a 3-node row only ~50px tall) is fully visible with less than 60px of overlap, so a
+    // flat 60px floor would wrongly reject its perfectly good saved viewport and force a needless refit.
+    const minOverlapW = Math.min(60, (bounds.width * vp.zoom) / 2);
+    const minOverlapH = Math.min(60, (bounds.height * vp.zoom) / 2);
+    return overlapW > minOverlapW && overlapH > minOverlapH;
   }, [getNodes, reactFlowStore]);
 
   const restoredForRef = useRef<string>('');
+  // Tracks the pending framing-poll rAF so it can be cancelled on UNMOUNT only (see the unmount-only
+  // effect below). The poll effect itself has no cleanup on purpose (that would orphan it on re-run).
+  const restoreRafRef = useRef<number | null>(null);
+  useEffect(() => () => { if (restoreRafRef.current != null) cancelAnimationFrame(restoreRafRef.current); }, []);
   useEffect(() => {
     if (!currentId || nodes.length === 0 || restoredForRef.current === currentId) return;
     restoredForRef.current = currentId;
     const saved = loadViewport(currentId);
-    // rAF so React Flow has measured the freshly-set nodes before the camera moves.
-    requestAnimationFrame(() => {
+
+    // Frame the graph once React Flow has actually measured the nodes. We can't gate on
+    // useNodesInitialized() — with onlyRenderVisibleElements, off-screen nodes never mount, so it never
+    // reports "all measured" and the restore would deadlock. Instead, poll a few frames until the graph
+    // reports real (non-zero) bounds: a single rAF often fires before measurement, and fitView on a 0×0
+    // box is a no-op that leaves the camera at the default {0,0,1} — i.e. pinned to the top-left corner,
+    // which is exactly the bug this guards against. Bounded so it can never spin.
+    //
+    // The loop is NOT torn down by a cleanup: this effect re-runs during the async load (versions/active
+    // arrive after the nodes), and cancelling on every re-run — while the ref-guard blocks restarting —
+    // would orphan the poll and never frame the graph. Instead each frame checks the ref: a genuinely new
+    // workflow updates restoredForRef to its own id, which self-terminates any earlier workflow's loop.
+    let attempts = 0;
+    const frame = () => {
+      if (restoredForRef.current !== currentId) return; // superseded by a newer workflow load
+      const bounds = getNodesBounds(getNodes());
+      const measured = bounds.width > 1 && bounds.height > 1;
+      if (!measured && attempts++ < 20) {
+        restoreRafRef.current = requestAnimationFrame(frame);
+        return;
+      }
       // Restore the remembered viewport only if it still actually shows the graph. A stale/degenerate
       // saved viewport (e.g. the origin {0,0,1}) would leave the graph off-screen — common because graphs
       // can sit at negative coordinates — so fall back to fitView instead of landing in an empty corner.
@@ -830,8 +859,9 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
       } else {
         fitView({ padding: 0.15, duration: 0 });
       }
-    });
-  }, [currentId, nodes.length, setViewport, fitView, viewportShowsGraph]);
+    };
+    restoreRafRef.current = requestAnimationFrame(frame);
+  }, [currentId, nodes.length, setViewport, fitView, viewportShowsGraph, getNodes]);
 
   // After an AI generation/refinement lands, center the new graph — it lays out from the origin, so
   // without this it reads as pinned to the top-left corner. Runs once per generated definition.
@@ -2061,6 +2091,8 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
           onSelectVersion={handleSelectVersion}
           onHoverPreview={handleHoverPreviewVersion}
           onCompareVersions={() => setHistoryOpen(true)}
+          onActivateVersion={handleActivateVersion}
+          activatingVersionId={activatingVersionId}
           saving={saving}
           handleSave={handleSave}
           isDirty={isDirty}

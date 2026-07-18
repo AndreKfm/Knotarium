@@ -528,8 +528,10 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
             <div className="kg-phead">
               <Layers size={18} color="var(--color-accent)" />
               <h2 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Workflow Definitions ({wfQuery ? `${visibleWorkflows.length}/${workflows.length}` : workflows.length})</h2>
-              {workflows.length > 0 && (
+              {(workflows.length > 0 || archived.length > 0) && (
                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {/* The archived toggle must stay reachable even with zero active workflows —
+                      after "delete all", this button is the only way back to Restore. */}
                   {archived.length > 0 && (
                     <button
                       onClick={() => setShowArchived((v) => !v)}
@@ -539,26 +541,30 @@ export function Dashboard({ onEditWorkflow, onViewExecution, onTriggeredExecutio
                       <Archive size={13} /> Archived ({archived.length})
                     </button>
                   )}
-                  <button
-                    onClick={() => handleBulkDeleteVisible(visibleWorkflows)}
-                    disabled={bulkDeleting || visibleWorkflows.length === 0}
-                    aria-label="Delete shown workflows"
-                    title={wfQuery ? `Delete the ${visibleWorkflows.length} filtered workflows` : `Delete all ${visibleWorkflows.length} workflows`}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 11px', borderRadius: '8px', background: 'rgba(240,85,109,0.08)', border: '1px solid rgba(240,85,109,0.35)', color: '#f0556d', fontSize: '0.82rem', fontWeight: 600, cursor: bulkDeleting ? 'default' : 'pointer', opacity: bulkDeleting ? 0.6 : 1 }}
-                  >
-                    <Trash2 size={13} /> {bulkDeleting ? 'Deleting…' : `Delete ${visibleWorkflows.length}`}
-                  </button>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <Search size={14} style={{ position: 'absolute', left: 10, color: 'var(--text-muted)' }} />
-                    <input
-                      type="text"
-                      value={workflowSearch}
-                      onChange={(e) => setWorkflowSearch(e.target.value)}
-                      placeholder="Filter by name"
-                      aria-label="Filter workflows by name"
-                      style={{ padding: '6px 10px 6px 30px', borderRadius: '8px', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.82rem', width: '180px' }}
-                    />
-                  </div>
+                  {workflows.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => handleBulkDeleteVisible(visibleWorkflows)}
+                        disabled={bulkDeleting || visibleWorkflows.length === 0}
+                        aria-label="Delete shown workflows"
+                        title={wfQuery ? `Delete the ${visibleWorkflows.length} filtered workflows` : `Delete all ${visibleWorkflows.length} workflows`}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 11px', borderRadius: '8px', background: 'rgba(240,85,109,0.08)', border: '1px solid rgba(240,85,109,0.35)', color: '#f0556d', fontSize: '0.82rem', fontWeight: 600, cursor: bulkDeleting ? 'default' : 'pointer', opacity: bulkDeleting ? 0.6 : 1 }}
+                      >
+                        <Trash2 size={13} /> {bulkDeleting ? 'Deleting…' : `Delete ${visibleWorkflows.length}`}
+                      </button>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <Search size={14} style={{ position: 'absolute', left: 10, color: 'var(--text-muted)' }} />
+                        <input
+                          type="text"
+                          value={workflowSearch}
+                          onChange={(e) => setWorkflowSearch(e.target.value)}
+                          placeholder="Filter by name"
+                          aria-label="Filter workflows by name"
+                          style={{ padding: '6px 10px 6px 30px', borderRadius: '8px', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '0.82rem', width: '180px' }}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
