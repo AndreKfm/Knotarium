@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { AlertTriangle, RotateCcw, X, CheckCircle2 } from 'lucide-react';
+import { useScrimClose } from '../hooks/useScrimClose';
 import type { RestoreVersionResult } from '../types';
 
 export interface RestoreVersionDialogProps {
@@ -33,6 +34,7 @@ export function RestoreVersionDialog({
   onClose,
 }: RestoreVersionDialogProps) {
   const [activate, setActivate] = useState(false);
+  const onScrimMouseDown = useScrimClose(onClose, !busy);
 
   return (
     <div
@@ -47,7 +49,7 @@ export function RestoreVersionDialog({
         placeItems: 'center',
         zIndex: 1100,
       }}
-      onClick={busy ? undefined : onClose}
+      onMouseDown={onScrimMouseDown}
     >
       <div
         onClick={(event) => event.stopPropagation()}

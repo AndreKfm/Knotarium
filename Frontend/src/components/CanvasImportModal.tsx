@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { OpenApiImporter } from './OpenApiImporter';
+import { useScrimClose } from '../hooks/useScrimClose';
 
 interface CanvasImportModalProps {
   open: boolean;
@@ -11,11 +12,12 @@ interface CanvasImportModalProps {
 }
 
 export function CanvasImportModal({ open, onClose, onImported }: CanvasImportModalProps) {
+  const onScrimMouseDown = useScrimClose(onClose);
   if (!open) return null;
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(4,7,13,.85)', backdropFilter: 'blur(4px)', display: 'grid', placeItems: 'center', zIndex: 1000 }}
-      onClick={onClose}
+      onMouseDown={onScrimMouseDown}
     >
       <div
         style={{ background: '#0d1422', border: '1px solid #1e2a3a', borderRadius: 18, width: 560, maxWidth: '95vw', boxShadow: '0 20px 50px rgba(0,0,0,.6)' }}
