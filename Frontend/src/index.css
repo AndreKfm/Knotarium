@@ -529,6 +529,13 @@ code, pre {
 .vrs-badge.active { color: #fff; background: var(--color-accent); }
 .vrs-badge.latest { color: var(--color-success); background: var(--color-success-glow); border: 1px solid rgba(16, 185, 129, 0.28); }
 
+/* Per-row "Set active" — stays out of the way (revealed on row hover/keyboard highlight) so the menu
+   reads cleanly, but is always shown while an activation is in flight. */
+.vrs-activate { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em; color: var(--color-accent); background: var(--color-accent-glow); border: 1px solid rgba(34, 211, 238, 0.32); border-radius: 6px; padding: 3px 9px; cursor: pointer; font-family: inherit; white-space: nowrap; opacity: 0; transition: opacity .1s, background .1s; }
+.vrs-row:hover .vrs-activate, .vrs-row.vrs-hl .vrs-activate, .vrs-activate:focus-visible, .vrs-activate:disabled { opacity: 1; }
+.vrs-activate:hover:not(:disabled) { background: rgba(34, 211, 238, 0.2); }
+.vrs-activate:disabled { cursor: default; color: var(--text-muted); border-color: var(--border-color); background: transparent; }
+
 .vrs-foot { border-top: 1px solid var(--border-color); padding: 8px; }
 .vrs-foot button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); background: transparent; border: none; border-radius: 8px; padding: 9px; cursor: pointer; font-family: inherit; }
 .vrs-foot button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }

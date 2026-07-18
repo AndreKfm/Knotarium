@@ -24,6 +24,14 @@ interface VersionRuntimeSelectProps {
   onHoverPreview: (versionId: string | null) => void;
   /** Optional "Compare two versions" footer action (opens the diff/history surface). */
   onCompare?: () => void;
+  /**
+   * Make a version the live/active one directly, without running it or re-restoring. Omit to hide the
+   * per-row "Set active" affordance (e.g. read-only contexts). The parent handles the API call + errors
+   * (an old version may fail to compile on activation).
+   */
+  onActivate?: (versionId: string) => void;
+  /** The version id currently being activated (shows a spinner + disables the row action). */
+  activatingVersionId?: string | null;
 }
 
 /** Relative timestamp like "2m ago" / "Yesterday" / "3w ago" for a version's createdAt. */
@@ -76,6 +84,8 @@ export function VersionRuntimeSelect({
   onSelect,
   onHoverPreview,
   onCompare,
+  onActivate,
+  activatingVersionId,
 }: VersionRuntimeSelectProps) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
@@ -230,6 +240,23 @@ export function VersionRuntimeSelect({
                   <span className="vrs-vn">v{version.versionNumber}</span>
                   <span className="vrs-stamp">{relativeTime(version.createdAt)}</span>
                   <span className="vrs-spacer" />
+                  {/* Direct activation: the row click only *views* a version; this makes it the live
+                      one without a run or a re-restore. stopPropagation so it doesn't also commit-view. */}
+                  {!isActive && onActivate && (
+                    <button
+                      type="button"
+                      className="vrs-activate"
+                      disabled={activatingVersionId != null}
+                      aria-label={`Set version ${version.versionNumber} active`}
+                      title="Make this the live/active version"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onActivate(version.id);
+                      }}
+                    >
+                      {activatingVersionId === version.id ? 'Activating…' : 'Set active'}
+                    </button>
+                  )}
                   {isActive ? (
                     <span className="vrs-badge active">Active</span>
                   ) : isLatest ? (

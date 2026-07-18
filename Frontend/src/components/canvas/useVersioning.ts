@@ -79,6 +79,8 @@ export function useVersioning(args: UseVersioningArgs) {
   const [restoreBusy, setRestoreBusy] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [restoreResult, setRestoreResult] = useState<RestoreVersionResult | null>(null)
+  // Direct-activation (runtime picker "Set active") in-flight version id.
+  const [activatingVersionId, setActivatingVersionId] = useState<string | null>(null)
   // Diff view state (left → right). `diff` is computed by the pure versionDiff module.
   const [diffState, setDiffState] = useState<{ leftLabel: string; rightLabel: string; diff: VersionDiff } | null>(null)
 
@@ -232,6 +234,32 @@ export function useVersioning(args: UseVersioningArgs) {
     }
   }, [currentId, restoreTarget, refreshHistory])
 
+  // Direct activation from the runtime-version picker: make a version live without running it or
+  // re-restoring. Distinct from confirmRestore's activate flag (that copies an OLD version forward AND
+  // activates the copy) — here we activate an existing version in place.
+  const handleActivateVersion = useCallback(async (versionId: string) => {
+    if (!currentId || !versionId || versionId === activeWorkflowVersion?.workflowVersionId) return
+    setActivatingVersionId(versionId)
+    try {
+      const activeVersion = await api.activateWorkflowVersion(currentId, versionId)
+      setActiveWorkflowVersion(activeVersion)
+      void refreshHistory()
+      const versions = await api.getWorkflowVersions(currentId)
+      setWorkflowVersions(versions)
+    } catch (err) {
+      const errorDiagnostics = getErrorDiagnostics(err)
+      if (isApiError(err) && err.status === 400 && errorDiagnostics && errorDiagnostics.length > 0) {
+        alert(`Can't activate this version — fix these first:\n${errorDiagnostics.map((d) => `[${d.code}] ${d.message}`).join('\n')}`)
+      } else if (isApiError(err) && err.status === 409) {
+        alert('Another activation happened concurrently. Reopen and try again.')
+      } else {
+        alert(getErrorMessage(err, 'Activation failed.'))
+      }
+    } finally {
+      setActivatingVersionId(null)
+    }
+  }, [currentId, activeWorkflowVersion, refreshHistory])
+
   return {
     // toolbar activate-flow state + setters (Canvas load/save/run write these)
     workflowVersions, setWorkflowVersions,
@@ -251,5 +279,6 @@ export function useVersioning(args: UseVersioningArgs) {
     handleSelectVersion, handleHoverPreviewVersion,
     handleDiffAgainstDraft, handleDiffDraftVsActive,
     openRestoreDialog, confirmRestore,
+    handleActivateVersion, activatingVersionId,
   }
 }

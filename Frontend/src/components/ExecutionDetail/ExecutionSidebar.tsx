@@ -648,7 +648,26 @@ export function ExecutionSidebar({
                                         >
                                           {getEventTagLabel(entry.eventType)}
                                         </span>
-                                        <span style={{ color: '#dbe4ee', fontSize: '0.82rem', lineHeight: 1.5, minWidth: 0 }}>{entry.message}</span>
+                                        {/* Clamp to two lines: a failure message can be a full multi-line
+                                            compiler dump, which otherwise turns the timeline row into a wall
+                                            of text. The complete text stays available in the Output/Error
+                                            box below, so nothing is lost. */}
+                                        <span
+                                          style={{
+                                            color: '#dbe4ee',
+                                            fontSize: '0.82rem',
+                                            lineHeight: 1.5,
+                                            minWidth: 0,
+                                            display: '-webkit-box',
+                                            WebkitLineClamp: 2,
+                                            WebkitBoxOrient: 'vertical',
+                                            overflow: 'hidden',
+                                            overflowWrap: 'anywhere',
+                                          }}
+                                          title={entry.message}
+                                        >
+                                          {entry.message}
+                                        </span>
                                       </div>
                                       {showEntryPayload && (
                                         <details style={{ marginTop: '8px' }}>
@@ -730,22 +749,32 @@ export function ExecutionSidebar({
                               );
                             })()}
 
-                            {showInlinePayload && group.latestPayload && (
+                            {showInlinePayload && group.latestPayload && (() => {
+                              // An error-only payload reads as a failure, not an "Output" — tint the box
+                              // red and title it "Error" so the eye lands on the cause immediately.
+                              const isErrorPayload = normalizeStatusValue(group.status) === 'Failed'
+                                && Object.keys(group.latestPayload).length === 1
+                                && 'error' in group.latestPayload;
+                              return (
                               <div
                                 style={{
-                                  background: '#09111d',
-                                  border: '1px solid rgba(14, 165, 233, 0.16)',
+                                  background: isErrorPayload ? 'rgba(127, 29, 29, 0.15)' : '#09111d',
+                                  border: `1px solid ${isErrorPayload ? 'rgba(248, 113, 113, 0.28)' : 'rgba(14, 165, 233, 0.16)'}`,
                                   borderRadius: '12px',
                                   padding: '12px',
                                 }}
                               >
-                                <div style={{ fontSize: '0.68rem', color: '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px', fontWeight: 700 }}>
-                                  Output
+                                <div style={{ fontSize: '0.68rem', color: isErrorPayload ? '#fca5a5' : '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px', fontWeight: 700 }}>
+                                  {isErrorPayload ? 'Error' : 'Output'}
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                   {Object.entries(group.latestPayload).map(([key, value]) => (
                                     <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                      <span style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{formatOutputLabel(key)}</span>
+                                      {/* The box already titles a single-error payload "Error"; skip the
+                                          redundant per-key label in that case. */}
+                                      {!isErrorPayload && (
+                                        <span style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{formatOutputLabel(key)}</span>
+                                      )}
                                       <div
                                         style={{
                                           background: '#030712',
@@ -764,7 +793,8 @@ export function ExecutionSidebar({
                                   ))}
                                 </div>
                               </div>
-                            )}
+                              );
+                            })()}
 
                             {/* Remediation card — placed after the failure so the read is cause → fix. Uses
                                 the app's "action needed" amber, and turns a policy denial into a one-click grant. */}
