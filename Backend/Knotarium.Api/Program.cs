@@ -242,6 +242,19 @@ builder.Services.AddHostedService(sp => new DiskSpaceGuardWorker(
 // Built-in node tasks + node-task registry + shared Roslyn script compiler.
 builder.Services.AddBuiltInNodes();
 
+// Screen user-authored C# (inline code + custom packages) with BannedApiAnalyzer before it is compiled
+// and run — the same gate the node editor applies at authoring time, now on the execution path.
+// Secure-by-default; operators can disable for legacy packages. This is a linter, not a sandbox.
+Knotarium.Features.Nodes.CSharpScriptCompiler.EnforceBannedApiAnalysis =
+    builder.Configuration.GetValue("Security:Sandbox:AnalyzeAtRuntime", true);
+
+// Where user-authored C# executes: InProcess (default, trusted-author) or Process — pooled worker
+// processes confined by the OS (Job Object / prlimit: memory cap, CPU cap, hard kill-on-timeout).
+var sandboxOptions = new Knotarium.Features.Nodes.Sandbox.SandboxOptions();
+builder.Configuration.GetSection(Knotarium.Features.Nodes.Sandbox.SandboxOptions.SectionName).Bind(sandboxOptions);
+sandboxOptions.Clamp();
+builder.Services.AddSingleton(sandboxOptions);
+
 // Dynamic-options / resource-locator loaders (loader registry, REST loader, cache, resolver).
 // Plugin-provided loaders are registered separately above from the host plugin registry.
 builder.Services.AddOptionsFeature();
@@ -438,6 +451,14 @@ using (var scope = app.Services.CreateScope())
         var armed = string.Equals(persistedArmed, "true", StringComparison.OrdinalIgnoreCase);
         scope.ServiceProvider.GetRequiredService<RuntimeArmingState>().SetArmed(armed);
         startupLogger.LogInformation("Restored persisted runtime arming state: {Armed}.", armed);
+    }
+
+    // Restore the operator's persisted sandbox settings (Settings → Sandbox) over the
+    // Security:Sandbox configuration seed. No persisted blob ⇒ configuration stays authoritative.
+    var sandboxStore = scope.ServiceProvider.GetRequiredService<Knotarium.Features.Nodes.Sandbox.SandboxSettingsStore>();
+    if (await sandboxStore.ApplyPersistedAsync())
+    {
+        startupLogger.LogInformation("Restored persisted sandbox settings.");
     }
 
     // Optional headless bootstrap: seed the first admin from configuration when no users exist yet

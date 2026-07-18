@@ -36,9 +36,11 @@ public sealed class ScriptCompilationException : Exception
 /// <see cref="InlineCodeNodeTask"/> (scripts typed directly into a workflow node).
 ///
 /// Compiled types are cached by an opaque caller-supplied key, so identical source
-/// compiles only once per process. Execution is <b>not sandboxed</b>: scripts run with
-/// full backend process access (trusted-author posture) and are bounded only by the
-/// caller's CancellationToken.
+/// compiles only once per process. Source is screened by <see cref="BannedApiAnalyzer"/>
+/// before compilation (see <see cref="EnforceBannedApiAnalysis"/>) — a best-effort linter,
+/// <b>not</b> a sandbox. Execution itself is <b>not sandboxed</b>: scripts run with full backend
+/// process access (trusted-author posture) and are bounded only by the caller's CancellationToken.
+/// Real isolation (separate process + OS resource limits) is tracked separately.
 /// </summary>
 public sealed class CSharpScriptCompiler
 {
@@ -49,6 +51,9 @@ public sealed class CSharpScriptCompiler
     {
         public required Type Type { get; init; }
         public required CollectibleAssemblyLoadContext LoadContext { get; init; }
+        // Retained so the out-of-process sandbox can ship the exact emitted assembly to a worker
+        // without recompiling. Bounded by MaxCachedTypes; script assemblies are small (tens of KB).
+        public required byte[] AssemblyBytes { get; init; }
         public long Sequence { get; init; }
     }
 
@@ -64,6 +69,13 @@ public sealed class CSharpScriptCompiler
     // default holds in production. Eviction Unload()s the oldest entry's load context — safe even while a
     // run still uses the type, because Unload() only *requests* collection once no strong refs remain.
     internal static int MaxCachedTypes = 256;
+
+    // When true, user source is screened by BannedApiAnalyzer *before* it is compiled and run — the same
+    // gate the node editor applies at authoring time, now on the execution path. Secure-by-default;
+    // operators can disable via Security:Sandbox:AnalyzeAtRuntime for legacy packages. Static (not an
+    // instance field) because DynamicCustomNodeTask/BinaryPackageNodeTask each `new` their own compiler,
+    // mirroring MaxCachedTypes. This screening is a linter, NOT a sandbox — see the type-level remarks.
+    public static bool EnforceBannedApiAnalysis = true;
     internal static int CachedTypeCount => _compiledCache.Count;
     internal static bool ContainsCompiledKey(string key)
         => _compiledCache.TryGetValue(key, out var lazy) && lazy.IsValueCreated;
@@ -78,6 +90,19 @@ public sealed class CSharpScriptCompiler
     /// <see cref="ScriptCompilationException"/> with formatted diagnostics on failure.
     /// </summary>
     public Type GetOrCompile(string cacheKey, string source)
+        => GetOrCompileEntry(cacheKey, source).Type;
+
+    /// <summary>
+    /// Like <see cref="GetOrCompile"/> but also returns the emitted assembly bytes, which the
+    /// out-of-process sandbox ships to a worker instead of instantiating the type host-side.
+    /// </summary>
+    public (Type Type, byte[] AssemblyBytes) GetOrCompileWithBytes(string cacheKey, string source)
+    {
+        var entry = GetOrCompileEntry(cacheKey, source);
+        return (entry.Type, entry.AssemblyBytes);
+    }
+
+    private CompiledEntry GetOrCompileEntry(string cacheKey, string source)
     {
         if (string.IsNullOrWhiteSpace(source))
             throw new ScriptCompilationException("Script source code is missing.");
@@ -100,12 +125,28 @@ public sealed class CSharpScriptCompiler
         }
 
         EvictIfNeeded();
-        return entry.Type;
+        return entry;
     }
 
     private static CompiledEntry Compile(string cacheKey, string source)
     {
         string codeToCompile = IsFullExecutor(source) ? source : WrapScriptCode(source);
+
+        // Screen the source before compiling/running it. This is the same banned-API / static-mutable-state
+        // gate the node editor runs at authoring time — historically it only guarded the editor "Test"
+        // button, never execution. Deterministic per source, and Compile is cached, so this runs once per
+        // distinct script. It is a best-effort linter, not a security boundary (see the class remarks).
+        if (EnforceBannedApiAnalysis)
+        {
+            var findings = BannedApiAnalyzer.Analyze(codeToCompile)
+                .Where(d => d.Severity == AnalysisSeverity.Error)
+                .ToList();
+            if (findings.Count > 0)
+            {
+                var detail = string.Join("\n", findings.Select(d => $"  [{d.Code}] {d.Message} (line {d.StartLine})"));
+                throw new ScriptCompilationException($"Rejected by security analysis:\n{detail}");
+            }
+        }
 
         var syntaxTree = CSharpSyntaxTree.ParseText(codeToCompile);
         var references = BuildReferences();
@@ -143,6 +184,7 @@ public sealed class CSharpScriptCompiler
             {
                 Type = executorType,
                 LoadContext = loadContext,
+                AssemblyBytes = assemblyBytes,
                 Sequence = Interlocked.Increment(ref _sequenceCounter),
             };
         }
@@ -226,13 +268,7 @@ public sealed class CSharpScriptCompiler
         CancellationToken cancellationToken = default,
         IExternalSignalProvider? externalSignals = null)
     {
-        var inputs = context.Inputs.ToDictionary(kvp => kvp.Key, kvp => JsonSerializer.SerializeToElement(kvp.Value));
-        if (extraInputs != null)
-        {
-            foreach (var kvp in extraInputs)
-                inputs[kvp.Key] = kvp.Value;
-        }
-        var nodeInput = new NodeInput(inputs);
+        var nodeInput = new NodeInput(BuildInputs(context, extraInputs));
 
         var recordingState = new TaskWorkflowState(context);
         var recordingHttpClient = new TaskHttpClient(httpClientFactory);
@@ -254,6 +290,29 @@ public sealed class CSharpScriptCompiler
             return new LegacyNodeResult.Failure(ex.Message);
         }
 
+        return NormalizeNodeResult(result);
+    }
+
+    /// <summary>Merges context inputs with extras into the JSON parameter map a <see cref="NodeInput"/> carries.</summary>
+    internal static Dictionary<string, JsonElement> BuildInputs(
+        NodeExecutionContext context, IReadOnlyDictionary<string, JsonElement>? extraInputs)
+    {
+        var inputs = context.Inputs.ToDictionary(kvp => kvp.Key, kvp => JsonSerializer.SerializeToElement(kvp.Value));
+        if (extraInputs != null)
+        {
+            foreach (var kvp in extraInputs)
+                inputs[kvp.Key] = kvp.Value;
+        }
+        return inputs;
+    }
+
+    /// <summary>
+    /// Normalizes an executor's <see cref="NodeResult"/> into a <see cref="LegacyNodeResult"/>.
+    /// Shared by the in-process path above and the out-of-process sandbox runner, so a workflow
+    /// sees identical results regardless of where the executor ran.
+    /// </summary>
+    internal static LegacyNodeResult NormalizeNodeResult(NodeResult result)
+    {
         var dictPayload = new Dictionary<string, object>();
         if (result.Payload != null && result.Payload.Value.ValueKind != JsonValueKind.Null)
         {
@@ -459,7 +518,7 @@ public class DynamicScriptExecutor : INodeExecutor
         }
     }
 
-    private sealed class TaskWorkflowState : IWorkflowState
+    internal sealed class TaskWorkflowState : IWorkflowState
     {
         // Reused across every GetVariable call — JsonSerializerOptions is immutable once used and
         // expensive to allocate, so a single shared instance avoids per-read allocation.
@@ -521,7 +580,7 @@ public class DynamicScriptExecutor : INodeExecutor
                 "Reference upstream node outputs through the node's inputs or workflow variables instead.");
     }
 
-    private sealed class TaskHttpClient : IHttpClient
+    internal sealed class TaskHttpClient : IHttpClient
     {
         private readonly IHttpClientFactory _factory;
         public TaskHttpClient(IHttpClientFactory factory) => _factory = factory;

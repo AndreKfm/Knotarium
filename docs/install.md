@@ -36,7 +36,8 @@ install of the same version. Set the port, data directory, and auth via environm
 ::: tip Running as a background service
 Because the data directory is machine-wide, you can register the same folder build as a
 Windows service (e.g. with `sc create` / NSSM) or a Linux `systemd` unit and it will use the same
-database as an interactive run.
+database as an interactive run. For Linux, a ready-made hardened unit and step-by-step guide live in
+[`deploy/linux/`](https://github.com/AndreKfm/Knotarium/tree/main/deploy/linux).
 :::
 
 ## Installer

@@ -133,7 +133,8 @@ public class DependencyInjectionNodeTaskRegistry : INodeTaskRegistry
                         serverConfigStore:  _serviceProvider.GetService<IServerConfigStore>(),
                         oAuthTokenCache:    _serviceProvider.GetService<IOAuthTokenCache>(),
                         interpreterFactory: _serviceProvider.GetService<IOpenApiInterpreterExecutorFactory>(),
-                        capabilities:       _serviceProvider.GetService<ICapabilityPolicy>()
+                        capabilities:       _serviceProvider.GetService<ICapabilityPolicy>(),
+                        sandbox:            _serviceProvider.GetService<Sandbox.ISandboxRunner>()
                     );
                 }
             }

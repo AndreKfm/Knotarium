@@ -34,7 +34,7 @@ public sealed class InlineCodeNodeTask : INodeTask
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ICredentialAccessor _credentialAccessor;
     private readonly ILogger<InlineCodeNodeTask> _logger;
-    private readonly CSharpScriptCompiler _compiler;
+    private readonly Sandbox.ISandboxRunner _sandbox;
     private readonly ICapabilityPolicy _capabilities;
     private readonly int _timeoutSeconds;
 
@@ -42,14 +42,14 @@ public sealed class InlineCodeNodeTask : INodeTask
         IHttpClientFactory httpClientFactory,
         ICredentialAccessor credentialAccessor,
         ILogger<InlineCodeNodeTask> logger,
-        CSharpScriptCompiler compiler,
+        Sandbox.ISandboxRunner sandbox,
         ICapabilityPolicy capabilities,
         int? timeoutSeconds = null)
     {
         _httpClientFactory = httpClientFactory;
         _credentialAccessor = credentialAccessor;
         _logger = logger;
-        _compiler = compiler;
+        _sandbox = sandbox;
         _capabilities = capabilities;
         _timeoutSeconds = timeoutSeconds ?? TimeoutSeconds;
     }
@@ -76,29 +76,17 @@ public sealed class InlineCodeNodeTask : INodeTask
             return new LegacyNodeResult.Failure("Inline Code: no script provided.");
         }
 
-        // Compile (cached by source hash so identical scripts compile once per process).
-        Type executorType;
-        try
-        {
-            executorType = _compiler.GetOrCompile(HashKey(code), code);
-        }
-        catch (ScriptCompilationException ex)
-        {
-            return new LegacyNodeResult.Failure($"Inline Code compilation failed:\n{ex.Message}");
-        }
-
-        var executor = _compiler.Instantiate(executorType);
-
-        // Bound execution with a timeout. Note: cooperative — a script must observe
-        // cancellationToken (e.g. await Task.Delay(..., cancellationToken)) for a long
-        // operation to be interrupted.
+        // Bound execution with a timeout. In-process this is cooperative — a script must observe
+        // cancellationToken for a long operation to be interrupted; in Process sandbox mode the
+        // runner additionally kills the worker process at a hard deadline.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
 
         try
         {
-            var result = await _compiler.RunAsync(
-                executor, context, _httpClientFactory, _credentialAccessor, _logger, extraInputs: null, cts.Token);
+            var result = await _sandbox.RunAsync(
+                HashKey(code), code, _timeoutSeconds, context, _httpClientFactory, _credentialAccessor,
+                _logger, extraInputs: null, knownServices: null, cts.Token);
 
             // The script wrapper catches its own exceptions (including the cancellation), so a
             // timeout may surface as a Failure rather than a thrown OperationCanceledException.
@@ -108,6 +96,10 @@ public sealed class InlineCodeNodeTask : INodeTask
                 return new LegacyNodeResult.Failure($"Inline Code timed out after {_timeoutSeconds}s.");
             }
             return result;
+        }
+        catch (ScriptCompilationException ex)
+        {
+            return new LegacyNodeResult.Failure($"Inline Code compilation failed:\n{ex.Message}");
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
