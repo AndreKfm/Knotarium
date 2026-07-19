@@ -176,4 +176,36 @@ public class FileAccessGuardTests : IDisposable
         Assert.False((await guard.CheckReadAsync(viaLink)).Allowed);
         Assert.False((await guard.CheckWriteAsync(viaLink, 10, append: false)).Allowed);
     }
+
+    [Fact]
+    public async Task Rejects_symlink_parent_when_a_real_file_exists_below_it()
+    {
+        // Regression: a reparse point in the MIDDLE of the path (not the deepest existing ancestor) must still
+        // be resolved. Here 'link' -> _outside, and a real file exists at _outside/secret.txt, so the walk-up
+        // stops at the existing leaf and would never inspect the parent junction under a leaf-only resolver.
+        var link = Path.Combine(_root, "link");
+        try
+        {
+            Directory.CreateSymbolicLink(link, _outside);
+        }
+        catch
+        {
+            return; // no symlink privilege on this host — skip
+        }
+
+        File.WriteAllText(Path.Combine(_outside, "secret.txt"), "top secret"); // reachable as link/secret.txt
+
+        var guard = Guard(Grant(_root, FileAccessMode.ReadWrite));
+        var viaLink = Path.Combine(link, "secret.txt"); // real target is _outside/secret.txt, outside the grant
+        Assert.False((await guard.CheckReadAsync(viaLink)).Allowed);
+        Assert.False((await guard.CheckWriteAsync(viaLink, 10, append: false)).Allowed);
+    }
+
+    [Fact]
+    public async Task Rejects_negative_write_size()
+    {
+        var guard = Guard(Grant(_root, FileAccessMode.Write, minBytes: 1));
+        var result = await guard.CheckWriteAsync(Path.Combine(_root, "f.bin"), bytesToWrite: -1, append: false);
+        Assert.False(result.Allowed);
+    }
 }

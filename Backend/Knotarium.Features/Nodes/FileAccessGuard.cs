@@ -14,12 +14,24 @@ namespace Knotarium.Features.Nodes;
 /// <summary>
 /// Enforces the instance-global <see cref="FileAccessPolicy"/> for the built-in file nodes.
 /// <para>
-/// The path-safety contract (the security-critical part): a requested path is made absolute, its symlinks
-/// and junctions are resolved to their real target (walking up to the nearest existing ancestor so a
-/// not-yet-created write target is still checked against a real parent), and the result must sit inside an
-/// admin-granted directory subtree with the right mode. Textual <c>..</c>, an absolute path pointing
-/// elsewhere, a different drive, and a symlink escaping an allowed root are all rejected. Writes additionally
-/// must leave the configured free-space reserve on the target drive.
+/// The path-safety contract (the security-critical part): a requested path is made absolute, every symlink
+/// and junction along its existing prefix is resolved to its real target (walking up to the nearest existing
+/// ancestor so a not-yet-created write target is still checked against a real parent, then resolving that
+/// ancestor's whole chain — not just its final component), and the result must sit inside an admin-granted
+/// directory subtree with the right mode. Textual <c>..</c>, an absolute path pointing elsewhere, a different
+/// drive, and a symlink/junction escaping an allowed root are all rejected. Resolution is fail-closed: a path
+/// whose real location cannot be determined is denied, never trusted textually. Writes additionally must
+/// leave the configured free-space reserve on the target drive.
+/// </para>
+/// <para>
+/// <b>Residual risk (accepted, not eliminated):</b> the guard validates a path and returns it as a string;
+/// the node opens the file afterwards, so validation and open are not a single atomic handle operation. An
+/// actor able to swap a validated directory component for a junction *between* the check and the open (a
+/// check-then-open / TOCTOU race) could still redirect the access outside an allowed root. This is accepted
+/// under the deployment assumption that the OS ACLs on granted roots prevent untrusted workflows (or other
+/// tenants) from renaming/deleting directories or creating reparse points inside those roots. Administrators
+/// granting a writable root to untrusted content should ACL it accordingly. Closing this window fully would
+/// require a handle-based open-and-validate API, which is a deliberate non-goal here.
 /// </para>
 /// </summary>
 public sealed class FileAccessGuard : IFileAccessPolicy
@@ -52,6 +64,13 @@ public sealed class FileAccessGuard : IFileAccessPolicy
         if (string.IsNullOrWhiteSpace(path))
         {
             return FileAccessResult.Deny("File access denied: an empty path was requested.");
+        }
+
+        // A negative byte count would inflate the computed free space (available - needed) and could wave a
+        // write past the reserve, so reject it before any capacity maths runs.
+        if (requested == FileAccessMode.Write && bytesToWrite < 0)
+        {
+            return FileAccessResult.Deny("File write denied: the number of bytes to write must not be negative.");
         }
 
         // Total access = the old unrestricted behaviour: resolve (relative allowed, against CWD) and permit,
@@ -159,9 +178,16 @@ public sealed class FileAccessGuard : IFileAccessPolicy
     }
 
     /// <summary>
-    /// Resolve a full path to its real on-disk location: follow symlinks/junctions on the deepest existing
-    /// ancestor, then re-append the not-yet-existing tail. Defeats a symlinked directory that points outside
-    /// an allowed root (the classic escape for a write to a new file under a hostile parent).
+    /// Resolve a full path to its real on-disk location: walk up to the deepest existing ancestor, resolve
+    /// every symlink/junction along that ancestor's *entire* chain (not just its final component), then
+    /// re-append the not-yet-existing tail. Defeats a symlinked/junctioned directory that points outside an
+    /// allowed root — including a reparse point buried in the middle of the path with a real element below it,
+    /// which the previous leaf-only resolution silently missed.
+    /// <para>
+    /// Security-critical and fail-closed: if the real path cannot be determined (a reparse point that will not
+    /// resolve, an I/O error, a link cycle) this throws, and every caller turns that into a <c>Deny</c>. It
+    /// must never fall back to trusting the textual path.
+    /// </para>
     /// </summary>
     private static string ResolveRealPath(string fullPath)
     {
@@ -181,24 +207,64 @@ public sealed class FileAccessGuard : IFileAccessPolicy
             current = parent;
         }
 
-        string real;
-        try
-        {
-            FileSystemInfo info = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
-            var target = info.ResolveLinkTarget(returnFinalTarget: true);
-            real = target?.FullName ?? current;
-        }
-        catch
-        {
-            real = current;
-        }
-
-        real = Path.GetFullPath(real);
+        var real = ResolveExistingChain(current);
         while (tail.Count > 0)
         {
             real = Path.Combine(real, tail.Pop());
         }
         return Path.GetFullPath(real);
+    }
+
+    /// <summary>
+    /// Fully resolve an existing path to its real location by inspecting every component from the volume root
+    /// down, following any reparse point (symlink/junction) it encounters to its final target and continuing
+    /// the resolution from there. Throws (fail-closed) if any component's real target cannot be determined.
+    /// </summary>
+    private static string ResolveExistingChain(string existingPath)
+    {
+        var root = Path.GetPathRoot(existingPath);
+        if (string.IsNullOrEmpty(root))
+        {
+            // No volume root on a fully-qualified existing path should not happen; refuse rather than guess.
+            throw new IOException($"The real path of '{existingPath}' could not be determined (no volume root).");
+        }
+
+        var rest = existingPath.Length > root.Length ? existingPath.Substring(root.Length) : string.Empty;
+        var parts = rest.Split(
+            new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+            StringSplitOptions.RemoveEmptyEntries);
+
+        var accumulated = Path.GetFullPath(root);
+        foreach (var part in parts)
+        {
+            accumulated = Path.Combine(accumulated, part);
+            FileSystemInfo info = Directory.Exists(accumulated) ? new DirectoryInfo(accumulated) : new FileInfo(accumulated);
+
+            if ((info.Attributes & FileAttributes.ReparsePoint) == 0)
+            {
+                continue;
+            }
+
+            FileSystemInfo? target;
+            try
+            {
+                target = info.ResolveLinkTarget(returnFinalTarget: true);
+            }
+            catch (Exception ex)
+            {
+                throw new IOException($"The link '{accumulated}' could not be resolved.", ex);
+            }
+
+            if (target is null)
+            {
+                throw new IOException($"The reparse point '{accumulated}' could not be resolved to a target.");
+            }
+
+            // The resolved target may itself sit under further reparse points — resolve it from scratch.
+            accumulated = ResolveExistingChain(Path.GetFullPath(target.FullName));
+        }
+
+        return accumulated;
     }
 
     /// <summary>True when <paramref name="candidate"/> is <paramref name="root"/> itself or lives beneath it.
