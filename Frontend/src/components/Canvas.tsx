@@ -241,6 +241,10 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  // The just-started manual run whose results we stream back onto the canvas (null = nothing live).
+  // Lets variable pins fill in with resolved values in place, so a quick Run shows its result without
+  // leaving the editor for the execution view.
+  const [liveRunExecutionId, setLiveRunExecutionId] = useState<string | null>(null);
   // Connection feedback toast: a success pulse, or an error explaining why a drop didn't wire up.
   const { connectToast, triggerConnectToast, triggerConnectError } = useConnectFeedback();
   // Pending click-to-connect source (output handle a click-connection began on).
@@ -2040,6 +2044,8 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
       setActiveWorkflowVersion(activeVersion);
       const instance = await api.triggerWorkflow(currentId);
       onTriggered(instance.id);
+      // Stream this run's results back onto the canvas so the pins fill in without leaving the editor.
+      setLiveRunExecutionId(instance.id);
     } catch (err: unknown) {
       const errorDiagnostics = getErrorDiagnostics(err);
       if (isApiError(err) && err.status === 400 && errorDiagnostics) {
@@ -2051,6 +2057,74 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
       setTriggering(false);
     }
   };
+
+  // Live run results in the editor: stream the just-started run's progress and repopulate the variable
+  // pins in place. Mirrors the execution view's SSE but scoped to variable values only — no node-status
+  // repaint, no navigation. Falls back to polling where EventSource is unavailable (e.g. jsdom tests).
+  useEffect(() => {
+    if (!liveRunExecutionId || !currentId) {
+      return;
+    }
+    const executionId = liveRunExecutionId;
+    const workflowId = currentId;
+    let cancelled = false;
+
+    const pullValues = async (): Promise<string | null> => {
+      try {
+        const exec = await api.getExecution(executionId);
+        // Guard against a workflow switch mid-run: never write one run's values onto another graph.
+        if (cancelled || exec.workflowDefinitionId.value !== workflowId) {
+          return null;
+        }
+        useVariableStore.getState().updateVariableValues(workflowId, exec);
+        return exec.status;
+      } catch {
+        return null;
+      }
+    };
+
+    // Prime once so a run that finishes before the first event still surfaces its values.
+    void pullValues();
+
+    const EventSourceCtor = globalThis.EventSource;
+    if (EventSourceCtor) {
+      const eventSource = new EventSourceCtor(api.getSseUrl(executionId));
+      const onProgress = () => { void pullValues(); };
+      const onTerminal = () => {
+        void pullValues().finally(() => {
+          if (!cancelled) {
+            setLiveRunExecutionId(null);
+          }
+        });
+      };
+      eventSource.addEventListener('NodeExecutionStarted', onProgress);
+      eventSource.addEventListener('NodeExecutionCompleted', onProgress);
+      eventSource.addEventListener('NodeExecutionFailed', onProgress);
+      eventSource.addEventListener('NodeResumed', onProgress);
+      eventSource.addEventListener('WorkflowCompleted', onTerminal);
+      eventSource.addEventListener('WorkflowFailed', onTerminal);
+      return () => {
+        cancelled = true;
+        eventSource.close();
+      };
+    }
+
+    // No EventSource: poll until the run reaches a terminal state.
+    const timer = setInterval(() => {
+      void pullValues().then((status) => {
+        if (status === 'Completed' || status === 'Failed' || status === 'Cancelled') {
+          clearInterval(timer);
+          if (!cancelled) {
+            setLiveRunExecutionId(null);
+          }
+        }
+      });
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [liveRunExecutionId, currentId]);
 
   const nodeTypesString = nodes.map(n => n.type).join(',');
   const combinedNodeTypes = useMemo(() => {
