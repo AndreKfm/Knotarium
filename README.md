@@ -98,6 +98,8 @@ Found a vulnerability? Please follow the process in [SECURITY.md](SECURITY.md) r
 
 Knotarium is built with heavy use of **AI-assisted development** (Claude Code). Every change is human-reviewed, gated on CI, and maintained by [@AndreKfm](https://github.com/AndreKfm).
 
+**A note on the git history:** this project was developed in a private repository, and the public history is not representative of how the work actually unfolded. It was squashed and cleaned up before open-sourcing, so the commit log here is a condensed snapshot — not a faithful record of the development timeline, the order things were built in, or the number of iterations behind each feature. Treat the code as the artifact; don't read the commit graph as a chronicle of the process.
+
 ## License
 
 [Apache License 2.0](LICENSE) — see [NOTICE](NOTICE) for attribution and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for bundled open-source components.
