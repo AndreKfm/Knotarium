@@ -54,12 +54,12 @@ public class DynamicCustomNodeTaskCapabilityTests
     // proving the capability check short-circuits before compilation is attempted.
     private const string PoisonSource = "this is definitely not valid C#";
 
-    private static DynamicCustomNodeTask CreateTask(ICapabilityPolicy? capabilities)
+    private static DynamicCustomNodeTask CreateTask(ICapabilityPolicy? capabilities, string manifestJson = "{\"tier\":\"Compiled\"}")
     {
         var version = new NodePackageVersion
         {
             Version = "1.0.0",
-            ManifestJson = "{\"tier\":\"Compiled\"}",
+            ManifestJson = manifestJson,
             Source = PoisonSource,
             CreatedAt = DateTimeOffset.UtcNow
         };
@@ -102,5 +102,19 @@ public class DynamicCustomNodeTaskCapabilityTests
 
         var failure = Assert.IsType<LegacyNodeResult.Failure>(result);
         Assert.Contains("code execution", failure.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnknownTier_FailsClosed_WithoutCompiling()
+    {
+        // An out-of-range enum value (the string-enum converter accepts integers by default) must NOT be
+        // treated as Compiled and pushed through Roslyn — it has to be refused as an unsupported tier.
+        var task = CreateTask(new StubCapabilityPolicy(enabled: true), manifestJson: "{\"tier\":99}");
+
+        var result = await task.ExecuteAsync(Context(), CancellationToken.None);
+
+        var failure = Assert.IsType<LegacyNodeResult.Failure>(result);
+        Assert.Contains("unsupported tier", failure.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("compilation", failure.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 }
