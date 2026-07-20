@@ -66,7 +66,7 @@ describe('OpenApiImporter', () => {
     fireEvent.click(screen.getByRole('button', { name: /import spec/i }));
 
     await waitFor(() => expect(vi.mocked(client.importSpecFromUrl)).toHaveBeenCalledWith(
-      'https://petstore3.swagger.io/api/v3/openapi.json', ''));
+      'https://petstore3.swagger.io/api/v3/openapi.json', '', false));
     await waitFor(() => expect(onImported).toHaveBeenCalledWith(mockSpec));
   });
 

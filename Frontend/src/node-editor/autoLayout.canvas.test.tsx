@@ -85,6 +85,9 @@ vi.mock('@xyflow/react', async () => {
       getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
       getZoom: () => 1,
     }),
+    // Canvas's viewport-restore poll calls getNodesBounds; the mock must export it or the rAF frame
+    // throws "No export defined" as an unhandled error (green tests, but a non-zero vitest exit).
+    getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 100 }),
     useStoreApi: () => ({ setState: vi.fn(), getState: () => ({}) }),
     useNodesInitialized: () => mockNodesInitialized,
     useConnection: (selector?: (c: { inProgress: boolean }) => unknown) =>
