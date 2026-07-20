@@ -129,18 +129,7 @@ import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 import { GlobalReadEdge } from './GlobalReadEdge';
 import { useVariableStore } from '../stores/useVariableStore';
 import type { VariableRecord } from '../stores/useVariableStore';
-
-// The API serializes the NodeStatus enum by ordinal (System.Text.Json default, no string converter),
-// so a node's execution status arrives as a number. Decode it to the NodeExecStatus name the node card
-// renders. Order MUST match Backend/Knotarium.Core/Domain/NodeStatus.cs. Strings pass through unchanged
-// (defensive, in case the wire format ever switches to string enums).
-const NODE_STATUS_NAMES = ['Pending', 'Running', 'Completed', 'Failed', 'Waiting', 'RequiresManualDecision'] as const;
-function decodeNodeExecStatus(raw: unknown): string {
-  if (typeof raw === 'number') {
-    return NODE_STATUS_NAMES[raw] ?? 'Pending';
-  }
-  return typeof raw === 'string' && raw.length > 0 ? raw : 'Pending';
-}
+import { decodeNodeStatus } from '../utils/executionStatus';
 import { useInlineCodeEditorStore } from '../stores/useInlineCodeEditorStore';
 import { useSubflowOpenStore } from '../stores/useSubflowOpenStore';
 import { useConditionEditorOpenStore } from '../stores/useConditionEditorOpenStore';
@@ -1905,6 +1894,8 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
       setSavedSignature(workflowSignature(workflowName, nodes, edges));
       setWorkflowStatusMessage(`Saved and published version ${published.version.versionNumber} — active for runtime execution.`);
       onSaved?.(currentId);
+      // A save publishes a new graph, so any painted run-status is now stale — clear it.
+      resetNodeExecStatuses();
 
       // Frame the whole graph once, on the first save of a newly-created workflow — until now the viewport
       // sat wherever nodes were dropped (often pinned to a corner). Subsequent saves leave the view alone.
@@ -2019,6 +2010,31 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   const simulatable = useMemo(() => simulatablePins(nodes, edges), [nodes, edges]);
   const [showSimulate, setShowSimulate] = useState(false);
 
+  // Clear any painted run-status off the canvas nodes (back to the neutral "Pending"). Called when a
+  // fresh run starts, when the graph is edited (the shown statuses no longer match the graph), and on
+  // save — so stale "Completed/Failed" badges never linger against a changed graph. execStatus isn't
+  // part of the workflow signature, so this never affects the dirty state or the saved definition.
+  const resetNodeExecStatuses = useCallback(() => {
+    setNodes((current) => {
+      if (!current.some((node) => node.data?.execStatus && node.data.execStatus !== 'Pending')) {
+        return current;
+      }
+      return current.map((node) =>
+        node.data?.execStatus && node.data.execStatus !== 'Pending'
+          ? { ...node, data: { ...node.data, execStatus: 'Pending' } }
+          : node);
+    });
+  }, [setNodes]);
+
+  // As soon as the graph is edited (dirty), drop the last run's node-status painting: it described the
+  // previous graph and would otherwise stick — including the reported case where adding a node left the
+  // old nodes stuck on "Completed". Painting execStatus doesn't affect `isDirty`, so this won't loop.
+  useEffect(() => {
+    if (isDirty) {
+      resetNodeExecStatuses();
+    }
+  }, [isDirty, resetNodeExecStatuses]);
+
   // Run = activate the selected version, then trigger it. Activation happens
   // every time, so the dropdown selection is always what executes — no separate
   // "Activate" step needed, and running works even when nothing has changed.
@@ -2045,10 +2061,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     // Clear variable values before running to reset status to 'awaiting run'
     useVariableStore.getState().clearVariableValues(currentId);
     // Reset any prior run's node-status painting so this run starts from a clean slate.
-    setNodes((current) => current.map((node) =>
-      node.data?.execStatus && node.data.execStatus !== 'Pending'
-        ? { ...node, data: { ...node.data, execStatus: 'Pending' } }
-        : node));
+    resetNodeExecStatuses();
     // Starting a run re-initializes the flow to its default viewport, jumping the graph into the
     // upper-left corner. Snapshot the current framing now and restore it once that reset settles, so
     // the camera stays exactly where the user left it. Two attempts cover slight timing variance.
@@ -2098,7 +2111,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         // place, so a run's progress (running/completed/failed) is visible without leaving the editor.
         setNodes((current) => current.map((node) => {
           const state = exec.nodeStates?.find((ns) => ns.nodeId.value === node.id);
-          const status = state ? decodeNodeExecStatus(state.status) : (node.data?.execStatus ?? 'Pending');
+          const status = state ? decodeNodeStatus(state.status) : (node.data?.execStatus ?? 'Pending');
           if (node.data?.execStatus === status) {
             return node;
           }
