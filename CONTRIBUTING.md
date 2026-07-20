@@ -16,8 +16,8 @@ This is an early-stage project maintained on a **best-effort, spare-time basis**
 See the [README](README.md) for how to run the app (Docker or from source). To run the checks:
 
 ```bash
-# Backend tests
-dotnet test
+# Backend tests (run from the Backend/ folder, where the solution lives)
+cd Backend && dotnet test
 
 # Frontend tests + type check
 cd Frontend && npm install && npm test && npm run build
