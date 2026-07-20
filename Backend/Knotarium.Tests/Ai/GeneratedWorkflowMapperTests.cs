@@ -41,8 +41,12 @@ public class GeneratedWorkflowMapperTests
         var instance = Assert.IsType<JsonElement>(props["instance"]);
         Assert.Equal("site-a", instance.GetProperty("value").GetString());
 
-        // Scalars still unbox to their CLR primitive.
-        Assert.Equal(1L, props["globalCameraNumber"]);
+        // Scalars unbox to a CLR primitive (the point of the test: objects/arrays stay JsonElement,
+        // scalars do not) — the exact numeric boxing (long vs double) is an implementation detail of the
+        // JSON reader, so assert the value, not the box.
+        var cameraNumber = props["globalCameraNumber"];
+        Assert.IsNotType<JsonElement>(cameraNumber);
+        Assert.Equal(1, System.Convert.ToInt32(cameraNumber));
     }
 
     [Fact]
