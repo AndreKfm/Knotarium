@@ -8,6 +8,11 @@
          can be told apart from a stale one. Build time is derived from the assembly file timestamp at
          runtime, so it updates on every rebuild without touching this value. -->
     <Version>0.1.4</Version>
+    <!-- Brand icon embedded into the generated Windows apphost (Knotarium.Api.exe). Gives the
+         executable — and therefore the Start-Menu shortcut, taskbar, Explorer, and the installer's
+         Add/Remove Programs entry (UninstallDisplayIcon points at the exe) — a real icon instead of
+         the generic blank one. Windows-only; ignored by the linux-x64 publish. -->
+    <ApplicationIcon>knotarium.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

@@ -44,6 +44,8 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#AppExe}
+; Brand the setup.exe itself (the embedded exe icon also drives the installed exe's Add/Remove entry).
+SetupIconFile=..\Backend\Knotarium.Api\knotarium.ico
 OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBase}
 Compression=lzma2
