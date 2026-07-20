@@ -33,12 +33,27 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _databasePath;
     private readonly string _tempWorkflowStoreFolder;
+    private readonly string _tempDataDirectory;
+
+    // Enables only the code.execute capability, so the node-editor sandbox tests can compile+run while
+    // every other capability stays denied by default.
+    private sealed class CodeExecutionEnabledPolicy : Knotarium.Core.Contracts.ICapabilityPolicy
+    {
+        public Task<bool> IsEnabledAsync(string capability, CancellationToken cancellationToken = default)
+            => Task.FromResult(capability == Knotarium.Core.Domain.NodeCapabilities.CodeExecution);
+    }
 
     public WorkflowApiTests(KnotariumApiFactory factory)
     {
         _databasePath = Path.Combine(Path.GetTempPath(), $"knotarium-api-tests-{Guid.NewGuid():N}.db");
         _tempWorkflowStoreFolder = Path.Combine(Path.GetTempPath(), $"knotarium-api-wftests-{Guid.NewGuid():N}");
-        
+        // Isolate the machine-wide data directory too: unset, the host defaults it to a system path
+        // (%ProgramData%\Knotarium / /usr/share/Knotarium) that a CI user can't create or measure, so the
+        // disk-space guard reads it as low-on-space and pauses arming — which 409s executions. A writable
+        // per-test temp dir keeps the guard happy and stops cross-test/run contamination.
+        _tempDataDirectory = Path.Combine(Path.GetTempPath(), $"knotarium-api-data-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_tempDataDirectory);
+
         var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
         {
             DataSource = _databasePath
@@ -47,13 +62,18 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
         // Override DbContext to use an isolated in-memory database for each test run
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            // The /api/executions (external-trigger) path is gated on the runtime being armed; seed it
+            // armed (matching RuntimeArmingPersistenceTests' UseSetting seam) so the execution tests
+            // exercise real behaviour instead of the disarmed 409.
+            builder.UseSetting("Runtime:Armed", "true");
             builder.ConfigureAppConfiguration((_, configurationBuilder) =>
             {
                 configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Security:PackageSigning:TrustedPublicKeys:0"] = TestPublicKey,
                     ["Security:PackageSigning:HostPrivateKeyBase64"] = Convert.ToBase64String(TestPrivateKey),
-                    ["Security:Credentials:EncryptionKeyBase64"] = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+                    ["Security:Credentials:EncryptionKeyBase64"] = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+                    ["Storage:DataDirectory"] = _tempDataDirectory
                 });
             });
 
@@ -95,6 +115,16 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
 
                 services.AddScoped(sp => new FileWorkflowStore(_tempWorkflowStoreFolder, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FileWorkflowStore>>()));
                 services.AddScoped<IWorkflowStore>(sp => sp.GetRequiredService<FileWorkflowStore>());
+
+                // The node-editor sandbox-test endpoint compiles+runs real code, gated by the off-by-default
+                // code.execute capability. Enable just that one so those tests exercise the compile/run path;
+                // other capabilities stay denied (the undeclared-capability test relies on that).
+                foreach (var capabilityDescriptor in services
+                    .Where(d => d.ServiceType == typeof(Knotarium.Core.Contracts.ICapabilityPolicy)).ToList())
+                {
+                    services.Remove(capabilityDescriptor);
+                }
+                services.AddSingleton<Knotarium.Core.Contracts.ICapabilityPolicy>(new CodeExecutionEnabledPolicy());
             });
         });
     }
@@ -123,6 +153,20 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
             try
             {
                 Directory.Delete(_tempWorkflowStoreFolder, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        if (Directory.Exists(_tempDataDirectory))
+        {
+            try
+            {
+                Directory.Delete(_tempDataDirectory, recursive: true);
             }
             catch (IOException)
             {
