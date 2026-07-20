@@ -72,6 +72,12 @@ function loadPaletteSectionOrder(): PaletteSectionKey[] {
 // backend registers them as known node packages.
 const ANNOTATION_NODE_IDS = new Set(['stickyNote', 'group']);
 
+// Built-in node types no longer offered in the palette. `manualTrigger` is redundant with `start`
+// (both are manual-run entry points — see TriggerEntryResolver), so it's hidden from new workflows.
+// It stays registered/executable so any existing workflow that already contains one still renders and
+// runs; only the palette stops offering it.
+const PALETTE_HIDDEN_NODE_IDS = new Set(['manualTrigger']);
+
 function getLatestManifest(nodePackage: NodePackageSummary): Record<string, unknown> | null {
   const latestVersion = [...(nodePackage.versions || [])].sort((left, right) => {
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
@@ -227,7 +233,7 @@ function SidebarPaletteImpl({ availableNodes, onAddNode, onDragStart, onImportOp
   });
 
   const filteredItems = availableNodes
-    .filter(nodePackage => !ANNOTATION_NODE_IDS.has(nodePackage.id))
+    .filter(nodePackage => !ANNOTATION_NODE_IDS.has(nodePackage.id) && !PALETTE_HIDDEN_NODE_IDS.has(nodePackage.id))
     .map(buildPaletteItem)
     .filter(item => queryTokens.every(token => item.searchText.includes(token)))
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
