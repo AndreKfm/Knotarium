@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Dashboard } from './components/Dashboard';
 import { Canvas } from './components/Canvas';
 import { ExecutionDetail } from './components/ExecutionDetail/index';
@@ -730,22 +731,25 @@ export default function App() {
         }}
       />
 
-      {runStartedExecutionId && (
+      {runStartedExecutionId && createPortal(
         <div
           role="status"
           style={{
+            // Portaled to <body> and centred along the bottom so it clears the right-side properties
+            // panel (which previously overlapped/clipped it) and is always plainly visible.
             position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            zIndex: 50,
+            bottom: '28px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 2000,
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
             padding: '12px 16px',
             borderRadius: '10px',
-            background: 'rgba(16, 22, 37, 0.96)',
-            border: '1px solid var(--border-color)',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+            background: 'rgba(16, 22, 37, 0.98)',
+            border: '1px solid rgba(94, 234, 212, 0.35)',
+            boxShadow: '0 12px 40px rgba(0, 0, 0, 0.55)',
             color: 'var(--text-secondary)',
             fontSize: '0.85rem',
           }}
@@ -784,7 +788,8 @@ export default function App() {
           >
             ×
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {showTour && <GuidedTour onClose={closeTour} />}
