@@ -93,6 +93,9 @@ jobs:
   backend-tests:
     name: Backend tests
     runs-on: ubuntu-latest
+    # A hang (e.g. a sandbox worker that failed to start) should abort the job in minutes, not sit for
+    # the 6-hour default. --blame-hang-timeout below turns a hung test into a diagnostic failure first.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -105,9 +108,22 @@ jobs:
       - name: Restore
         run: dotnet restore Backend/Knotarium.slnx
 
+      # Build once up front so the test step doesn't build + spawn test hosts at the same time.
+      - name: Build
+        run: dotnet build Backend/Knotarium.slnx --no-restore --configuration Release
+
+      # The runner has ~7 GB RAM. Running all four test assemblies in parallel, each with xUnit
+      # collection-parallelism (plus the sandbox tests spawning worker processes), OOMs the CLR and then
+      # a test blocks forever on a worker that never started. Serialize everything and cap the hang.
       - name: Run backend test suite
         run: >-
           dotnet test Backend/Knotarium.slnx
-          --no-restore
+          --no-build
           --configuration Release
           --logger "console;verbosity=normal"
+          --blame-hang-timeout 5m
+          --
+          RunConfiguration.MaxCpuCount=1
+          xUnit.parallelizeAssembly=false
+          xUnit.parallelizeTestCollections=false
+          xUnit.maxParallelThreads=1
