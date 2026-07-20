@@ -297,6 +297,8 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
   const [center, setCenter] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [size, setSize] = useState<{ w: number; h: number }>(() => ({ w: 1060, h: 660 }));
   const [split, setSplit] = useState<number>(DEFAULT_SPLIT);
+  // null = unknown (policy not loaded / fetch failed → don't warn, don't block); true/false = known.
+  const [codeExecEnabled, setCodeExecEnabled] = useState<boolean | null>(null);
 
   const modalRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -414,6 +416,19 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Is inline-code execution enabled? Editing/saving is ALWAYS allowed (persisting code is inert);
+  // only *running* is gated by the 'code.execute' capability. We fetch it to warn + disable "Run
+  // test", not to block save. Failure leaves it null (unknown) → no warning, don't block.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCodeExecEnabled(null);
+    api.getCapabilityPolicy()
+      .then((p) => { if (!cancelled) setCodeExecEnabled((p.enabledCapabilities ?? []).includes('code.execute')); })
+      .catch(() => { if (!cancelled) setCodeExecEnabled(null); });
+    return () => { cancelled = true; };
+  }, [open]);
+
   // Keep centered over the canvas on window resize.
   useEffect(() => {
     if (!open) return;
@@ -516,6 +531,16 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
       setRunning(false);
     }
   }, [buffer, language, sampleInputs, onSave]);
+
+  // Plain save: persist the code WITHOUT running it. Saving is inert (just stores text), so it must
+  // always work even when execution is disabled — otherwise you edit code you can't save and lose it.
+  // No meta.outputKeys is passed, so the caller preserves any output chips captured by a prior run;
+  // they refresh on the next successful test.
+  const saveNow = useCallback(() => {
+    onSave(buffer);
+    setSavedCode(buffer);
+    setSavedInputs(sampleInputs);
+  }, [buffer, sampleInputs, onSave]);
 
   const requestClose = useCallback(() => {
     if (!dirty) closeNow();
@@ -665,11 +690,41 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
               </>
             )}
           </div>
-          <button onClick={() => void runTest()} disabled={running} style={runBtn(running)}>
+          <button
+            onClick={() => void runTest()}
+            disabled={running || codeExecEnabled === false}
+            title={codeExecEnabled === false
+              ? 'Inline code execution is disabled in Settings → Security → Capabilities.'
+              : undefined}
+            style={runBtn(running || codeExecEnabled === false)}
+          >
             {running ? 'Running…' : '▶ Run test'}
+          </button>
+          <button
+            onClick={saveNow}
+            disabled={!dirty}
+            title={dirty ? 'Save the code without running it' : 'No unsaved changes'}
+            style={saveBtn(!dirty)}
+          >
+            Save
           </button>
           <button onClick={requestClose} style={closeBtn}>Close</button>
         </div>
+
+        {/* Execution-disabled notice — non-blocking: editing + saving stay available. */}
+        {codeExecEnabled === false && (
+          <div style={{
+            margin: '0 14px 6px', padding: '9px 13px', borderRadius: '10px',
+            background: 'rgba(230,169,107,0.10)', border: '1px solid rgba(230,169,107,0.32)',
+            color: '#e6a96b', fontSize: '12.5px', lineHeight: 1.5, display: 'flex', gap: '8px', alignItems: 'baseline',
+          }}>
+            <span aria-hidden="true" style={{ fontWeight: 800 }}>⚠</span>
+            <span>
+              Inline code execution is disabled in <strong>Settings → Security → Capabilities</strong>.
+              You can edit and save, but this node won’t run (or test) until an admin enables it.
+            </span>
+          </div>
+        )}
 
         {/* Body: panels float on the modal base with gaps, no hard rules */}
         <div ref={bodyRef} style={{ flex: 1, minHeight: 0, display: 'flex', gap: '6px', padding: '4px 14px 14px' }}>
@@ -733,7 +788,7 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
                 {localError && <Block title="Error" color="#f87171">{localError}</Block>}
                 {!localError && !result && (
                   <div style={{ color: C.faint, fontSize: '13px', lineHeight: 1.55, paddingTop: '6px' }}>
-                    Run the script to see its output, logs, and any errors. A passing run saves automatically.
+                    Run the script to see its output, logs, and any errors. A passing run saves automatically; you can also <strong>Save</strong> at any time without running.
                   </div>
                 )}
                 {result && (
@@ -765,10 +820,20 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
             <div style={{ width: 'min(420px, 80%)', background: C.base, border: `1px solid ${C.line}`, borderRadius: '14px', padding: '20px 22px', boxShadow: '0 30px 70px -30px rgba(0,0,0,0.9)' }}>
               <div style={{ fontWeight: 750, color: C.ink, marginBottom: '6px', fontSize: '15px' }}>Unsaved changes</div>
               <div style={{ fontSize: '0.85rem', color: C.muted, marginBottom: '18px', lineHeight: 1.5 }}>
-                Test &amp; save before closing? A failing test will keep the editor open.
+                Save your code before closing? “Test &amp; Save” also runs it first (a failing test keeps the editor open).
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button onClick={() => void confirmTestAndSave()} disabled={running} style={runBtn(running)}>
+                <button onClick={() => { saveNow(); closeNow(); }} style={saveBtn(false)}>
+                  Save
+                </button>
+                <button
+                  onClick={() => void confirmTestAndSave()}
+                  disabled={running || codeExecEnabled === false}
+                  title={codeExecEnabled === false
+                    ? 'Inline code execution is disabled in Settings → Security → Capabilities.'
+                    : undefined}
+                  style={runBtn(running || codeExecEnabled === false)}
+                >
                   {running ? 'Testing…' : 'Test & Save'}
                 </button>
                 <button onClick={closeNow} style={closeBtn}>Leave without saving</button>
@@ -836,6 +901,16 @@ const closeBtn: React.CSSProperties = {
   background: C.card, border: `1px solid ${C.line}`, color: C.ink, fontFamily: 'inherit',
   fontSize: '13px', fontWeight: 600, borderRadius: '10px', padding: '10px 17px', cursor: 'pointer',
 };
+
+// Plain save — always available (persisting code is inert). Emphasized (green) when there are
+// unsaved changes; muted/idle when there's nothing to save.
+const saveBtn = (disabled: boolean): React.CSSProperties => ({
+  background: disabled ? C.card : 'rgba(52,211,153,0.16)',
+  border: `1px solid ${disabled ? C.line : 'rgba(52,211,153,0.4)'}`,
+  color: disabled ? C.faint : C.green, fontFamily: 'inherit',
+  fontSize: '13px', fontWeight: 700, borderRadius: '10px', padding: '10px 17px',
+  cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.7 : 1,
+});
 
 const badge = (success: boolean): React.CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 700,
