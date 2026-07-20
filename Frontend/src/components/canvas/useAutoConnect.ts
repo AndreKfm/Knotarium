@@ -43,7 +43,7 @@ export interface UseAutoConnectArgs {
 
 export interface AutoConnect {
   /** Drag-time affordance: glow the ports that would auto-connect on release. */
-  handleNodeDrag: (event: React.MouseEvent, node: RFNode) => void
+  handleNodeDrag: (event: MouseEvent | TouchEvent, node: RFNode) => void
   /** After a drop/drag-stop, auto-wire the node to nearby free compatible ports (deferred 2 frames). */
   scheduleProximityConnect: (nodeId: string, triggerOnly: boolean) => void
   /** Splice a dropped node onto the edge under the cursor (A → new → B); false if no edge is hit. */
@@ -200,7 +200,7 @@ export function useAutoConnect(args: UseAutoConnectArgs): AutoConnect {
 
   // Drag-time affordance: while a node is dragged, glow the ports that would auto-connect on release.
   const handleNodeDrag = useCallback(
-    (_event: React.MouseEvent, node: RFNode) => {
+    (_event: MouseEvent | TouchEvent, node: RFNode) => {
       const setKeys = useVariableStore.getState().setSnapCandidateKeys;
       if (isContainerNodeType(node.type)) {
         setKeys([]);

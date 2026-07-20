@@ -939,7 +939,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     dragProximityRef.current = null;
   }, []);
 
-  const handleNodeDragStop = useCallback((_event: React.MouseEvent, node: RFNode) => {
+  const handleNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: RFNode) => {
     // Clear the drag-time snap highlight + proximity cache regardless of node type.
     useVariableStore.getState().setSnapCandidateKeys([]);
     dragProximityRef.current = null;
