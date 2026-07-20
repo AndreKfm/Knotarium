@@ -42,6 +42,8 @@ vi.mock('@xyflow/react', async () => {
     Controls: () => null,
     Background: () => null,
     BackgroundVariant: { Dots: 'dots' },
+    useReactFlow: () => ({ fitView: () => {} }),
+    useNodesInitialized: () => true,
   };
 });
 

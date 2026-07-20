@@ -6,8 +6,10 @@ import {
   Background,
   Controls,
   BackgroundVariant,
+  useReactFlow,
+  useNodesInitialized,
 } from '@xyflow/react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type {
   Node as RFNode,
   Edge as RFEdge,
@@ -21,6 +23,24 @@ import { GlobalReadEdge } from '../GlobalReadEdge';
 const edgeTypes = {
   globalRead: GlobalReadEdge,
 };
+
+// Fit the graph into view ONCE its nodes have actually been measured. React Flow's `fitView` prop
+// fires on mount — before the async-loaded run's nodes have dimensions — so it fits to nothing and
+// leaves the viewport at the origin, making the graph look "empty" (nodes sit off-screen). Waiting for
+// `useNodesInitialized` guarantees real bounds. Rendered as a child of <ReactFlow> so the hooks resolve
+// against its context; `fitKey` (the execution id) resets the one-shot so each opened run re-fits.
+function FitOnceMeasured({ fitKey }: { fitKey: string }) {
+  const nodesInitialized = useNodesInitialized();
+  const { fitView } = useReactFlow();
+  const fittedKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (nodesInitialized && fittedKey.current !== fitKey) {
+      fittedKey.current = fitKey;
+      void fitView({ padding: 0.2, duration: 300 });
+    }
+  }, [nodesInitialized, fitKey, fitView]);
+  return null;
+}
 
 type ExecutionCanvasPanelProps = {
   executionId: string;
@@ -211,8 +231,8 @@ export function ExecutionCanvasPanel({
                 (node.data as { onOpen?: () => void })?.onOpen?.();
               }
             }}
-            fitView
           >
+            <FitOnceMeasured fitKey={executionId} />
             <Controls position="bottom-right" />
             <Background variant={BackgroundVariant.Dots} color="rgba(255,255,255,0.06)" size={1.5} gap={24} />
           </ReactFlow>

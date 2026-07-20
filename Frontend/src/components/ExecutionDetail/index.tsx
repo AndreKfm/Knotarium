@@ -514,7 +514,12 @@ function ExecutionDetailInner({ executionId, onBack, onTriggeredExecution, onGra
   }, [onTriggeredExecution]);
 
   const executionVisualStatus = execution ? mapExecutionStatus(execution.status) : null;
-  const displayNodes = applySubflowNames(enrichNodesWithPackageMetadata(nodes, availableNodeMetadata), workflowNameById);
+  // Memoized so unrelated re-renders (execution/journal updates during a run) don't hand React Flow a
+  // brand-new node array every time — which churns the canvas and can disturb the viewport.
+  const displayNodes = useMemo(
+    () => applySubflowNames(enrichNodesWithPackageMetadata(nodes, availableNodeMetadata), workflowNameById),
+    [nodes, availableNodeMetadata, workflowNameById],
+  );
   const availableNodeIds = useMemo(
     () => Array.from(new Set([...availableNodes.map((nodePackage) => nodePackage.id), ...displayNodes.map((node) => node.type || '')].filter(Boolean))),
     [availableNodes, displayNodes],
