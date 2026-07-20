@@ -12,6 +12,7 @@
   <Project Path="Knotarium.Features.Ai/Knotarium.Features.Ai.csproj" />
   <Project Path="Knotarium.Infrastructure/Knotarium.Infrastructure.csproj" />
   <Project Path="Knotarium.NodeRuntime/Knotarium.NodeRuntime.csproj" />
+  <Project Path="Knotarium.SandboxWorker/Knotarium.SandboxWorker.csproj" />
   <Project Path="Knotarium.NodeRuntime.Tests/Knotarium.NodeRuntime.Tests.csproj" />
   <Project Path="Knotarium.Architecture.Tests/Knotarium.Architecture.Tests.csproj" />
   <Project Path="Knotarium.Tests/Knotarium.Tests.csproj" />
