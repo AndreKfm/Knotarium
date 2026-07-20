@@ -123,34 +123,32 @@ function ExecutionDetailInner({ executionId, onBack, onTriggeredExecution, onGra
     consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [journal]);
 
-  const syncNodeStates = useCallback((wf: WorkflowDefinition, exec: ExecutionInstance) => {
-    const { nodes: rfNodes, edges: rfEdges } = schemaMapper.toReactFlow(wf);
-    const enrichedRfNodes = enrichNodesWithPackageMetadata(rfNodes, availableNodeMetadata);
+  // Refresh node execution statuses from a fresh execution snapshot WITHOUT rebuilding the graph.
+  // The node set and layout are fixed for a run (established once on load), so we update statuses in
+  // place — preserving each node's identity, position, and the current viewport. Rebuilding from the
+  // definition here (as this used to) reset React Flow's fit/pan on every SSE event and on "Replay
+  // Logs", making the graph appear to vanish, and also wiped any manual drag positions. The `wf`
+  // parameter is kept for call-site compatibility but no longer needed.
+  const syncNodeStates = useCallback((_wf: WorkflowDefinition, exec: ExecutionInstance) => {
+    setNodes((currentNodes) => currentNodes.map((node) => {
+      const state = exec.nodeStates?.find((ns) => ns.nodeId.value === node.id);
+      const dbStatus = deriveCanvasNodeStatus(node.id, state, exec);
+      const localStatus = (node.data?.execStatus as string) || 'Pending';
+      const finalStatus = isProgressiveTransition(localStatus, dbStatus as string) ? dbStatus : localStatus;
+      const errorMessage = state?.errorMessage || node.data?.errorMessage;
 
-    setNodes((currentNodes) => {
-      return enrichedRfNodes.map((rfNode) => {
-        const state = exec.nodeStates?.find((ns) => ns.nodeId.value === rfNode.id);
-        const dbStatus = deriveCanvasNodeStatus(rfNode.id, state, exec);
-        const localNode = currentNodes.find((node) => node.id === rfNode.id);
-        const localStatus = (localNode?.data?.execStatus as string) || 'Pending';
-        const finalStatus = isProgressiveTransition(localStatus, dbStatus as string) ? dbStatus : localStatus;
-        const errorMessage = state?.errorMessage || localNode?.data?.errorMessage;
-
-        return {
-          ...rfNode,
+      return {
+        ...node,
+        execStatus: finalStatus,
+        errorMessage,
+        data: {
+          ...node.data,
           execStatus: finalStatus,
           errorMessage,
-          data: {
-            ...rfNode.data,
-            execStatus: finalStatus,
-            errorMessage,
-          },
-        } as RFNode;
-      });
-    });
-
-    setEdges(rfEdges);
-  }, [availableNodeMetadata]);
+        },
+      } as RFNode;
+    }));
+  }, []);
 
   useEffect(() => {
     const loadAll = async () => {
