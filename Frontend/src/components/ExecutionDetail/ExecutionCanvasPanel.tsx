@@ -14,6 +14,7 @@ import type {
   Node as RFNode,
   Edge as RFEdge,
   NodeTypes,
+  OnNodesChange,
 } from '@xyflow/react';
 import { ArrowLeft, History, RefreshCw, ScanSearch } from 'lucide-react';
 import { createStatusClassName, getStatusLabel } from './timelineUtils';
@@ -50,6 +51,7 @@ type ExecutionCanvasPanelProps = {
   nodes: RFNode[];
   edges: RFEdge[];
   combinedNodeTypes: NodeTypes;
+  onNodesChange?: OnNodesChange<RFNode>;
   onBack: () => void;
   onReplay: () => void;
   onNodeReplayRequest?: (nodeId: string) => void;
@@ -70,6 +72,7 @@ export function ExecutionCanvasPanel({
   nodes,
   edges,
   combinedNodeTypes,
+  onNodesChange,
   onBack,
   onReplay,
   onNodeReplayRequest,
@@ -216,7 +219,7 @@ export function ExecutionCanvasPanel({
             edges={edges}
             nodeTypes={combinedNodeTypes}
             edgeTypes={edgeTypes}
-            onNodesChange={undefined}
+            onNodesChange={onNodesChange}
             onEdgesChange={undefined}
             nodesDraggable={true}
             nodesConnectable={false}

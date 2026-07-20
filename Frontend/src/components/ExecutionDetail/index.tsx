@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ReactFlowProvider } from '@xyflow/react';
-import type { Edge as RFEdge, Node as RFNode } from '@xyflow/react';
+import { ReactFlowProvider, applyNodeChanges } from '@xyflow/react';
+import type { Edge as RFEdge, Node as RFNode, NodeChange } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '../../utils/api';
 import { createNodePackageMetadataMap, enrichNodesWithPackageMetadata, applySubflowNames } from '../../utils/nodePackages';
@@ -514,6 +514,18 @@ function ExecutionDetailInner({ executionId, onBack, onTriggeredExecution, onGra
   }, [onTriggeredExecution]);
 
   const executionVisualStatus = execution ? mapExecutionStatus(execution.status) : null;
+  // Apply React Flow's own node changes (chiefly measured dimensions once it lays the nodes out). Without
+  // an onNodesChange handler the canvas is fully controlled and React Flow can't persist those dimensions,
+  // so it re-initializes on every status update — which resets the viewport and makes the graph appear to
+  // vanish ("blinks then empty"). Position changes are ignored (the run view isn't a place to rearrange).
+  const onNodesChange = useCallback((changes: NodeChange<RFNode>[]) => {
+    const persisted = changes.filter((change) => change.type === 'dimensions' || change.type === 'select');
+    if (persisted.length === 0) {
+      return;
+    }
+    setNodes((current) => applyNodeChanges(persisted, current));
+  }, []);
+
   // Memoized so unrelated re-renders (execution/journal updates during a run) don't hand React Flow a
   // brand-new node array every time — which churns the canvas and can disturb the viewport.
   const displayNodes = useMemo(
@@ -775,6 +787,7 @@ function ExecutionDetailInner({ executionId, onBack, onTriggeredExecution, onGra
         nodes={canvasNodes}
         edges={canvasEdges}
         combinedNodeTypes={canvasNodeTypes}
+        onNodesChange={onNodesChange}
         onBack={onBack}
         onReplay={handleReplay}
         onNodeReplayRequest={handleNodeReplayRequest}
