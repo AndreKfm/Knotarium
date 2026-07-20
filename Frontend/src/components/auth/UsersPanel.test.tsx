@@ -35,14 +35,16 @@ describe('UsersPanel — closing', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('closes on a backdrop click but not when clicking inside the dialog', () => {
+  it('closes on a backdrop mousedown but not when the press lands inside the dialog', () => {
     const onClose = vi.fn();
     const { container } = render(<UsersPanel onClose={onClose} />);
-    // Clicking the heading (inside the dialog) must not close.
-    fireEvent.click(screen.getByText('Users'));
+    // Dismissal keys off mousedown on the scrim (see useScrimClose): a press that lands on the
+    // heading (inside the dialog) must not close, even though a click could start there and end
+    // out over the backdrop.
+    fireEvent.mouseDown(screen.getByText('Users'));
     expect(onClose).not.toHaveBeenCalled();
-    // Clicking the backdrop (the outermost overlay) closes.
-    fireEvent.click(container.firstChild as HTMLElement);
+    // A press that lands directly on the backdrop (the outermost overlay) closes.
+    fireEvent.mouseDown(container.firstChild as HTMLElement);
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
