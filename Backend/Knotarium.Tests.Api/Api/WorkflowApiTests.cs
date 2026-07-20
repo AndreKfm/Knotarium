@@ -1364,14 +1364,34 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
     [Fact]
     public async Task ResumeExecution_WithHeaderToken_ConsumesTokenAndQueuesWorkItem()
     {
-        var client = _factory.CreateClient();
+        // The resume endpoint enqueues a *Pending* Resume work item; the live WorkflowExecutionWorker
+        // then races to flip it to Running, making the Pending assertion below flaky. This test only
+        // cares that the endpoint consumed the token, wrote the resume journal entry, and enqueued the
+        // work item — not that the worker hasn't picked it up yet. Run against a host with the execution
+        // worker removed so the enqueued state stays observable. (Everything else — arming, the isolated
+        // DB, capability policy — is inherited from _factory's builder.) Use this factory exclusively so
+        // _factory's own host never starts and drains the shared SQLite queue.
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                foreach (var worker in services
+                    .Where(d => d.ImplementationType == typeof(Knotarium.Features.Execution.WorkflowExecutionWorker))
+                    .ToList())
+                {
+                    services.Remove(worker);
+                }
+            });
+        });
+
+        var client = factory.CreateClient();
         var workflowId = WorkflowDefinitionId.New();
         var executionId = ExecutionInstanceId.New();
         var waitingNodeId = NodeId.Create("wait-webhook");
         string rawToken;
         WorkflowVersionId workflowVersionId;
 
-        using (var scope = _factory.Services.CreateScope())
+        using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var tokenService = scope.ServiceProvider.GetRequiredService<ICorrelationTokenService>();
@@ -1427,7 +1447,7 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        using var verificationScope = _factory.Services.CreateScope();
+        using var verificationScope = factory.Services.CreateScope();
         var verificationDb = verificationScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var execution = await verificationDb.ExecutionInstances.SingleAsync(item => item.Id == executionId);
         var token = await verificationDb.CorrelationTokens.SingleAsync(item => item.ExecutionInstanceId == executionId);

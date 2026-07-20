@@ -52,6 +52,17 @@ public sealed class ManualDecisionTests : IClassFixture<KnotariumApiFactory>, ID
                 }
 
                 services.AddScoped<IExecutionJournalWriter>(_ => new SqliteExecutionJournalWriter(connectionString));
+
+                // Both tests in this class drive processing deterministically (one calls
+                // ProcessWorkItemAsync directly; the other expects a rejection) — neither relies on the
+                // background WorkflowExecutionWorker. Remove it so it can't race the enqueued work item
+                // to Running/Completed before the assertions observe its Pending state.
+                foreach (var worker in services
+                    .Where(d => d.ImplementationType == typeof(Knotarium.Features.Execution.WorkflowExecutionWorker))
+                    .ToList())
+                {
+                    services.Remove(worker);
+                }
             });
         });
     }
