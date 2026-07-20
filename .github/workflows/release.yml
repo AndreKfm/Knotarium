@@ -1,7 +1,10 @@
 name: Release
 
-# Builds and publishes the distribution artifacts (zip + Windows installer) whenever a
-# version tag is pushed, e.g.  git tag v1.0.0-rc.1 && git push origin v1.0.0-rc.1
+# Builds and publishes the distribution artifacts whenever a version tag is pushed,
+# e.g.  git tag v1.0.0-rc.1 && git push origin v1.0.0-rc.1
+#   - Windows: zip + Inno Setup installer (registers a Windows service)
+#   - Linux:   self-contained linux-x64 .tar.gz (preserves the executable bit)
+# Both jobs attach their assets to the same GitHub Release.
 #
 # Tags containing a hyphen (v1.0.0-rc.1, v1.0.0-beta.2) are marked as pre-releases.
 
@@ -75,3 +78,66 @@ jobs:
             publish/*.zip.sha256
             publish/*setup.exe
             publish/*setup.exe.sha256
+
+  linux:
+    name: Build Linux artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+
+      - name: Resolve version from tag
+        id: ver
+        shell: bash
+        run: |
+          # For a tag push GITHUB_REF_NAME is the tag (v1.0.0-rc.1); for a manual run fall back to 0.0.0-dev.
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="0.0.0-dev"
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          # Pre-release when the version carries a hyphenated suffix (rc/beta/alpha).
+          if [[ "${VER}" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Build linux-x64 folder
+        shell: pwsh
+        run: ./publish.ps1 -Version '${{ steps.ver.outputs.version }}' -Runtime linux-x64
+
+      - name: Package tarball
+        shell: bash
+        run: |
+          VER='${{ steps.ver.outputs.version }}'
+          NAME="Knotarium-${VER}-linux-x64"
+          # Ensure the self-contained apphost is executable inside the archive.
+          chmod +x "publish/app/Knotarium.Api"
+          mv "publish/app" "publish/${NAME}"
+          # tar.gz (not zip) so the executable bit survives extraction on Linux.
+          ( cd publish && tar -czf "${NAME}.tar.gz" "${NAME}" && sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256" )
+
+      - name: Upload build artifacts (always)
+        uses: actions/upload-artifact@v7
+        with:
+          name: knotarium-${{ steps.ver.outputs.version }}-linux-x64
+          path: |
+            publish/*.tar.gz
+            publish/*.tar.gz.sha256
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v3
+        with:
+          prerelease: ${{ steps.ver.outputs.prerelease }}
+          files: |
+            publish/*.tar.gz
+            publish/*.tar.gz.sha256
