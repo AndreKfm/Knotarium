@@ -8,6 +8,7 @@ import '@xyflow/react/dist/style.css';
 import { api } from '../../utils/api';
 import { createNodePackageMetadataMap, enrichNodesWithPackageMetadata, applySubflowNames } from '../../utils/nodePackages';
 import { schemaMapper } from '../../utils/schemaMapper';
+import { decodeNodeStatus } from '../../utils/executionStatus';
 import { replaceIfChanged } from '../../utils/stableState';
 import type { ExecutionInstance, ExecutionJournal, NodePackageSummary, NodeStatus, ReplayResult, WorkflowDefinition, WorkflowScheduleSummary, WorkflowVersionSummary } from '../../types';
 import { createNodeTypes } from '../../utils/nodeTypes';
@@ -47,7 +48,10 @@ function deriveCanvasNodeStatus(
   exec: ExecutionInstance,
 ): string {
   if (state) {
-    return isSkippedData(state.outputs) ? 'Skipped' : mapNodeStatus(state.status as NodeStatus, exec.status);
+    // state.status arrives as a numeric enum ordinal (the API has no string-enum converter); decode it
+    // to the name mapNodeStatus/normalizeStatusValue expect, else every node falls through to 'Pending'
+    // and the canvas never colours. See utils/executionStatus.
+    return isSkippedData(state.outputs) ? 'Skipped' : mapNodeStatus(decodeNodeStatus(state.status) as NodeStatus, exec.status);
   }
   const device = getDeviceEventProvenance(exec);
   if (device) {
