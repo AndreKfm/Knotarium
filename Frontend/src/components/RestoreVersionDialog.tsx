@@ -1,7 +1,6 @@
 // Copyright 2026 Andre Kaufmann
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from 'react';
 import { AlertTriangle, RotateCcw, X, CheckCircle2 } from 'lucide-react';
 import { useScrimClose } from '../hooks/useScrimClose';
 import type { RestoreVersionResult } from '../types';
@@ -33,7 +32,6 @@ export function RestoreVersionDialog({
   onConfirm,
   onClose,
 }: RestoreVersionDialogProps) {
-  const [activate, setActivate] = useState(false);
   const onScrimMouseDown = useScrimClose(onClose, !busy);
 
   return (
@@ -81,8 +79,9 @@ export function RestoreVersionDialog({
         {!result ? (
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <p style={{ margin: 0, fontSize: '0.85rem', color: '#aab6c4', lineHeight: 1.5 }}>
-              Restore copies version <strong style={{ color: '#fde68a' }}>v{versionNumber}</strong> forward into a
-              new version (fork-forward) — the history stays append-only and nothing is overwritten.
+              This copies version <strong style={{ color: '#fde68a' }}>v{versionNumber}</strong> forward into a new
+              version and makes it the <strong style={{ color: '#fde68a' }}>current, live</strong> one. History stays
+              append-only — nothing is overwritten.
             </p>
             <div
               style={{
@@ -99,27 +98,11 @@ export function RestoreVersionDialog({
             >
               <AlertTriangle size={15} style={{ marginTop: 1, flex: '0 0 15px', color: '#ffce8a' }} />
               <span>
-                Restoring affects <strong>future executions only</strong>. It does not undo side effects already
-                caused by runs of the newer version.
+                Affects <strong>future executions only</strong> — it does not undo side effects already caused by
+                runs of the newer version. If it can't compile against the current nodes, it's created as an
+                inactive copy you can fix first.
               </span>
             </div>
-
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: '0.8rem', color: '#cdd7e3', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={activate}
-                onChange={(event) => setActivate(event.target.checked)}
-                disabled={busy}
-                style={{ marginTop: 2 }}
-              />
-              <span>
-                Activate now
-                <span style={{ display: 'block', color: '#7d8a9b', fontSize: '0.72rem' }}>
-                  Make the restored version live immediately. Requires a clean compile; otherwise the restore
-                  still creates an inactive forward copy you can fix first.
-                </span>
-              </span>
-            </label>
 
             {error && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: '#ffb4b4', fontSize: '0.78rem' }}>
@@ -137,11 +120,11 @@ export function RestoreVersionDialog({
                 Cancel
               </button>
               <button
-                onClick={() => onConfirm({ activate })}
+                onClick={() => onConfirm({ activate: true })}
                 disabled={busy}
                 style={primaryBtnStyle(busy)}
               >
-                {busy ? 'Restoring…' : activate ? 'Restore & activate' : 'Restore (inactive)'}
+                {busy ? 'Restoring…' : 'Restore this version'}
               </button>
             </div>
           </div>

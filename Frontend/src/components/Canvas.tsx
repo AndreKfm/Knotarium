@@ -2264,9 +2264,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
             isActiveVersion={editorMode.versionId === activeWorkflowVersion?.workflowVersionId}
             onExit={closeVersionOverview}
             onRestore={() => openRestoreDialog(editorMode.versionId)}
-            onDiffAgainstDraft={() => void handleDiffAgainstDraft(editorMode.versionId)}
-            onSetActive={() => handleActivateVersion(editorMode.versionId)}
-            activating={activatingVersionId === editorMode.versionId}
           />
         )}
 
@@ -2433,9 +2430,15 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
                 error={restoreError}
                 onConfirm={(options) => void confirmRestore(options)}
                 onClose={() => {
+                  // A completed restore made a new current version — leave the read-only preview so the
+                  // editor returns to the (now restored) draft instead of the old version we were viewing.
+                  const restored = restoreResult != null;
                   setRestoreTarget(null);
                   setRestoreResult(null);
                   setRestoreError(null);
+                  if (restored && editorMode.kind === 'preview') {
+                    closeVersionOverview();
+                  }
                 }}
               />
             )}

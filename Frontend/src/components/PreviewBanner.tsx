@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CSSProperties } from 'react';
-import { Eye, RotateCcw, X, GitCompareArrows, CheckCircle2 } from 'lucide-react';
+import { Eye, RotateCcw, X } from 'lucide-react';
 
 export interface PreviewBannerProps {
   /** Version number being previewed (read-only). */
@@ -10,12 +10,9 @@ export interface PreviewBannerProps {
   /** True while the previewed version is the live/active one. */
   isActiveVersion?: boolean;
   onExit: () => void;
+  /** Restore = make this the current, live version and return to editing. The single "go back to this
+   *  version" action (fork-forward + activate). Hidden when it's already the active version. */
   onRestore?: () => void;
-  onDiffAgainstDraft?: () => void;
-  /** Make THIS previewed version the live/active runtime version directly (no restore-copy needed). */
-  onSetActive?: () => void;
-  /** True while the activate call is in flight. */
-  activating?: boolean;
 }
 
 /**
@@ -29,13 +26,10 @@ export function PreviewBanner({
   isActiveVersion,
   onExit,
   onRestore,
-  onDiffAgainstDraft,
-  onSetActive,
-  activating,
 }: PreviewBannerProps) {
   const subtitle = isActiveVersion
     ? 'This is the active version — exit to return to your draft.'
-    : 'Make it the active version to run it, restore it to keep editing, or exit to your draft.';
+    : 'Restore it to make it the current, live version, or exit to return to your draft.';
 
   return (
     <div
@@ -99,42 +93,17 @@ export function PreviewBanner({
 
       <span style={{ flex: 1 }} />
 
-      {onDiffAgainstDraft && (
-        <button
-          type="button"
-          onClick={onDiffAgainstDraft}
-          style={secondaryBtnStyle}
-          title="Compare this version with your working draft"
-        >
-          <GitCompareArrows size={14} />
-          Diff vs draft
-        </button>
-      )}
-
-      {onRestore && (
+      {/* The single "go back to this version" action: makes it the current, live version (fork-forward
+          + activate) and returns to editing. Hidden when it is already the active version. */}
+      {!isActiveVersion && onRestore && (
         <button
           type="button"
           onClick={onRestore}
-          style={secondaryBtnStyle}
-          title="Restore this version as a new editable copy (fork-forward)"
+          style={restoreBtnStyle}
+          title="Make this the current, live version"
         >
           <RotateCcw size={14} />
-          Restore
-        </button>
-      )}
-
-      {/* Make the previewed version live directly — the "roll back and run this" action, distinct from
-          Restore (which forks a new editable copy). Hidden when it's already the active version. */}
-      {!isActiveVersion && onSetActive && (
-        <button
-          type="button"
-          onClick={onSetActive}
-          disabled={activating}
-          style={setActiveBtnStyle}
-          title="Make this the live/active version that runs"
-        >
-          <CheckCircle2 size={14} />
-          {activating ? 'Activating…' : 'Set active'}
+          Restore this version
         </button>
       )}
 
@@ -178,9 +147,9 @@ const exitBtnStyle: CSSProperties = {
   fontWeight: 700,
 };
 
-// Primary/positive action: promoting a version to live. Emerald accent so it stands apart from the
-// neutral Restore/Diff and the amber Exit.
-const setActiveBtnStyle: CSSProperties = {
+// Primary action: promoting a version to current/live. Emerald accent so it stands apart from the
+// amber Exit.
+const restoreBtnStyle: CSSProperties = {
   ...secondaryBtnStyle,
   background: 'rgba(16, 185, 129, 0.16)',
   border: '1px solid rgba(16, 185, 129, 0.5)',

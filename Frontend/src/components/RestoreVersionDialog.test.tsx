@@ -24,22 +24,16 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof RestoreVers
 }
 
 describe('RestoreVersionDialog', () => {
-  it('makes fork-forward + future-only semantics explicit', () => {
+  it('makes current-live + future-only semantics explicit', () => {
     renderDialog();
-    expect(screen.getByText(/fork-forward/)).toBeTruthy();
+    expect(screen.getAllByText(/current/).length).toBeGreaterThan(0);
     expect(screen.getByText(/future executions only/)).toBeTruthy();
   });
 
-  it('restores inactive by default', () => {
+  it('restores and activates in one action (no checkbox)', () => {
     const { onConfirm } = renderDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Restore (inactive)' }));
-    expect(onConfirm).toHaveBeenCalledWith({ activate: false });
-  });
-
-  it('restores and activates when the checkbox is ticked', () => {
-    const { onConfirm } = renderDialog();
-    fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Restore & activate' }));
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore this version' }));
     expect(onConfirm).toHaveBeenCalledWith({ activate: true });
   });
 
