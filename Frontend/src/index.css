@@ -544,7 +544,9 @@ code, pre {
 
 /* Per-row "Set active" — stays out of the way (revealed on row hover/keyboard highlight) so the menu
    reads cleanly, but is always shown while an activation is in flight. */
-.vrs-activate { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em; color: var(--color-accent); background: var(--color-accent-glow); border: 1px solid rgba(34, 211, 238, 0.32); border-radius: 6px; padding: 3px 9px; cursor: pointer; font-family: inherit; white-space: nowrap; opacity: 0; transition: opacity .1s, background .1s; }
+/* Kept faintly visible at rest (not fully hidden) so "Set active" is discoverable without hovering,
+   then brought to full strength on row hover/focus. */
+.vrs-activate { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em; color: var(--color-accent); background: var(--color-accent-glow); border: 1px solid rgba(34, 211, 238, 0.32); border-radius: 6px; padding: 3px 9px; cursor: pointer; font-family: inherit; white-space: nowrap; opacity: 0.62; transition: opacity .1s, background .1s; }
 .vrs-row:hover .vrs-activate, .vrs-row.vrs-hl .vrs-activate, .vrs-activate:focus-visible, .vrs-activate:disabled { opacity: 1; }
 .vrs-activate:hover:not(:disabled) { background: rgba(34, 211, 238, 0.2); }
 .vrs-activate:disabled { cursor: default; color: var(--text-muted); border-color: var(--border-color); background: transparent; }
