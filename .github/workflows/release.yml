@@ -55,6 +55,13 @@ jobs:
 
       - name: Build zip + installer
         shell: pwsh
+        # Optional Authenticode signing: set the CODE_SIGN_PFX_BASE64 (base64 of a .pfx) and
+        # CODE_SIGN_PFX_PASSWORD repo secrets to sign the app EXEs + installer. Unset ⇒ empty ⇒ publish.ps1
+        # skips signing and builds exactly as before. This is the durable fix for the unsigned-build AV
+        # false positives; an EV cert clears SmartScreen/Defender immediately, an OV cert over a ramp.
+        env:
+          SIGN_CERT_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+          SIGN_CERT_PASSWORD: ${{ secrets.CODE_SIGN_PFX_PASSWORD }}
         run: ./publish.ps1 -Version '${{ steps.ver.outputs.version }}' -Zip -Installer
 
       - name: Upload build artifacts (always)

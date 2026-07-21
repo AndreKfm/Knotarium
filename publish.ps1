@@ -43,7 +43,14 @@ param(
     # Also build the Windows installer (installer/Knotarium.iss) via Inno Setup's ISCC compiler.
     [switch]$Installer,
     # Path to Inno Setup's ISCC.exe. Auto-detected in the usual install locations when empty.
-    [string]$InnoSetupExe = ''
+    [string]$InnoSetupExe = '',
+    # Authenticode code signing (optional). Supply a base64-encoded PFX and its password — normally via
+    # the SIGN_CERT_BASE64 / SIGN_CERT_PASSWORD env vars (CI secrets). When SignCertBase64 is empty,
+    # signing is skipped entirely and the output is identical to an unsigned build (no cert, no change).
+    [string]$SignCertBase64 = $env:SIGN_CERT_BASE64,
+    [string]$SignCertPassword = $env:SIGN_CERT_PASSWORD,
+    # RFC3161 timestamp server, so signatures stay valid after the signing certificate expires.
+    [string]$SignTimestampUrl = 'http://timestamp.digicert.com'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,7 +71,46 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     Write-Host "-> No -Version given; using csproj version $Version" -ForegroundColor DarkGray
 }
 
+# --- Optional Authenticode code signing -------------------------------------------------------------
+# Enabled only when a base64 PFX is supplied. With no cert this is a complete no-op — the produced files
+# are byte-for-byte an unsigned build. When enabled, the app EXEs and the setup.exe are signed with
+# SHA-256 + an RFC3161 timestamp. Windows-only (Authenticode); the linux runtime build skips it.
+$signEnabled = -not [string]::IsNullOrWhiteSpace($SignCertBase64)
+$script:signPfxPath = $null
+
+function Find-SignTool {
+    $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+    if (Test-Path $kits) {
+        $hit = Get-ChildItem -Path $kits -Filter 'signtool.exe' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\x64\signtool.exe' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    $cmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+function Invoke-Sign([string[]]$Files) {
+    if (-not $signEnabled) { return }
+    if ($Runtime -notlike 'win-*') { return }
+    $signtool = Find-SignTool
+    if (-not $signtool) { throw 'Code signing requested (SignCertBase64 set) but signtool.exe was not found. Install the Windows SDK.' }
+    if (-not $script:signPfxPath) {
+        $script:signPfxPath = Join-Path ([System.IO.Path]::GetTempPath()) ("knotarium-sign-$([System.Guid]::NewGuid().ToString('N')).pfx")
+        [System.IO.File]::WriteAllBytes($script:signPfxPath, [System.Convert]::FromBase64String($SignCertBase64))
+    }
+    foreach ($f in $Files) {
+        if (-not (Test-Path $f)) { continue }
+        Write-Host "-> Signing $(Split-Path $f -Leaf)..." -ForegroundColor Yellow
+        # Password is passed as an arg (GitHub masks the secret in logs); signtool does not echo it.
+        & $signtool sign /fd SHA256 /f $script:signPfxPath /p $SignCertPassword /tr $SignTimestampUrl /td SHA256 $f | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "signtool failed for '$f' (exit $LASTEXITCODE)." }
+    }
+}
+
 Write-Host '== Knotarium — productive build (UI included) ==' -ForegroundColor Cyan
+if ($signEnabled) { Write-Host '-> Code signing: ENABLED (a certificate was supplied).' -ForegroundColor Green }
 
 # 1. Build the UI (tsc -b && vite build -> Frontend/dist)
 if (-not $SkipFrontend) {
@@ -117,6 +163,13 @@ Write-Host '-> Copying UI into wwwroot...' -ForegroundColor Yellow
 $wwwroot = Join-Path $appOut 'wwwroot'
 New-Item -ItemType Directory -Force -Path $wwwroot | Out-Null
 Copy-Item -Path (Join-Path $dist '*') -Destination $wwwroot -Recurse -Force
+
+# 4b. Sign the app executables now — before the zip and installer bundle them, so both the zero-install
+#     zip and the installed app carry signed binaries. No-op unless a certificate was supplied.
+Invoke-Sign @(
+    (Join-Path $appOut 'Knotarium.Api.exe'),
+    (Join-Path $appOut 'Knotarium.SandboxWorker.exe')
+)
 
 # 5. Resolve the produced executable name.
 $exe = Get-ChildItem $appOut -File |
@@ -185,6 +238,9 @@ if ($Installer) {
 
     $setupPath = Join-Path $OutputDir "$outputBase.exe"
     if (Test-Path $setupPath) {
+        # Sign the installer BEFORE hashing so the published .sha256 matches the signed file. No-op unless
+        # a certificate was supplied.
+        Invoke-Sign @($setupPath)
         $setupHash = (Get-FileHash $setupPath -Algorithm SHA256).Hash
         Set-Content -Path "$setupPath.sha256" -Value "$setupHash  $(Split-Path $setupPath -Leaf)" -Encoding ascii
         Write-Host "   $setupPath" -ForegroundColor DarkGray
@@ -201,3 +257,9 @@ Write-Host "Launch        : double-click Start.bat  (or run `"$exeName`")"
 Write-Host "URL           : $url"
 Write-Host 'Ship          : copy the whole "app" folder to the target PC.'
 Write-Host 'Note          : the SQLite database (Knotarium.db) is created next to the exe on first run.'
+if ($signEnabled) { Write-Host 'Signed        : yes (Authenticode, SHA-256, timestamped)' }
+
+# Remove the decoded signing certificate from disk (best-effort; CI runners are ephemeral anyway).
+if ($script:signPfxPath -and (Test-Path $script:signPfxPath)) {
+    Remove-Item $script:signPfxPath -Force -ErrorAction SilentlyContinue
+}
