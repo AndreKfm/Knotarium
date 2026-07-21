@@ -20,6 +20,8 @@ export type JournalOverviewEntry = {
   eventType: string;
   message: string;
   offsetLabel: string;
+  /** Absolute clock time this event occurred (e.g. "07:44:34"), or null if unknown. */
+  clockLabel: string | null;
   status: KnownExecutionStatus;
   data: Record<string, unknown>;
 };

@@ -791,6 +791,7 @@ export function buildJournalOverview(
       eventType: item.eventType,
       message: stripNodeIdFromMessage(item.message, nodeId),
       offsetLabel: formatOffsetLabel(item.timestamp, baselineTimestamp),
+      clockLabel: formatClockTime(item.timestamp),
       status: resolvedStatus,
       data: item.data,
     });
