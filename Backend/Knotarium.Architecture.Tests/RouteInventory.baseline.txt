@@ -40,6 +40,7 @@ Get /api/settings/ai-provider
 Get /api/settings/capabilities
 Get /api/settings/error-workflow
 Get /api/settings/file-access
+Get /api/settings/retention
 Get /api/settings/sandbox
 Get /api/templates/gallery
 Get /api/templates/gallery/{templateId}
@@ -127,6 +128,7 @@ Put /api/settings/ai-provider
 Put /api/settings/capabilities
 Put /api/settings/error-workflow
 Put /api/settings/file-access
+Put /api/settings/retention
 Put /api/settings/sandbox
 Put /api/workflow-groups
 Put /api/workflows/{id}

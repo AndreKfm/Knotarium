@@ -41,4 +41,9 @@ public static class AppSettingKeys
     /// fall back to the "Runtime:Armed" configuration value (default: disarmed). Transient safety
     /// disarms (e.g. the disk-space guard) deliberately do NOT write this key.</summary>
     public const string RuntimeArmed = "RuntimeArmed";
+
+    /// <summary>JSON blob holding the data-retention policy (run-history/log days, sweep interval,
+    /// version-history and audit-log caps) that bounds database growth. Unset ⇒ the "Retention"
+    /// configuration section (and its defaults) applies unchanged.</summary>
+    public const string RetentionPolicy = "RetentionPolicy";
 }

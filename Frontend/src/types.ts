@@ -108,6 +108,24 @@ export interface CapabilityPolicyDto {
 }
 
 /**
+ * Data-retention policy (Settings → Retention) — bounds database growth. Day/count fields where 0 means
+ * "keep forever / keep all" (except `sweepIntervalMinutes`, always ≥ 1). Mirrors the backend
+ * RetentionPolicyDto; values are clamped server-side. The retention worker re-reads this each sweep.
+ */
+export interface RetentionConfigDto {
+  /** Delete finished runs (and their journal/logs) older than this. 0 = keep forever. */
+  runHistoryDays: number;
+  /** How often the cleanup sweep runs. Minimum 1. */
+  sweepIntervalMinutes: number;
+  /** Cap saved version history per workflow. 0 = keep all. */
+  maxWorkflowVersionsPerWorkflow: number;
+  /** Cap OpenAPI re-import history per spec. 0 = keep all. */
+  maxOpenApiSpecVersionsPerSpec: number;
+  /** Roll over audit-log entries older than this many days. 0 = keep forever. */
+  auditEntryDays: number;
+}
+
+/**
  * Sandbox configuration for user-authored node code (Settings → Sandbox).
  * `mode: 'Process'` runs Inline Code / custom-package C# in pooled, OS-confined worker
  * processes; `'InProcess'` is the compatible legacy behavior. Mirrors the backend
