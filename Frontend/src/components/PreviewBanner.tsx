@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CSSProperties } from 'react';
-import { Eye, RotateCcw, X, GitCompareArrows } from 'lucide-react';
+import { Eye, RotateCcw, X, GitCompareArrows, CheckCircle2 } from 'lucide-react';
 
 export interface PreviewBannerProps {
   /** Version number being previewed (read-only). */
@@ -12,6 +12,10 @@ export interface PreviewBannerProps {
   onExit: () => void;
   onRestore?: () => void;
   onDiffAgainstDraft?: () => void;
+  /** Make THIS previewed version the live/active runtime version directly (no restore-copy needed). */
+  onSetActive?: () => void;
+  /** True while the activate call is in flight. */
+  activating?: boolean;
 }
 
 /**
@@ -26,10 +30,12 @@ export function PreviewBanner({
   onExit,
   onRestore,
   onDiffAgainstDraft,
+  onSetActive,
+  activating,
 }: PreviewBannerProps) {
   const subtitle = isActiveVersion
     ? 'This is the active version — exit to return to your draft.'
-    : 'Restore it to keep editing, or exit to return to your draft.';
+    : 'Make it the active version to run it, restore it to keep editing, or exit to your draft.';
 
   return (
     <div
@@ -110,10 +116,25 @@ export function PreviewBanner({
           type="button"
           onClick={onRestore}
           style={secondaryBtnStyle}
-          title="Restore this version (fork-forward)"
+          title="Restore this version as a new editable copy (fork-forward)"
         >
           <RotateCcw size={14} />
           Restore
+        </button>
+      )}
+
+      {/* Make the previewed version live directly — the "roll back and run this" action, distinct from
+          Restore (which forks a new editable copy). Hidden when it's already the active version. */}
+      {!isActiveVersion && onSetActive && (
+        <button
+          type="button"
+          onClick={onSetActive}
+          disabled={activating}
+          style={setActiveBtnStyle}
+          title="Make this the live/active version that runs"
+        >
+          <CheckCircle2 size={14} />
+          {activating ? 'Activating…' : 'Set active'}
         </button>
       )}
 
@@ -154,5 +175,15 @@ const exitBtnStyle: CSSProperties = {
   background: 'var(--color-warning-glow, rgba(245, 158, 11, 0.2))',
   border: '1px solid rgba(245, 158, 11, 0.5)',
   color: 'var(--color-warning, #f59e0b)',
+  fontWeight: 700,
+};
+
+// Primary/positive action: promoting a version to live. Emerald accent so it stands apart from the
+// neutral Restore/Diff and the amber Exit.
+const setActiveBtnStyle: CSSProperties = {
+  ...secondaryBtnStyle,
+  background: 'rgba(16, 185, 129, 0.16)',
+  border: '1px solid rgba(16, 185, 129, 0.5)',
+  color: '#34d399',
   fontWeight: 700,
 };

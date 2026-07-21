@@ -2265,6 +2265,8 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
             onExit={closeVersionOverview}
             onRestore={() => openRestoreDialog(editorMode.versionId)}
             onDiffAgainstDraft={() => void handleDiffAgainstDraft(editorMode.versionId)}
+            onSetActive={() => handleActivateVersion(editorMode.versionId)}
+            activating={activatingVersionId === editorMode.versionId}
           />
         )}
 
