@@ -1,8 +1,8 @@
 // Copyright 2026 Andre Kaufmann
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useMemo, useState, type CSSProperties } from 'react';
-import { Handle, Position, useReactFlow, useConnection, useNodeConnections, useStore, NodeResizer } from '@xyflow/react';
+import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Handle, Position, useReactFlow, useConnection, useNodeConnections, useStore, useUpdateNodeInternals, NodeResizer } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { useVariableStore } from '../stores/useVariableStore';
 import { getTypeColor, getNodeIcon, renderPropertiesSummary, getStatusBadge, isLowDetailZoom, type NodeSummaryProperties, type NodeExecStatus } from './CustomNodes.helpers';
@@ -324,6 +324,19 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
     : ['result'];
   const primaryOutputHandle = outputHandles[0];
   const statusBadge = getStatusBadge(execStatus);
+
+  // React Flow caches each node's handle geometry at mount; when handles are added/removed, re-id'd, or
+  // moved AFTER mount it must be told to re-measure, or edges anchored to those handles silently fail to
+  // draw until an unrelated pan/zoom forces a remeasure. This bit the Error Trigger (and any trigger
+  // node): its `triggerOnly` flag — and thus its rendered handle set — flips once the manifest metadata
+  // loads asynchronously, so the errorTrigger→next wire came and went. Re-measure whenever a
+  // handle-affecting input changes (trigger flag, output ports, or the low-detail body collapse that
+  // shifts the vertically-centred handles).
+  const updateNodeInternals = useUpdateNodeInternals();
+  const outputHandlesKey = outputHandles.join('|');
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, triggerOnly, lowDetail, primaryOutputHandle, outputHandlesKey, type, updateNodeInternals]);
 
   // AI Classify node: one branch handle per configured category label plus the 'otherwise'
   // fallback — derived from the node's own properties (see aiRouterPorts.ts), not the manifest,

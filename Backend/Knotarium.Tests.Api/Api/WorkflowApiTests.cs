@@ -938,6 +938,51 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
     }
 
     [Fact]
+    public async Task Restore_WithActivate_BringsRestoredContentIntoWorkingDraft()
+    {
+        var client = _factory.CreateClient();
+        var workflowId = WorkflowDefinitionId.New();
+        var startNode = new NodeDefinition(NodeId.Create("start"), "start", new Dictionary<string, object>());
+        var logNode = new NodeDefinition(NodeId.Create("log"), "log", new Dictionary<string, object> { ["message"] = "hi" });
+
+        // v1 = a single Start node.
+        var workflow = new WorkflowDefinition(workflowId, "Restore Draft Workflow", new[] { startNode }, Array.Empty<EdgeDefinition>());
+        await client.PostAsJsonAsync("/api/workflows", workflow);
+        var v1Response = await client.PostAsJsonAsync(
+            $"/api/workflows/{workflowId.Value}/versions",
+            new SaveVersionRequest(new[] { startNode }, Array.Empty<EdgeDefinition>()));
+        var v1 = await v1Response.Content.ReadFromJsonAsync<WorkflowVersion>();
+        Assert.NotNull(v1);
+
+        // The editor then evolves the working draft to a newer 2-node graph (Start → Log) and saves it.
+        var newerDraft = workflow with
+        {
+            Nodes = new[] { startNode, logNode },
+            Edges = new[] { new EdgeDefinition("e1", startNode.Id, "result", logNode.Id, "in") },
+        };
+        var saveResponse = await client.PutAsJsonAsync($"/api/workflows/{workflowId.Value}", newerDraft);
+        Assert.Equal(HttpStatusCode.OK, saveResponse.StatusCode);
+
+        // Sanity: the draft the editor loads currently holds the 2-node graph.
+        var draftBefore = await client.GetFromJsonAsync<WorkflowDefinition>($"/api/workflows/{workflowId.Value}");
+        Assert.NotNull(draftBefore);
+        Assert.Equal(2, draftBefore.Nodes.Count);
+
+        // Restore v1 (single node) and activate it.
+        var restoreResponse = await client.PostAsync(
+            $"/api/workflows/{workflowId.Value}/restore/{v1!.Id.Value}?activate=true", content: null);
+        Assert.Equal(HttpStatusCode.OK, restoreResponse.StatusCode);
+
+        // The working draft the editor loads must now reflect the restored, single-node content —
+        // not the newer 2-node graph. (Regression: restore used to leave the draft untouched.)
+        var draftAfter = await client.GetFromJsonAsync<WorkflowDefinition>($"/api/workflows/{workflowId.Value}");
+        Assert.NotNull(draftAfter);
+        Assert.Single(draftAfter.Nodes);
+        Assert.Equal("start", draftAfter.Nodes[0].Type);
+        Assert.Empty(draftAfter.Edges);
+    }
+
+    [Fact]
     public async Task ActivatingOlderVersion_RebindsTriggersToThatVersion()
     {
         var client = _factory.CreateClient();

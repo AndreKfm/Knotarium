@@ -314,6 +314,18 @@ public sealed class WorkflowPublisher
                 activationReason: restoreLabel,
                 restoredFromVersionId: sourceVersionId,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            // Bring the restored payload back into the working draft — the graph the editor loads via
+            // IWorkflowStore — so "restore" actually returns you to editing the restored version instead
+            // of stranding you on your newer draft. Only the graph changes; IsEnabled + metadata are
+            // preserved. The prior draft is not lost — it remains an earlier immutable version.
+            var currentDraft = await _workflowStore.GetAsync(workflowId, cancellationToken).ConfigureAwait(false);
+            if (currentDraft is not null)
+            {
+                await _workflowStore.UpdateAsync(
+                    currentDraft with { Nodes = source.Nodes, Edges = source.Edges },
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

@@ -31,8 +31,8 @@ export function PreviewBanner({
   onDiffAgainstDraft,
 }: PreviewBannerProps) {
   const subtitle = isActiveVersion
-    ? 'This is the active version — exit to return to your draft.'
-    : 'Restore it to make it the current, live version, or exit to return to your draft.';
+    ? 'This is the active version — exit (Esc) to return to your draft.'
+    : 'Restore it to make it the current, live version, or exit (Esc) to return to your draft.';
 
   return (
     <div
@@ -130,7 +130,7 @@ export function PreviewBanner({
         onClick={onExit}
         aria-label="Exit preview"
         style={exitBtnStyle}
-        title="Exit preview and return to your draft"
+        title="Exit preview and return to your draft (Esc)"
       >
         <X size={14} />
         Exit preview
