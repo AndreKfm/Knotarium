@@ -26,6 +26,29 @@ A few things set it apart from the usual JavaScript-based automation tools:
 
 ---
 
+## Download
+
+Prebuilt releases are on the [**Releases page**](https://github.com/AndreKfm/Knotarium/releases) — no build tools required. Every release ships these artifacts (with a matching `.sha256` for each):
+
+| Platform | Artifact | What you get |
+|---|---|---|
+| **Windows — installer** | `Knotarium-<version>-setup.exe` | Installs Knotarium as an auto-starting **Windows service** on `http://localhost:43120`. |
+| **Windows — zero-install** | `Knotarium-<version>-win-x64.zip` | Unzip and run `Start.bat`; runs in the foreground, nothing installed. |
+| **Linux** | `Knotarium-<version>-linux-x64.tar.gz` | Self-contained x64 build — extract and run `./Knotarium.Api`. |
+| **Any OS — container** | — | `docker compose up --build` (see [Quickstart](#quickstart-docker) below). |
+
+Verify your download against the published checksum before running, e.g. on Windows:
+
+```powershell
+Get-FileHash .\Knotarium-<version>-win-x64.zip   # compare with the matching .sha256 file
+```
+
+Then open **http://localhost:43120** and create your admin account on first run. All data (the SQLite database and the auto-generated credential-encryption key) lives in one machine-wide directory, so it survives upgrades and restarts.
+
+> **Windows SmartScreen / Defender note.** Releases are **not yet code-signed**, so Windows may warn about an "unknown publisher" or flag the installer as a false positive on download. The builds are produced reproducibly by [GitHub Actions](.github/workflows/release.yml) straight from this repository — verify the published SHA-256 (and, when set, the VirusTotal links in the release notes). The zero-install `.zip` is affected far less than the installer. Code signing is planned.
+
+---
+
 ## Quickstart (Docker)
 
 ```bash
