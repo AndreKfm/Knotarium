@@ -2273,6 +2273,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
             isActiveVersion={editorMode.versionId === activeWorkflowVersion?.workflowVersionId}
             onExit={closeVersionOverview}
             onRestore={() => openRestoreDialog(editorMode.versionId)}
+            onDiffAgainstDraft={() => void handleDiffAgainstDraft(editorMode.versionId)}
           />
         )}
 
@@ -2417,8 +2418,6 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
               previewVersionId={editorMode.kind === 'preview' ? editorMode.versionId : null}
               onClose={closeVersionOverview}
               onPreview={(versionId) => void handlePreviewVersion(versionId)}
-              onRestore={openRestoreDialog}
-              onDiffAgainstDraft={(versionId) => void handleDiffAgainstDraft(versionId)}
               onDiffDraftVsActive={() => void handleDiffDraftVsActive()}
             />
 

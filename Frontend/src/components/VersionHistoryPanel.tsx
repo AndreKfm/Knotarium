@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef } from 'react';
-import { History, RotateCcw, X, Eye, GitCompareArrows } from 'lucide-react';
+import { History, X, Eye, GitCompareArrows, ChevronRight } from 'lucide-react';
 import type { WorkflowVersionSummary, WorkflowVersionOrigin } from '../types';
 
 export interface VersionHistoryPanelProps {
@@ -16,12 +16,9 @@ export interface VersionHistoryPanelProps {
   /** Delay before lingering on a row auto-previews it (matches the runtime dropdown). */
   hoverPreviewDelayMs?: number;
   onClose: () => void;
-  /** Open a read-only preview of the clicked version (V2). */
+  /** Open a read-only preview of the clicked version (V2). Restore / Diff / Exit live in the preview
+   *  banner, so each row here is a single click-to-open — no per-row action buttons. */
   onPreview?: (versionId: string) => void;
-  /** Open the fork-forward restore confirmation for a version (V4). */
-  onRestore?: (versionId: string) => void;
-  /** Diff a committed version against the working draft (V5). */
-  onDiffAgainstDraft?: (versionId: string) => void;
   /** Diff the working draft against the active version (the most-wanted case, V5). */
   onDiffDraftVsActive?: () => void;
 }
@@ -61,8 +58,6 @@ export function VersionHistoryPanel({
   hoverPreviewDelayMs = 300,
   onClose,
   onPreview,
-  onRestore,
-  onDiffAgainstDraft,
   onDiffDraftVsActive,
 }: VersionHistoryPanelProps) {
   // Debounce timer for hover-to-preview, so a quick scroll-past doesn't fire a preview.
@@ -245,51 +240,12 @@ export function VersionHistoryPanel({
                     : ''}
                 </div>
 
-                {/* Per-row actions. Stop propagation so a button click doesn't also
-                    trigger the row's preview handler. */}
-                <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                  {onPreview && (
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onPreview(version.id);
-                      }}
-                      style={rowActionStyle}
-                      title="Preview this version (read-only)"
-                    >
-                      <Eye size={12} />
-                      Preview
-                    </button>
-                  )}
-                  {onDiffAgainstDraft && (
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDiffAgainstDraft(version.id);
-                      }}
-                      style={rowActionStyle}
-                      title="Compare this version with your working draft"
-                    >
-                      <GitCompareArrows size={12} />
-                      Diff
-                    </button>
-                  )}
-                  {onRestore && (
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRestore(version.id);
-                      }}
-                      style={rowActionStyle}
-                      title="Restore this version (fork-forward)"
-                    >
-                      <RotateCcw size={12} />
-                      Restore
-                    </button>
-                  )}
+                {/* One action per row: the whole row opens the version (read-only preview), where
+                    Restore / Diff / Exit live. A subtle "Open" cue signals the click target. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600, opacity: isPreviewing ? 1 : 0.7 }}>
+                  <Eye size={12} />
+                  {isPreviewing ? 'Previewing' : 'Open'}
+                  {!isPreviewing && <ChevronRight size={12} />}
                 </div>
               </div>
             );
@@ -328,16 +284,3 @@ export function VersionHistoryPanel({
     </aside>
   );
 }
-
-const rowActionStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '4px',
-  padding: '3px 8px',
-  borderRadius: '6px',
-  background: 'rgba(255, 255, 255, 0.04)',
-  border: '1px solid var(--border-color)',
-  color: 'var(--text-secondary)',
-  fontSize: '0.7rem',
-  cursor: 'pointer',
-} as const;

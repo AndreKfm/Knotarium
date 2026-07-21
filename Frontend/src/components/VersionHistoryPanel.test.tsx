@@ -95,9 +95,7 @@ describe('VersionHistoryPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('fires the per-row restore and diff callbacks without triggering preview', () => {
-    const onRestore = vi.fn();
-    const onDiffAgainstDraft = vi.fn();
+  it('has no per-row action buttons — the row is a single click-to-open (Restore/Diff live in preview)', () => {
     const onPreview = vi.fn();
     render(
       <VersionHistoryPanel
@@ -107,17 +105,14 @@ describe('VersionHistoryPanel', () => {
         error={null}
         onClose={vi.fn()}
         onPreview={onPreview}
-        onRestore={onRestore}
-        onDiffAgainstDraft={onDiffAgainstDraft}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
-    expect(onRestore).toHaveBeenCalledWith('ver-7');
-    expect(onPreview).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Diff' }));
-    expect(onDiffAgainstDraft).toHaveBeenCalledWith('ver-7');
+    expect(screen.queryByRole('button', { name: 'Restore' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Diff' })).toBeNull();
+    // The whole row still opens the version.
+    fireEvent.click(screen.getByText('v7'));
+    expect(onPreview).toHaveBeenCalledWith('ver-7');
   });
 
   it('offers the first-class draft-vs-active diff in the footer', () => {
