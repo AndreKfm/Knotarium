@@ -141,3 +141,81 @@ jobs:
           files: |
             publish/*.tar.gz
             publish/*.tar.gz.sha256
+
+  # Scans the published artifacts on VirusTotal and appends the multi-engine scan links to the release
+  # notes — so users hitting an unsigned-build heuristic warning can see the independent verdict.
+  #
+  # Opt-in and fail-safe: it does nothing unless a free VirusTotal API key is present in the VT_API_KEY
+  # repo secret (https://www.virustotal.com/gui/my-apikey). Without the secret every step is skipped, and
+  # the scan step is continue-on-error, so a missing key, a VT outage, or a rate-limit can never fail a
+  # release. Runs after both build jobs so it can reach the uploaded artifacts and edit the finished notes.
+  virustotal:
+    name: VirusTotal scan
+    needs: [windows, linux]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # edit the release notes
+      actions: read     # download this run's build artifacts
+    env:
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+    steps:
+      - name: Check for a VirusTotal API key
+        id: gate
+        run: |
+          if [ -n "${VT_API_KEY}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No VT_API_KEY secret configured; skipping the VirusTotal scan."
+          fi
+
+      - name: Download build artifacts
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+
+      - name: Scan artifacts with VirusTotal
+        id: vt
+        if: steps.gate.outputs.enabled == 'true'
+        continue-on-error: true   # a VT outage or rate-limit must never fail a release
+        uses: crazy-max/ghaction-virustotal@v4
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          request_rate: 4   # stay within the free public API's 4 lookups/minute
+          # Only the distributables, not the tiny .sha256 sidecars. The action uses VirusTotal's
+          # large-file upload endpoint, so the ~46-65 MB assets are within limits.
+          files: |
+            dist/**/*.zip
+            dist/**/*setup.exe
+            dist/**/*.tar.gz
+
+      - name: Append VirusTotal links to the release notes
+        if: steps.gate.outputs.enabled == 'true' && steps.vt.outcome == 'success' && steps.vt.outputs.analysis != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          ANALYSIS: ${{ steps.vt.outputs.analysis }}
+        run: |
+          # steps.vt.outputs.analysis is "path=url,path=url,…". Append a markdown section to the notes,
+          # skipping if a re-run already added one.
+          current="$(gh release view "$TAG" --json body -q .body)"
+          if printf '%s' "$current" | grep -qF '### VirusTotal scans'; then
+            echo "VirusTotal section already present; leaving the notes unchanged."
+            exit 0
+          fi
+          {
+            printf '%s\n\n' "$current"
+            echo '### VirusTotal scans'
+            echo ''
+            echo 'Independent multi-engine VirusTotal scans of the artifacts in this release. Unsigned pre-release builds can trigger a heuristic (`!ml`) false-positive on Windows Defender/SmartScreen; verify the published SHA-256 and these scans.'
+            echo ''
+            IFS=',' read -ra items <<< "$ANALYSIS"
+            for item in "${items[@]}"; do
+              path="${item%%=*}"
+              url="${item##*=}"
+              echo "- [\`$(basename "$path")\`]($url)"
+            done
+          } > release-notes.md
+          gh release edit "$TAG" --notes-file release-notes.md
