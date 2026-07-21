@@ -489,6 +489,10 @@ describe('ExecutionDetail', () => {
       expect(screen.getByText('Workflow run completed successfully.')).toBeInTheDocument();
     });
 
+    // Each executed row shows an absolute clock time next to its relative offset (HH:MM:SS · +Nms).
+    const logRowText = screen.getByTestId('journal-group-log-1').textContent ?? '';
+    expect(logRowText).toMatch(/\d{2}:\d{2}:\d{2} · \+\d+ms/);
+
     fireEvent.click(screen.getByTestId('journal-toggle-log-1'));
 
     await waitFor(() => {
@@ -501,6 +505,9 @@ describe('ExecutionDetail', () => {
     expect(logGroupText.indexOf('STARTED')).toBeGreaterThan(-1);
     expect(logGroupText.indexOf('DONE')).toBeGreaterThan(-1);
     expect(logGroupText.indexOf('STARTED')).toBeLessThan(logGroupText.indexOf('Output'));
+    // Each expanded event line carries an absolute clock time alongside its relative offset — plus the
+    // row header's own start time, so at least three HH:MM:SS stamps are present once expanded.
+    expect((logGroupText.match(/\d{2}:\d{2}:\d{2}/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 
   it('renders skipped and pending nodes in the timeline without the legacy results card', async () => {

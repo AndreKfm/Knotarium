@@ -568,7 +568,12 @@ export function ExecutionSidebar({
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                             <span className={createStatusClassName(group.status)}>{getStatusLabel(group.status)}</span>
-                            <span style={{ fontFamily: 'monospace', fontSize: '0.76rem', color: '#94a3b8', flex: '0 0 auto' }}>{group.durationLabel}</span>
+                            <span style={{ fontFamily: 'monospace', fontSize: '0.76rem', color: '#94a3b8', flex: '0 0 auto' }}>
+                              {group.startedAtLabel && (
+                                <span style={{ color: '#64748b' }}>{group.startedAtLabel} · </span>
+                              )}
+                              {group.durationLabel}
+                            </span>
                             {!isExpanded && (
                               <span style={{ color: '#dbe4ee', fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
                                 {collapsedSummary}
@@ -616,8 +621,11 @@ export function ExecutionSidebar({
 
                                 return (
                                   <Fragment key={entry.id}>
-                                    <span style={{ minWidth: '44px', paddingTop: '2px', color: '#64748b', fontFamily: 'monospace', fontSize: '0.74rem' }}>
-                                      {entry.offsetLabel}
+                                    <span style={{ minWidth: '44px', paddingTop: '2px', color: '#64748b', fontFamily: 'monospace', fontSize: '0.74rem', display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
+                                      {entry.clockLabel && (
+                                        <span style={{ color: '#475569', fontSize: '0.68rem' }}>{entry.clockLabel}</span>
+                                      )}
+                                      <span>{entry.offsetLabel}</span>
                                     </span>
                                     <div style={{ minWidth: 0, flex: 1 }}>
                                       <div style={{ display: 'grid', gridTemplateColumns: '8px auto minmax(0, 1fr)', alignItems: 'baseline', columnGap: '8px', minWidth: 0 }}>
