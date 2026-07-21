@@ -692,6 +692,68 @@ public class WorkflowApiTests : IClassFixture<KnotariumApiFactory>, IDisposable
     }
 
     [Fact]
+    public async Task ExecutionEvents_StreamEndsPromptlyOnHostShutdown()
+    {
+        // Regression guard: an open SSE stream must not hold the host open for the full shutdown timeout.
+        // The live tail links IHostApplicationLifetime.ApplicationStopping into its cancellation token, so
+        // when the host begins stopping the stream ends at once instead of parking until Kestrel force-
+        // aborts the connection (~30s) — which is why the Windows service took so long to stop.
+        var client = _factory.CreateClient();
+
+        var executionId = ExecutionInstanceId.New();
+        var workflowId = WorkflowDefinitionId.New();
+        var now = DateTimeOffset.UtcNow;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.ExecutionInstances.Add(new ExecutionInstance
+            {
+                Id = executionId,
+                WorkflowDefinitionId = workflowId,
+                Status = ExecutionStatus.Running,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            db.JournalEntries.Add(new ExecutionJournal
+            {
+                Id = Guid.NewGuid(),
+                ExecutionInstanceId = executionId,
+                NodeId = NodeId.Create("start"),
+                Timestamp = now,
+                EventType = "WorkflowStarted",
+                Message = "Started."
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync(
+            $"/api/executions/{executionId.Value}/events", HttpCompletionOption.ResponseHeadersRead);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+
+        // Consume the catch-up entry so the request is now parked on the live tail — the state that used
+        // to block graceful shutdown.
+        var firstLine = await reader.ReadLineAsync();
+        Assert.False(string.IsNullOrEmpty(firstLine));
+
+        // Begin host shutdown. The linked ApplicationStopping token must end the live tail promptly.
+        _factory.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+
+        // The stream must reach its end quickly — whether as a clean EOF or a cancellation-induced read
+        // error, both mean "it stopped waiting". A generous ceiling keeps this non-flaky while still
+        // failing the pre-fix hang (which would block here until the delay wins).
+        var drained = Task.Run(async () =>
+        {
+            try { await reader.ReadToEndAsync(); }
+            catch { /* a cancelled in-flight response can surface as a read error; the stream still ended */ }
+        });
+        var finished = await Task.WhenAny(drained, Task.Delay(TimeSpan.FromSeconds(10))) == drained;
+        Assert.True(finished, "SSE stream did not end promptly after host shutdown began.");
+    }
+
+    [Fact]
     public async Task PutWorkflow_UpdatesSuccessfully()
     {
         var client = _factory.CreateClient();
