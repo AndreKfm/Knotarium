@@ -31,6 +31,7 @@ import type {
 import '@xyflow/react/dist/style.css';
 import { api } from '../utils/api';
 import { schemaMapper, definitionHasSavedPositions } from '../utils/schemaMapper';
+import { canonicalize } from '../utils/versionDiff';
 import { createNodeTypes } from '../utils/nodeTypes';
 import { createNodePackageMetadataMap, enrichNodesWithPackageMetadata } from '../utils/nodePackages';
 import { extractSubflowInterface, type SubflowInterface } from '../utils/subflowInterface';
@@ -2026,14 +2027,22 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     });
   }, [setNodes]);
 
-  // As soon as the graph is edited (dirty), drop the last run's node-status painting: it described the
-  // previous graph and would otherwise stick — including the reported case where adding a node left the
-  // old nodes stuck on "Completed". Painting execStatus doesn't affect `isDirty`, so this won't loop.
+  // Drop the last run's node-status painting only when the graph's BEHAVIOUR changes (nodes/edges/
+  // properties) — NOT when a node is merely moved. Layout is cosmetic (the run still describes the same
+  // logical graph), so wiping every status on a drag was irritating and inconsistent. Uses the same
+  // canonicalization as the version diff (strips `_metadata`), so position/size changes are ignored.
+  // execStatus isn't part of this signature, so painting statuses can't retrigger the reset.
+  const structuralSignature = useMemo(() => {
+    const def = schemaMapper.toBackend('', '', nodes, edges);
+    return JSON.stringify(canonicalize({ nodes: def.nodes, edges: def.edges }));
+  }, [nodes, edges]);
+  const paintedStructuralSigRef = useRef(structuralSignature);
   useEffect(() => {
-    if (isDirty) {
+    if (paintedStructuralSigRef.current !== structuralSignature) {
+      paintedStructuralSigRef.current = structuralSignature;
       resetNodeExecStatuses();
     }
-  }, [isDirty, resetNodeExecStatuses]);
+  }, [structuralSignature, resetNodeExecStatuses]);
 
   // Run = activate the selected version, then trigger it. Activation happens
   // every time, so the dropdown selection is always what executes — no separate
