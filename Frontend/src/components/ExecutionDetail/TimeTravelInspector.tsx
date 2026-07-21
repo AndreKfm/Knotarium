@@ -14,6 +14,8 @@ export type InspectorStep = {
   title: string;
   status: JournalOverviewGroup['status'];
   durationLabel: string;
+  startedAtLabel?: string | null;
+  runDurationLabel?: string;
 };
 
 type TimeTravelInspectorProps = {
@@ -101,7 +103,13 @@ export function TimeTravelInspector({ steps, nodeStates, index, onIndexChange, o
             {step.title}
           </strong>
           <span className={createStatusClassName(step.status)}>{getStatusLabel(step.status)}</span>
-          <span style={{ fontFamily: 'monospace', fontSize: '0.74rem', color: '#94a3b8' }}>{step.durationLabel}</span>
+          <span style={{ fontFamily: 'monospace', fontSize: '0.74rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+            {step.startedAtLabel && <span title="Started at">{step.startedAtLabel}</span>}
+            {step.runDurationLabel && (
+              <span title="How long this node ran" style={{ color: '#cbd5e1' }}> · took {step.runDurationLabel}</span>
+            )}
+            <span title="Offset from run start" style={{ color: '#64748b' }}> · {step.durationLabel}</span>
+          </span>
         </div>
 
         <button aria-label="Close inspector" onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8794a6', cursor: 'pointer' }}>

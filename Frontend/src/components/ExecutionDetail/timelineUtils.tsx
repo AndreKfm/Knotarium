@@ -873,6 +873,10 @@ export function buildJournalOverview(
       hint: group.hint,
       status: group.status,
       durationLabel: group.lastTimestamp ? formatOffsetLabel(group.lastTimestamp, baselineTimestamp) : '+0ms',
+      startedAtLabel: group.firstTimestamp ? formatClockTime(group.firstTimestamp) : null,
+      runDurationLabel: group.firstTimestamp && group.lastTimestamp
+        ? formatDuration(getDurationBetween(group.firstTimestamp, group.lastTimestamp))
+        : undefined,
       entries: group.entries,
       isWorkflow: group.isWorkflow,
       isSubflowChild: group.isSubflowChild,
