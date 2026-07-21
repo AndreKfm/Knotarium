@@ -580,6 +580,25 @@ function ExecutionDetailInner({ executionId, onBack, onTriggeredExecution, onGra
     });
   }, [inspectorSteps]);
 
+  // When opening a run that is ALREADY finished, start in Step Through so the execution view reads as a
+  // distinct time-travel review rather than a static copy of the editor canvas (which now looks the same,
+  // just status-coloured). A live run the user is watching stays in the live view — we record the decision
+  // once per run on open, so a later completion doesn't yank it into step mode, and a manual toggle sticks.
+  const autoStepDecidedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (autoStepDecidedForRef.current === executionId) return;
+    if (!execution || execution.id !== executionId) return;
+    if (!isTerminalExecutionStatus(execution.status)) {
+      autoStepDecidedForRef.current = executionId; // live/in-progress at open — never auto-step this run
+      return;
+    }
+    if (inspectorSteps.length === 0) return; // wait until the per-node steps are built from the journal
+    autoStepDecidedForRef.current = executionId;
+    const failedIndex = inspectorSteps.findIndex((step) => normalizeStatusValue(step.status) === 'Failed');
+    setStepIndex(failedIndex >= 0 ? failedIndex : 0);
+    setStepMode(true);
+  }, [execution, executionId, inspectorSteps]);
+
   const clampedStepIndex = Math.min(stepIndex, Math.max(inspectorSteps.length - 1, 0));
   const stepHighlightNodeId = stepMode ? inspectorSteps[clampedStepIndex]?.nodeId : undefined;
   // Nodes reached only after the current step are the "future" — dim them so the canvas
