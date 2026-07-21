@@ -38,6 +38,7 @@ Get /api/server-configs
 Get /api/server-configs/{id}
 Get /api/settings/ai-provider
 Get /api/settings/capabilities
+Get /api/settings/disk-space
 Get /api/settings/error-workflow
 Get /api/settings/file-access
 Get /api/settings/retention
@@ -126,6 +127,7 @@ Put /api/external-systems/options
 Put /api/server-configs/{id}
 Put /api/settings/ai-provider
 Put /api/settings/capabilities
+Put /api/settings/disk-space
 Put /api/settings/error-workflow
 Put /api/settings/file-access
 Put /api/settings/retention

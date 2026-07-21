@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Edge as FlowEdge, Node as FlowNode } from '@xyflow/react';
-import type { WorkflowDefinition, ExecutionInstance, ExecutionJournal, NodePackageSummary, WorkflowScheduleSummary, WorkflowVersion, WorkflowVersionSummary, WorkflowVersionListResponse, WorkflowVersionOrigin, ActiveWorkflowVersion, RestoreVersionResult, NodeDefinition, EdgeDefinition, NodeId, WorkflowGroupContainer, ReplayResult, ReplayWarning, ReplayLineageEntry, CompilationDiagnostic, FailureAlertConfig, FailureAlertMode, NotificationChannel, NotificationChannelType, InlineCodeTestResult, LoadOptionsResult, BundleInstallResponse, CredentialSummary, BundleManifestInput, BackupManifest, RestoreReport, TemplateExportRequest, TemplatePortabilizationReport, TemplateInspectResponse, TemplateInstallResponse, GalleryTemplate, TemplatePayloadResponse, TemplateManifest, TemplateCredentialSlot, TemplateCompatibility, ParameterValues, ConditionLastRunResponse, VersionInfo, ProviderDescriptor, ExternalSystemInfo, ExternalTargetInfo, ExternalTargetEdit, TargetStatus, ImportProviderDescriptor, ImportGranularity, ImportPreviewResponse, ImportInstallResponse, ImportTargetStrategy, AiGenerationJobResult, AiProviderConfigResponse, SetAiProviderConfigInput, AiProviderTestResponse, AiProviderModelsResponse, AuthStatus, AuthUser, FileAccessPolicyDto, CapabilityPolicyDto, RetentionConfigDto, SandboxSettingsDto } from '../types';
+import type { WorkflowDefinition, ExecutionInstance, ExecutionJournal, NodePackageSummary, WorkflowScheduleSummary, WorkflowVersion, WorkflowVersionSummary, WorkflowVersionListResponse, WorkflowVersionOrigin, ActiveWorkflowVersion, RestoreVersionResult, NodeDefinition, EdgeDefinition, NodeId, WorkflowGroupContainer, ReplayResult, ReplayWarning, ReplayLineageEntry, CompilationDiagnostic, FailureAlertConfig, FailureAlertMode, NotificationChannel, NotificationChannelType, InlineCodeTestResult, LoadOptionsResult, BundleInstallResponse, CredentialSummary, BundleManifestInput, BackupManifest, RestoreReport, TemplateExportRequest, TemplatePortabilizationReport, TemplateInspectResponse, TemplateInstallResponse, GalleryTemplate, TemplatePayloadResponse, TemplateManifest, TemplateCredentialSlot, TemplateCompatibility, ParameterValues, ConditionLastRunResponse, VersionInfo, ProviderDescriptor, ExternalSystemInfo, ExternalTargetInfo, ExternalTargetEdit, TargetStatus, ImportProviderDescriptor, ImportGranularity, ImportPreviewResponse, ImportInstallResponse, ImportTargetStrategy, AiGenerationJobResult, AiProviderConfigResponse, SetAiProviderConfigInput, AiProviderTestResponse, AiProviderModelsResponse, AuthStatus, AuthUser, FileAccessPolicyDto, CapabilityPolicyDto, RetentionConfigDto, DiskSpaceConfigDto, SandboxSettingsDto } from '../types';
 
 const API_BASE = '/api';
 
@@ -775,6 +775,22 @@ export const api = {
       body: JSON.stringify(config),
     });
     return handleResponse<RetentionConfigDto>(response);
+  },
+
+  async getDiskSpaceConfig(): Promise<DiskSpaceConfigDto> {
+    const response = await fetch(`${API_BASE}/settings/disk-space`);
+    return handleResponse<DiskSpaceConfigDto>(response);
+  },
+
+  async updateDiskSpaceConfig(config: DiskSpaceConfigDto): Promise<DiskSpaceConfigDto> {
+    const response = await fetch(`${API_BASE}/settings/disk-space`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
+    });
+    return handleResponse<DiskSpaceConfigDto>(response);
   },
 
   async getSandboxSettings(): Promise<SandboxSettingsDto> {

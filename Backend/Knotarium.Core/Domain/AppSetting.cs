@@ -46,4 +46,9 @@ public static class AppSettingKeys
     /// version-history and audit-log caps) that bounds database growth. Unset ⇒ the "Retention"
     /// configuration section (and its defaults) applies unchanged.</summary>
     public const string RetentionPolicy = "RetentionPolicy";
+
+    /// <summary>JSON blob holding the disk-space guard policy (minimum free MB before the runtime is
+    /// disarmed to stop new runs, and how often to check). Unset ⇒ the "Storage" configuration section
+    /// (MinFreeSpaceMb / FreeSpaceCheckSeconds and their defaults) applies unchanged.</summary>
+    public const string DiskSpacePolicy = "DiskSpacePolicy";
 }

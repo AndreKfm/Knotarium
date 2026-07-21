@@ -5,9 +5,10 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Knotarium.Features.Settings;
 
 namespace Knotarium.Api.Services;
 
@@ -19,54 +20,68 @@ namespace Knotarium.Api.Services;
 /// pause the write pressure and surface a loud warning. It never auto-rearms — recovering disk and
 /// re-arming is a deliberate operator action.
 ///
-/// Configuration (optional):
+/// The policy is read <b>live from <see cref="DiskSpacePolicyStore"/> on every check</b> (and to compute
+/// the interval), so an admin editing Settings → Retention takes effect from the next tick without a
+/// restart. The store falls back to the "Storage" configuration section (MinFreeSpaceMb /
+/// FreeSpaceCheckSeconds, defaults 256 / 60) when nothing is persisted:
 /// <list type="bullet">
-///   <item><c>Storage:MinFreeSpaceMb</c> — pause arming below this many MB free (default 256; 0 disables).</item>
-///   <item><c>Storage:FreeSpaceCheckSeconds</c> — how often to check (default 60, min 30).</item>
+///   <item><c>MinFreeSpaceMb</c> — pause arming below this many MB free (default 256; 0 disables).</item>
+///   <item><c>FreeSpaceCheckSeconds</c> — how often to check (default 60, min 30).</item>
 /// </list>
 /// </summary>
 public sealed class DiskSpaceGuardWorker : BackgroundService
 {
+    private static readonly TimeSpan FallbackInterval = TimeSpan.FromSeconds(60);
+
+    private readonly IServiceProvider _serviceProvider;
     private readonly RuntimeArmingState _armingState;
     private readonly ILogger<DiskSpaceGuardWorker> _logger;
     private readonly string _monitorPath;
-    private readonly long _minFreeBytes;
-    private readonly TimeSpan _interval;
     private bool _trippedByGuard;
 
     public DiskSpaceGuardWorker(
+        IServiceProvider serviceProvider,
         RuntimeArmingState armingState,
-        IConfiguration configuration,
         ILogger<DiskSpaceGuardWorker> logger,
         string dataDirectory)
     {
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _armingState = armingState ?? throw new ArgumentNullException(nameof(armingState));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _monitorPath = string.IsNullOrWhiteSpace(dataDirectory) ? AppContext.BaseDirectory : dataDirectory;
-        _minFreeBytes = configuration.GetValue("Storage:MinFreeSpaceMb", 256L) * 1024L * 1024L;
-        var seconds = configuration.GetValue("Storage:FreeSpaceCheckSeconds", 60);
-        _interval = TimeSpan.FromSeconds(Math.Max(30, seconds));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (_minFreeBytes <= 0)
-        {
-            _logger.LogInformation("Disk-space guard disabled (Storage:MinFreeSpaceMb <= 0).");
-            return;
-        }
-
         _logger.LogInformation(
-            "Disk-space guard active: pausing arming below {MinMb} MB free on '{Path}', checked every {Seconds}s.",
-            _minFreeBytes / (1024 * 1024), _monitorPath, _interval.TotalSeconds);
+            "Disk-space guard started on '{Path}'; the policy is read live from settings each check "
+            + "(editable at Settings → Retention).", _monitorPath);
 
-        using var timer = new PeriodicTimer(_interval);
-        // First tick after one interval, so short-lived hosts (tests, one-shot runs) never trip the guard.
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+        // The loop never exits on "guard disabled": the threshold can be turned on at runtime via the UI,
+        // and we must pick that up. Each cycle re-reads the interval, waits, then re-reads the threshold.
+        while (!stoppingToken.IsCancellationRequested)
         {
+            var (minFreeBytes, interval) = await ReadPolicyAsync(stoppingToken).ConfigureAwait(false);
+
             try
             {
-                CheckOnce();
+                // First check runs one interval after startup, so short-lived hosts never trip the guard.
+                await Task.Delay(interval, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            if (minFreeBytes <= 0)
+            {
+                // Guard disabled. Keep looping so a later UI change is picked up.
+                continue;
+            }
+
+            try
+            {
+                CheckOnce(minFreeBytes);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -79,7 +94,29 @@ public sealed class DiskSpaceGuardWorker : BackgroundService
         }
     }
 
-    private void CheckOnce()
+    private async Task<(long MinFreeBytes, TimeSpan Interval)> ReadPolicyAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<DiskSpacePolicyStore>();
+            var policy = await store.GetDtoAsync(cancellationToken).ConfigureAwait(false);
+            var minFreeBytes = (long)policy.MinFreeSpaceMb * 1024L * 1024L;
+            var interval = TimeSpan.FromSeconds(Math.Max(30, policy.FreeSpaceCheckSeconds));
+            return (minFreeBytes, interval);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Failed to read the disk-space guard policy; using defaults (256 MB / {Seconds}s).", FallbackInterval.TotalSeconds);
+            return (256L * 1024L * 1024L, FallbackInterval);
+        }
+    }
+
+    private void CheckOnce(long minFreeBytes)
     {
         var free = TryGetFreeBytes();
         if (free is null)
@@ -87,7 +124,7 @@ public sealed class DiskSpaceGuardWorker : BackgroundService
             return;
         }
 
-        if (free.Value < _minFreeBytes)
+        if (free.Value < minFreeBytes)
         {
             if (_armingState.IsArmed)
             {
@@ -95,7 +132,7 @@ public sealed class DiskSpaceGuardWorker : BackgroundService
                 _trippedByGuard = true;
                 _logger.LogCritical(
                     "Free disk space {FreeMb} MB is below the {MinMb} MB threshold — runtime DISARMED to stop new runs. Free up space and re-arm manually.",
-                    free.Value / (1024 * 1024), _minFreeBytes / (1024 * 1024));
+                    free.Value / (1024 * 1024), minFreeBytes / (1024 * 1024));
             }
         }
         else if (_trippedByGuard)

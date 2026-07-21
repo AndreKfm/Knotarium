@@ -34,6 +34,11 @@ public static class SettingsServiceCollectionExtensions
         // config-bound RetentionDefaults (last AddSingleton wins) so appsettings "Retention:*" seeds the UI.
         services.TryAddSingleton(new RetentionDefaults());
         services.AddScoped<RetentionPolicyStore>();
+
+        // Disk-space guard policy: same shape as retention — read by the settings API and re-read live by
+        // the DiskSpaceGuardWorker on each check. The host overrides the built-in defaults from "Storage".
+        services.TryAddSingleton(new DiskSpaceDefaults());
+        services.AddScoped<DiskSpacePolicyStore>();
         return services;
     }
 }
