@@ -74,6 +74,11 @@ Filename: "{#AppUrl}"; Description: "Open {#AppName} in your browser"; Flags: po
 [Code]
 const
   SC = 'sc.exe';
+  // Max seconds to wait for the old service to actually reach STOPPED before replacing files. `sc stop`
+  // is asynchronous and the app can take a while to drain (older builds could hang ~30s on shutdown), so
+  // a fixed short Sleep would let the file copy start while the exe/DLLs/appsettings are still locked —
+  // which aborts the install ("file in use"). Poll instead, up to this ceiling.
+  StopTimeoutSec = 45;
 
 function RunSc(const Params: string): Integer;
 begin
@@ -89,15 +94,48 @@ begin
     SW_HIDE, ewWaitUntilTerminated, Rc) and (Rc = 0);
 end;
 
+// True once the service reports STOPPED. `find "STOPPED"` exits 0 only on that exact state — not on
+// STOP_PENDING (not a substring), so we keep waiting while the old process is still draining.
+function ServiceStopped(): Boolean;
+var
+  Rc: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'), '/C sc query {#ServiceName} | find "STOPPED"', '',
+    SW_HIDE, ewWaitUntilTerminated, Rc);
+  Result := (Rc = 0);
+end;
+
+// Force-terminate any lingering instance (a service that won't stop in time, or an interactive run via
+// Start.bat) still holding the files, so the copy can replace them. /T also kills the SandboxWorker child.
+procedure KillAppProcesses();
+var
+  Rc: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '',
+    SW_HIDE, ewWaitUntilTerminated, Rc);
+end;
+
 procedure StopAndDeleteService();
+var
+  Waited: Integer;
 begin
   if ServiceExists() then
   begin
     RunSc('stop {#ServiceName}');
-    Sleep(2000);
+    // Wait for the service to actually stop rather than sleeping a fixed 2s (see StopTimeoutSec).
+    Waited := 0;
+    while (Waited < StopTimeoutSec) and (not ServiceStopped()) do
+    begin
+      Sleep(1000);
+      Waited := Waited + 1;
+    end;
     RunSc('delete {#ServiceName}');
     Sleep(1000);
   end;
+  // Belt-and-suspenders: whether or not the service existed / stopped cleanly, make sure nothing is left
+  // holding the exe, DLLs or appsettings.json before the file copy runs.
+  KillAppProcesses();
+  Sleep(500);
 end;
 
 // Before copying files (e.g. on upgrade) the existing service must be stopped and removed,
