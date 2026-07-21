@@ -403,11 +403,22 @@ app.UseHttpsRedirection();
 var spaRoot = Path.Combine(appBaseDir, "wwwroot");
 var serveSpa = File.Exists(Path.Combine(spaRoot, "index.html"));
 IFileProvider? spaFileProvider = null;
+// SPA cache policy. Vite emits content-hashed filenames under /assets (e.g. index-ab12cd.js), so those
+// are safe to cache forever. But the index.html shell — which references those hashes — and any other
+// unhashed root file (favicon, etc.) MUST always revalidate; otherwise a browser keeps serving the old
+// shell after an in-place upgrade and the new build's features never appear until a manual hard-refresh.
+Action<Microsoft.AspNetCore.StaticFiles.StaticFileResponseContext> setSpaCacheHeaders = ctx =>
+{
+    ctx.Context.Response.Headers.CacheControl =
+        ctx.Context.Request.Path.StartsWithSegments("/assets")
+            ? "public, max-age=31536000, immutable"
+            : "no-cache";
+};
 if (serveSpa)
 {
     spaFileProvider = new PhysicalFileProvider(spaRoot);
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = spaFileProvider });
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = spaFileProvider });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = spaFileProvider, OnPrepareResponse = setSpaCacheHeaders });
 }
 
 // Auth runs after static files (so the SPA shell + assets load without a session) and before the API
@@ -536,7 +547,7 @@ app.MapServerConfigEndpoints();
 if (serveSpa && spaFileProvider is not null)
 {
     // Anonymous: the SPA shell must load so its login/setup screen can render before any session exists.
-    app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = spaFileProvider }).AllowAnonymous();
+    app.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = spaFileProvider, OnPrepareResponse = setSpaCacheHeaders }).AllowAnonymous();
 }
 
 app.Run();
