@@ -32,7 +32,12 @@ export type JournalOverviewGroup = {
   subtitle: string;
   hint: string | null;
   status: KnownExecutionStatus;
+  /** Offset of this node's last event from the run start (e.g. "+1ms"). */
   durationLabel: string;
+  /** Absolute clock time this node started (e.g. "22:04:53"), or null if unknown. */
+  startedAtLabel?: string | null;
+  /** How long this node itself ran, last event − start (e.g. "4 ms"), or undefined if not measurable. */
+  runDurationLabel?: string;
   entries: JournalOverviewEntry[];
   isWorkflow: boolean;
   // True when this entry is a node that ran inside an inlined subflow (its id is prefixed with the

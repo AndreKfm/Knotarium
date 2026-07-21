@@ -564,6 +564,8 @@ function ExecutionDetailInner({ executionId, onBack, onTriggeredExecution, onGra
         title: group.title,
         status: group.status,
         durationLabel: group.durationLabel,
+        startedAtLabel: group.startedAtLabel,
+        runDurationLabel: group.runDurationLabel,
       })),
     [journalOverview],
   );
