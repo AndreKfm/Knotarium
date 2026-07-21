@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { CSSProperties } from 'react';
-import { Eye, RotateCcw, X } from 'lucide-react';
+import { Eye, RotateCcw, X, GitCompareArrows } from 'lucide-react';
 
 export interface PreviewBannerProps {
   /** Version number being previewed (read-only). */
@@ -13,6 +13,8 @@ export interface PreviewBannerProps {
   /** Restore = make this the current, live version and return to editing. The single "go back to this
    *  version" action (fork-forward + activate). Hidden when it's already the active version. */
   onRestore?: () => void;
+  /** Compare this version against the working draft. */
+  onDiffAgainstDraft?: () => void;
 }
 
 /**
@@ -26,6 +28,7 @@ export function PreviewBanner({
   isActiveVersion,
   onExit,
   onRestore,
+  onDiffAgainstDraft,
 }: PreviewBannerProps) {
   const subtitle = isActiveVersion
     ? 'This is the active version — exit to return to your draft.'
@@ -92,6 +95,18 @@ export function PreviewBanner({
       </span>
 
       <span style={{ flex: 1 }} />
+
+      {onDiffAgainstDraft && (
+        <button
+          type="button"
+          onClick={onDiffAgainstDraft}
+          style={secondaryBtnStyle}
+          title="Compare this version with your working draft"
+        >
+          <GitCompareArrows size={14} />
+          Diff
+        </button>
+      )}
 
       {/* The single "go back to this version" action: makes it the current, live version (fork-forward
           + activate) and returns to editing. Hidden when it is already the active version. */}
