@@ -487,6 +487,8 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   const [subflowInterfaceById, setSubflowInterfaceById] = useState<Record<string, SubflowInterface>>({});
   const [showOpenApiImportModal, setShowOpenApiImportModal] = useState(false);
   const [workflowStatusMessage, setWorkflowStatusMessage] = useState<string | null>(null);
+  // Dismissal for the "misplaced Error Trigger" hint; reset when switching workflows.
+  const [errorTriggerHintDismissed, setErrorTriggerHintDismissed] = useState(false);
   const addRecentNode = useCanvasStore((state) => state.addRecentNode);
 
   const availableNodeMetadata = useMemo(
@@ -525,6 +527,23 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     () => upstreamReferenceGroups(selectedNode?.id ?? null, nodes, edges, availableNodeMetadata),
     [selectedNode, nodes, edges, availableNodeMetadata],
   );
+
+  useEffect(() => { setErrorTriggerHintDismissed(false); }, [currentId]);
+  // An Error Trigger only fires when THIS workflow is the global Error Workflow (Settings) and another
+  // workflow fails — never inline. Sitting it next to a normal entry trigger (Start/schedule/…) is the
+  // classic mistake, so surface a non-blocking hint when both are present. A dedicated error workflow
+  // has errorTrigger as its ONLY entry, so it won't trip this.
+  const showErrorTriggerHint = useMemo(() => {
+    if (readOnly) return false;
+    let hasErrorTrigger = false;
+    let hasNormalTrigger = false;
+    for (const node of nodes) {
+      const type = (node.type || '').toLowerCase();
+      if (type === 'errortrigger') hasErrorTrigger = true;
+      else if (type === 'start' || Boolean(node.data?.triggerOnly)) hasNormalTrigger = true;
+    }
+    return hasErrorTrigger && hasNormalTrigger;
+  }, [nodes, readOnly]);
 
   // Sync activeWorkflowId in store
   useEffect(() => {
@@ -1539,11 +1558,17 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     setSelectedEdge(null);
   }, [setEdges, recordUndo]);
 
+  // Live mirrors of preview/overlay state for the once-installed global Escape handler (reads refs so
+  // it never reinstalls). escOverlayOpenRef is assigned below, after every overlay's state exists.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const escOverlayOpenRef = useRef(false);
+
   // ── Global keyboard shortcuts (Escape/search/help/history/undo/copy/delete) ── See canvas/useCanvasKeyboardShortcuts.
   useCanvasKeyboardShortcuts({
-    clearClickConnect, setSearchOpen, setShortcutsOpen, historyOpenRef, closeVersionOverview,
-    setHistoryOpen, doUndo, doRedo, recordUndo, copySelection, pasteClipboard, duplicateSelection,
-    setNodes, setEdges, setSelectedNode, setSelectedEdge, nodesRef, edgesRef,
+    clearClickConnect, setSearchOpen, setShortcutsOpen, historyOpenRef, readOnlyRef, escOverlayOpenRef,
+    closeVersionOverview, setHistoryOpen, doUndo, doRedo, recordUndo, copySelection, pasteClipboard,
+    duplicateSelection, setNodes, setEdges, setSelectedNode, setSelectedEdge, nodesRef, edgesRef,
   });
 
   // Add new nodes toolbar handler
@@ -1933,6 +1958,8 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   // Back with pending edits opens a Save / Discard / Cancel choice; a browser close/refresh gets the
   // native beforeunload prompt.
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  // Overlays that own Escape — while any is open, Escape must not also exit the version preview.
+  escOverlayOpenRef.current = searchOpen || shortcutsOpen || templatePickerOpen || leaveConfirmOpen || restoreTarget != null;
   const handleBack = useCallback(() => {
     if (!readOnly && isDirty) { setLeaveConfirmOpen(true); return; }
     onBackRef.current?.();
@@ -2267,6 +2294,40 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
           </div>
         ) : null}
 
+        {showErrorTriggerHint && !errorTriggerHintDismissed && (
+          <div
+            role="status"
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              padding: '10px 24px',
+              background: 'rgba(245, 158, 11, 0.09)',
+              borderBottom: '1px solid var(--border-color)',
+              boxShadow: 'inset 2px 0 0 var(--color-warning, #f59e0b)',
+              color: 'var(--text-secondary)',
+              fontSize: '0.82rem',
+              lineHeight: 1.45,
+            }}
+          >
+            <span aria-hidden style={{ marginTop: 1, flex: '0 0 auto', color: 'var(--color-warning, #f59e0b)' }}>⚠</span>
+            <span style={{ flex: 1 }}>
+              <strong style={{ color: 'var(--text-primary, #e5e7eb)' }}>Error Trigger doesn&rsquo;t run as part of this workflow.</strong>{' '}
+              It only fires when this workflow is set as the global Error Workflow (Settings → Error Workflow)
+              and <em>another</em> workflow fails — not during this workflow&rsquo;s own runs. For a dedicated
+              error handler, keep Error Trigger as the only entry node.
+            </span>
+            <button
+              type="button"
+              onClick={() => setErrorTriggerHintDismissed(true)}
+              aria-label="Dismiss Error Trigger hint"
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, flex: '0 0 auto' }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {editorMode.kind === 'preview' && previewVersionNumber != null && (
           <PreviewBanner
             versionNumber={previewVersionNumber}
@@ -2418,6 +2479,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
               previewVersionId={editorMode.kind === 'preview' ? editorMode.versionId : null}
               onClose={closeVersionOverview}
               onPreview={(versionId) => void handlePreviewVersion(versionId)}
+              onDiffVersion={(versionId) => void handleDiffAgainstDraft(versionId)}
               onDiffDraftVsActive={() => void handleDiffDraftVsActive()}
             />
 
@@ -2438,13 +2500,23 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
                 error={restoreError}
                 onConfirm={(options) => void confirmRestore(options)}
                 onClose={() => {
-                  // A completed restore made a new current version — leave the read-only preview so the
-                  // editor returns to the (now restored) draft instead of the old version we were viewing.
+                  // A completed restore promoted the previewed version to current/live AND brought its
+                  // content back into the working draft (backend). Load that same content into the editor
+                  // so the canvas reflects what was restored, and rebaseline the saved signature so it
+                  // reads as clean — otherwise we'd drop back onto the stale newer draft.
                   const restored = restoreResult != null;
+                  const wasPreviewing = editorMode.kind === 'preview';
+                  const restoredNodes = previewNodes;
+                  const restoredEdges = previewEdges;
                   setRestoreTarget(null);
                   setRestoreResult(null);
                   setRestoreError(null);
-                  if (restored && editorMode.kind === 'preview') {
+                  if (restored && wasPreviewing) {
+                    const clonedNodes = restoredNodes.map((n) => ({ ...n }));
+                    const clonedEdges = restoredEdges.map((e) => ({ ...e }));
+                    setNodes(clonedNodes);
+                    setEdges(clonedEdges);
+                    setSavedSignature(workflowSignature(workflowName, clonedNodes, clonedEdges));
                     closeVersionOverview();
                   }
                 }}

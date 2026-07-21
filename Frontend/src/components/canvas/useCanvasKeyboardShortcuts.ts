@@ -11,6 +11,10 @@ export interface UseCanvasKeyboardShortcutsArgs {
   setSearchOpen: Dispatch<SetStateAction<boolean>>
   setShortcutsOpen: Dispatch<SetStateAction<boolean>>
   historyOpenRef: RefObject<boolean>
+  /** True while a read-only version preview/diff is showing (so Escape can back out of it). */
+  readOnlyRef: RefObject<boolean>
+  /** True while an overlay that owns Escape is open (search/help/dialog) — suppresses the preview exit. */
+  escOverlayOpenRef: RefObject<boolean>
   closeVersionOverview: () => void
   setHistoryOpen: Dispatch<SetStateAction<boolean>>
   doUndo: () => void
@@ -34,20 +38,14 @@ export interface UseCanvasKeyboardShortcutsArgs {
  */
 export function useCanvasKeyboardShortcuts(args: UseCanvasKeyboardShortcutsArgs): void {
   const {
-    clearClickConnect, setSearchOpen, setShortcutsOpen, historyOpenRef, closeVersionOverview,
-    setHistoryOpen, doUndo, doRedo, recordUndo, copySelection, pasteClipboard, duplicateSelection,
-    setNodes, setEdges, setSelectedNode, setSelectedEdge, nodesRef, edgesRef,
+    clearClickConnect, setSearchOpen, setShortcutsOpen, historyOpenRef, readOnlyRef, escOverlayOpenRef,
+    closeVersionOverview, setHistoryOpen, doUndo, doRedo, recordUndo, copySelection, pasteClipboard,
+    duplicateSelection, setNodes, setEdges, setSelectedNode, setSelectedEdge, nodesRef, edgesRef,
   } = args
 
   // Global keydown handler to support Delete / Backspace key deletions and Escape clearing
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        useVariableStore.getState().clearPins();
-        clearClickConnect();
-        return;
-      }
-
       const activeEl = document.activeElement;
       const editingText = !!activeEl && (
         activeEl.tagName === 'INPUT' ||
@@ -55,6 +53,20 @@ export function useCanvasKeyboardShortcuts(args: UseCanvasKeyboardShortcutsArgs)
         activeEl.tagName === 'SELECT' ||
         activeEl.getAttribute('contenteditable') === 'true'
       );
+
+      if (event.key === 'Escape') {
+        useVariableStore.getState().clearPins();
+        clearClickConnect();
+
+        // Back out of a read-only version preview/diff, so "click a version to look, Escape to leave"
+        // works like clicking outside the picker. Suppressed when a focused field or an overlay
+        // (search / help / a dialog) owns Escape, or while the version menu itself is open (it reverts
+        // its own transient preview on Escape). closeVersionOverview also closes the history drawer.
+        if (!editingText && readOnlyRef.current && !escOverlayOpenRef.current) {
+          closeVersionOverview();
+        }
+        return;
+      }
 
       // Search / jump palette (Ctrl+F / Cmd+K). Allowed even from a field so the
       // palette can always be summoned; it owns its own input afterwards.

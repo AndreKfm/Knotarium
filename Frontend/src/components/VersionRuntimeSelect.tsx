@@ -215,6 +215,11 @@ export function VersionRuntimeSelect({
             <span className="vrs-head-t">Select version</span>
             <span className="vrs-head-c">{versions.length} saved</span>
           </div>
+          {/* Names the two distinct actions so the row-click isn't mistaken for "switch to this version".
+              Clicking previews (read-only, reversible); Set active is the commit that changes what runs. */}
+          <p className="vrs-hint">
+            Click a version to <strong>preview</strong> it{onActivate ? <> · <strong>Set active</strong> makes it the live runtime version</> : null}
+          </p>
 
           <div className="vrs-list" role="listbox" aria-label="Runtime version" onMouseLeave={clearHoverTimer}>
             {versions.map((version, index) => {
@@ -231,6 +236,7 @@ export function VersionRuntimeSelect({
                   className={`vrs-row${isViewing ? ' vrs-viewing' : ''}${index === highlight ? ' vrs-hl' : ''}`}
                   onMouseEnter={() => handleItemEnter(index)}
                   onClick={() => commit(version.id)}
+                  title={isActive ? 'Preview the live version' : 'Preview this version (read-only)'}
                 >
                   <span className="vrs-tick"><Check size={14} /></span>
                   <span

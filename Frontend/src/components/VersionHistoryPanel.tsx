@@ -16,9 +16,10 @@ export interface VersionHistoryPanelProps {
   /** Delay before lingering on a row auto-previews it (matches the runtime dropdown). */
   hoverPreviewDelayMs?: number;
   onClose: () => void;
-  /** Open a read-only preview of the clicked version (V2). Restore / Diff / Exit live in the preview
-   *  banner, so each row here is a single click-to-open — no per-row action buttons. */
+  /** Open a read-only preview of the clicked version (V2). Restore / Exit live in the preview banner. */
   onPreview?: (versionId: string) => void;
+  /** Diff this specific version against the working draft directly — no need to preview it first. */
+  onDiffVersion?: (versionId: string) => void;
   /** Diff the working draft against the active version (the most-wanted case, V5). */
   onDiffDraftVsActive?: () => void;
 }
@@ -58,6 +59,7 @@ export function VersionHistoryPanel({
   hoverPreviewDelayMs = 300,
   onClose,
   onPreview,
+  onDiffVersion,
   onDiffDraftVsActive,
 }: VersionHistoryPanelProps) {
   // Debounce timer for hover-to-preview, so a quick scroll-past doesn't fire a preview.
@@ -240,12 +242,30 @@ export function VersionHistoryPanel({
                     : ''}
                 </div>
 
-                {/* One action per row: the whole row opens the version (read-only preview), where
-                    Restore / Diff / Exit live. A subtle "Open" cue signals the click target. */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600, opacity: isPreviewing ? 1 : 0.7 }}>
-                  <Eye size={12} />
-                  {isPreviewing ? 'Previewing' : 'Open'}
-                  {!isPreviewing && <ChevronRight size={12} />}
+                {/* Row click opens a read-only preview (Restore/Exit live in the banner); the Diff button
+                    is a direct shortcut to compare this version against the working draft — no need to
+                    preview it first. stopPropagation so Diff doesn't also open the preview. */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', fontSize: '0.72rem', fontWeight: 600, opacity: isPreviewing ? 1 : 0.7 }}>
+                    <Eye size={12} />
+                    {isPreviewing ? 'Previewing' : 'Open'}
+                    {!isPreviewing && <ChevronRight size={12} />}
+                  </span>
+                  {onDiffVersion && (
+                    <button
+                      type="button"
+                      className="vhp-diff-btn"
+                      title="Compare this version with your working draft"
+                      aria-label={`Diff version ${version.versionNumber} against the working draft`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDiffVersion(version.id);
+                      }}
+                    >
+                      <GitCompareArrows size={12} />
+                      Diff
+                    </button>
+                  )}
                 </div>
               </div>
             );

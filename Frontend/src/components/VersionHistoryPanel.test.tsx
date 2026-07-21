@@ -95,7 +95,7 @@ describe('VersionHistoryPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('has no per-row action buttons — the row is a single click-to-open (Restore/Diff live in preview)', () => {
+  it('shows no per-row Diff button when onDiffVersion is not provided; the row still opens', () => {
     const onPreview = vi.fn();
     render(
       <VersionHistoryPanel
@@ -109,10 +109,31 @@ describe('VersionHistoryPanel', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Restore' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Diff' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Diff version/ })).toBeNull();
     // The whole row still opens the version.
     fireEvent.click(screen.getByText('v7'));
     expect(onPreview).toHaveBeenCalledWith('ver-7');
+  });
+
+  it('diffs a specific version against the draft from a per-row Diff button, without previewing it', () => {
+    const onPreview = vi.fn();
+    const onDiffVersion = vi.fn();
+    render(
+      <VersionHistoryPanel
+        open
+        versions={[makeVersion({ id: 'ver-7', versionNumber: 7 })]}
+        loading={false}
+        error={null}
+        onClose={vi.fn()}
+        onPreview={onPreview}
+        onDiffVersion={onDiffVersion}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Diff version 7/ }));
+    expect(onDiffVersion).toHaveBeenCalledWith('ver-7');
+    // The Diff shortcut must not also open the read-only preview (stopPropagation).
+    expect(onPreview).not.toHaveBeenCalled();
   });
 
   it('offers the first-class draft-vs-active diff in the footer', () => {
