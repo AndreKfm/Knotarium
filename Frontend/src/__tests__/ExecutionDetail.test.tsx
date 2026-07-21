@@ -490,8 +490,9 @@ describe('ExecutionDetail', () => {
     });
 
     // Each executed row shows an absolute clock time next to its relative offset (HH:MM:SS · +Nms).
+    // The clock is locale-formatted, so allow an optional AM/PM suffix (en-US CI renders "07:57:13 PM").
     const logRowText = screen.getByTestId('journal-group-log-1').textContent ?? '';
-    expect(logRowText).toMatch(/\d{2}:\d{2}:\d{2} · \+\d+ms/);
+    expect(logRowText).toMatch(/\d{2}:\d{2}:\d{2}(?: [AP]M)? · \+\d+ms/);
 
     fireEvent.click(screen.getByTestId('journal-toggle-log-1'));
 
