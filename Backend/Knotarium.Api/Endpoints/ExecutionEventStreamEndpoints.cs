@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Knotarium.Core.Domain;
 using Knotarium.Infrastructure.Persistence;
 
@@ -30,7 +31,7 @@ public static class ExecutionEventStreamEndpoints
 {
     public static void MapExecutionEventStreamEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/executions/{id}/events", async (HttpContext context, Guid id, IServiceScopeFactory scopeFactory, SseEventPublisher publisher) =>
+        app.MapGet("/api/executions/{id}/events", async (HttpContext context, Guid id, IServiceScopeFactory scopeFactory, SseEventPublisher publisher, IHostApplicationLifetime lifetime) =>
         {
             var execId = new ExecutionInstanceId(id);
 
@@ -60,7 +61,13 @@ public static class ExecutionEventStreamEndpoints
             context.Response.Headers.CacheControl = "no-cache";
             context.Response.Headers.Connection = "keep-alive";
 
-            var cancellationToken = context.RequestAborted;
+            // Cancel the live tail on EITHER a client disconnect (RequestAborted) OR host shutdown
+            // (ApplicationStopping). Without the latter, this long-lived request keeps Kestrel's graceful
+            // shutdown open until the full host shutdown timeout (~30s) elapses and the connection is
+            // force-aborted — the reason the Windows service took ~30s to stop while a run view was open.
+            using var shutdownLinked = CancellationTokenSource.CreateLinkedTokenSource(
+                context.RequestAborted, lifetime.ApplicationStopping);
+            var cancellationToken = shutdownLinked.Token;
             var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
             var lastTimestamp = DateTimeOffset.MinValue;
             var seenEntryIdsAtLastTimestamp = new List<Guid>();
