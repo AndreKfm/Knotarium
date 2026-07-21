@@ -218,6 +218,15 @@ builder.Services.AddHostedService<Knotarium.Features.Ai.AiGenerationWorker>();
 // hosted worker plus the channel senders. The error-workflow run-enqueuer is part of AddExecution().
 builder.Services.AddNotifications();
 builder.Services.AddSettings();   // GlobalSettingsService (its ISettingsStore adapter is in AddPersistenceAdapters)
+// Seed the retention-policy fallback from the "Retention" section so an instance that never opens the
+// Settings → Retention UI keeps its appsettings-configured behavior (overrides the built-in default that
+// AddSettings TryAdds; last AddSingleton wins on resolve).
+builder.Services.AddSingleton(new Knotarium.Features.Settings.RetentionDefaults(
+    builder.Configuration.GetValue("Retention:RunHistoryDays", 30),
+    builder.Configuration.GetValue("Retention:SweepIntervalMinutes", 60),
+    builder.Configuration.GetValue("Retention:MaxWorkflowVersionsPerWorkflow", 0),
+    builder.Configuration.GetValue("Retention:MaxOpenApiSpecVersionsPerSpec", 0),
+    builder.Configuration.GetValue("Retention:AuditEntryDays", 0)));
 
 
 // Execution slice: queue + hosted worker + executor/recovery/replay + the external-signal and

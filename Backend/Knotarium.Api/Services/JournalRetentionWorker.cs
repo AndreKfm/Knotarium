@@ -7,11 +7,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Knotarium.Core.Domain;
+using Knotarium.Features.Settings;
 using Knotarium.Infrastructure.Persistence;
 using Knotarium.Infrastructure.Security;
 
@@ -37,19 +37,19 @@ namespace Knotarium.Api.Services;
 /// After a sweep the SQLite WAL is checkpoint-truncated and (when the file is in incremental auto-vacuum mode)
 /// freed pages are returned to the OS via <c>PRAGMA incremental_vacuum</c>.
 ///
-/// Configuration (all optional, safe defaults):
+/// The policy is read <b>live from <see cref="RetentionPolicyStore"/> on every sweep</b> (and to compute the
+/// sweep interval), so an admin editing Settings → Retention takes effect from the next tick without a restart.
+/// The store falls back to the "Retention" configuration section when nothing is persisted, so behavior is
+/// unchanged for an instance that never opens the UI. Values:
 /// <list type="bullet">
-///   <item><c>Retention:RunHistoryDays</c> — keep terminal runs + schedule fires this many days (default 30).
-///   0 or negative disables time-based pruning.</item>
-///   <item><c>Retention:SweepIntervalMinutes</c> — how often to sweep (default 60). The first sweep runs one
-///   interval after startup, so short-lived processes never prune.</item>
-///   <item><c>Retention:MaxWorkflowVersionsPerWorkflow</c> — cap version history per workflow (default 0 = keep
-///   all).</item>
-///   <item><c>Retention:MaxOpenApiSpecVersionsPerSpec</c> — cap OpenAPI re-import history per spec (default 0 =
-///   keep all).</item>
-///   <item><c>Retention:AuditEntryDays</c> — roll over audit entries older than this many days (default 0 =
-///   keep forever). Rewrites the remaining chain, so enable only if the boundary tamper-evidence tradeoff is
-///   acceptable.</item>
+///   <item><c>RunHistoryDays</c> — keep terminal runs + schedule fires this many days (default 30). 0 disables
+///   time-based pruning.</item>
+///   <item><c>SweepIntervalMinutes</c> — how often to sweep (default 60). The first sweep runs one interval
+///   after startup, so short-lived processes never prune.</item>
+///   <item><c>MaxWorkflowVersionsPerWorkflow</c> — cap version history per workflow (default 0 = keep all).</item>
+///   <item><c>MaxOpenApiSpecVersionsPerSpec</c> — cap OpenAPI re-import history per spec (default 0 = keep all).</item>
+///   <item><c>AuditEntryDays</c> — roll over audit entries older than this many days (default 0 = keep forever).
+///   Rewrites the remaining chain, so enable only if the boundary tamper-evidence tradeoff is acceptable.</item>
 /// </list>
 /// </summary>
 public sealed class JournalRetentionWorker : BackgroundService
@@ -64,56 +64,41 @@ public sealed class JournalRetentionWorker : BackgroundService
         ExecutionStatus.Discarded,
     };
 
+    private static readonly TimeSpan FallbackInterval = TimeSpan.FromMinutes(60);
+
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<JournalRetentionWorker> _logger;
-    private readonly int _retentionDays;
-    private readonly int _maxWorkflowVersionsPerWorkflow;
-    private readonly int _maxOpenApiSpecVersionsPerSpec;
-    private readonly int _auditEntryDays;
-    private readonly TimeSpan _sweepInterval;
 
     public JournalRetentionWorker(
         IServiceProvider serviceProvider,
-        IConfiguration configuration,
         ILogger<JournalRetentionWorker> logger)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        _retentionDays = configuration.GetValue("Retention:RunHistoryDays", 30);
-        _maxWorkflowVersionsPerWorkflow = configuration.GetValue("Retention:MaxWorkflowVersionsPerWorkflow", 0);
-        _maxOpenApiSpecVersionsPerSpec = configuration.GetValue("Retention:MaxOpenApiSpecVersionsPerSpec", 0);
-        _auditEntryDays = configuration.GetValue("Retention:AuditEntryDays", 0);
-        var sweepMinutes = configuration.GetValue("Retention:SweepIntervalMinutes", 60);
-        _sweepInterval = TimeSpan.FromMinutes(Math.Max(1, sweepMinutes));
     }
-
-    private bool AnyRetentionEnabled =>
-        _retentionDays > 0
-        || _maxWorkflowVersionsPerWorkflow > 0
-        || _maxOpenApiSpecVersionsPerSpec > 0
-        || _auditEntryDays > 0;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!AnyRetentionEnabled)
-        {
-            _logger.LogInformation("Data retention disabled (no Retention:* limits set); data is kept indefinitely.");
-            return;
-        }
-
         _logger.LogInformation(
-            "Data retention active: runs+schedule-fires > {Days}d, max {WfVersions} versions/workflow, "
-            + "max {SpecVersions} versions/spec, audit > {AuditDays}d; sweeping every {Minutes} minute(s).",
-            _retentionDays, _maxWorkflowVersionsPerWorkflow, _maxOpenApiSpecVersionsPerSpec, _auditEntryDays,
-            _sweepInterval.TotalMinutes);
+            "Journal retention worker started; the policy is read live from settings each sweep "
+            + "(editable at Settings → Retention).");
 
-        using var timer = new PeriodicTimer(_sweepInterval);
-
-        // First tick fires after one interval — deliberately not on startup, so short-lived hosts (tests,
-        // one-shot runs) never prune.
-        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+        // The loop never exits on "retention disabled": the policy can be turned on at runtime via the UI,
+        // and we must pick that up. Each cycle re-reads the interval, waits, then re-reads the values to sweep.
+        while (!stoppingToken.IsCancellationRequested)
         {
+            var interval = await ReadSweepIntervalAsync(stoppingToken).ConfigureAwait(false);
+
+            try
+            {
+                // First sweep runs one interval after startup (so short-lived hosts never prune).
+                await Task.Delay(interval, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
             try
             {
                 await SweepAsync(stoppingToken).ConfigureAwait(false);
@@ -129,32 +114,63 @@ public sealed class JournalRetentionWorker : BackgroundService
         }
     }
 
+    private async Task<TimeSpan> ReadSweepIntervalAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<RetentionPolicyStore>();
+            var policy = await store.GetDtoAsync(cancellationToken).ConfigureAwait(false);
+            return TimeSpan.FromMinutes(Math.Max(1, policy.SweepIntervalMinutes));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Failed to read the retention sweep interval; using {Minutes} minute(s).", FallbackInterval.TotalMinutes);
+            return FallbackInterval;
+        }
+    }
+
     private async Task SweepAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
+        var policy = await scope.ServiceProvider
+            .GetRequiredService<RetentionPolicyStore>()
+            .GetDtoAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!IsAnyRetentionEnabled(policy))
+        {
+            // Nothing configured to prune. Keep looping so a later UI change is picked up.
+            return;
+        }
+
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var totalDeleted = 0L;
-        if (_retentionDays > 0)
+        if (policy.RunHistoryDays > 0)
         {
-            var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromDays(_retentionDays);
-            totalDeleted += await PruneRunHistoryAsync(db, cutoff, cancellationToken).ConfigureAwait(false);
-            totalDeleted += await PruneScheduleFiresAsync(db, cutoff, cancellationToken).ConfigureAwait(false);
+            var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromDays(policy.RunHistoryDays);
+            totalDeleted += await PruneRunHistoryAsync(db, cutoff, policy.RunHistoryDays, cancellationToken).ConfigureAwait(false);
+            totalDeleted += await PruneScheduleFiresAsync(db, cutoff, policy.RunHistoryDays, cancellationToken).ConfigureAwait(false);
         }
 
-        if (_maxWorkflowVersionsPerWorkflow > 0)
+        if (policy.MaxWorkflowVersionsPerWorkflow > 0)
         {
-            totalDeleted += await CapWorkflowVersionsAsync(db, cancellationToken).ConfigureAwait(false);
+            totalDeleted += await CapWorkflowVersionsAsync(db, policy.MaxWorkflowVersionsPerWorkflow, cancellationToken).ConfigureAwait(false);
         }
 
-        if (_maxOpenApiSpecVersionsPerSpec > 0)
+        if (policy.MaxOpenApiSpecVersionsPerSpec > 0)
         {
-            totalDeleted += await CapOpenApiSpecVersionsAsync(db, cancellationToken).ConfigureAwait(false);
+            totalDeleted += await CapOpenApiSpecVersionsAsync(db, policy.MaxOpenApiSpecVersionsPerSpec, cancellationToken).ConfigureAwait(false);
         }
 
-        if (_auditEntryDays > 0)
+        if (policy.AuditEntryDays > 0)
         {
-            totalDeleted += await RollOverAuditEntriesAsync(db, cancellationToken).ConfigureAwait(false);
+            totalDeleted += await RollOverAuditEntriesAsync(db, policy.AuditEntryDays, cancellationToken).ConfigureAwait(false);
         }
 
         if (totalDeleted <= 0)
@@ -172,7 +188,13 @@ public sealed class JournalRetentionWorker : BackgroundService
         }
     }
 
-    private async Task<long> PruneRunHistoryAsync(AppDbContext db, DateTimeOffset cutoff, CancellationToken cancellationToken)
+    private static bool IsAnyRetentionEnabled(RetentionPolicyDto policy) =>
+        policy.RunHistoryDays > 0
+        || policy.MaxWorkflowVersionsPerWorkflow > 0
+        || policy.MaxOpenApiSpecVersionsPerSpec > 0
+        || policy.AuditEntryDays > 0;
+
+    private async Task<long> PruneRunHistoryAsync(AppDbContext db, DateTimeOffset cutoff, int retentionDays, CancellationToken cancellationToken)
     {
         // Bulk delete; the ExecutionInstance → children cascade (ON DELETE CASCADE, enforced by
         // foreign_keys=ON) removes each pruned run's rows in the same statement.
@@ -183,12 +205,12 @@ public sealed class JournalRetentionWorker : BackgroundService
 
         if (deleted > 0)
         {
-            _logger.LogInformation("Retention pruned {Count} terminal run(s) older than {Days} day(s).", deleted, _retentionDays);
+            _logger.LogInformation("Retention pruned {Count} terminal run(s) older than {Days} day(s).", deleted, retentionDays);
         }
         return deleted;
     }
 
-    private async Task<long> PruneScheduleFiresAsync(AppDbContext db, DateTimeOffset cutoff, CancellationToken cancellationToken)
+    private async Task<long> PruneScheduleFiresAsync(AppDbContext db, DateTimeOffset cutoff, int retentionDays, CancellationToken cancellationToken)
     {
         var deleted = await db.ScheduleFires
             .Where(sf => sf.FiredAtUtc < cutoff)
@@ -197,12 +219,12 @@ public sealed class JournalRetentionWorker : BackgroundService
 
         if (deleted > 0)
         {
-            _logger.LogInformation("Retention pruned {Count} schedule-fire record(s) older than {Days} day(s).", deleted, _retentionDays);
+            _logger.LogInformation("Retention pruned {Count} schedule-fire record(s) older than {Days} day(s).", deleted, retentionDays);
         }
         return deleted;
     }
 
-    private async Task<long> CapWorkflowVersionsAsync(AppDbContext db, CancellationToken cancellationToken)
+    private async Task<long> CapWorkflowVersionsAsync(AppDbContext db, int maxWorkflowVersionsPerWorkflow, CancellationToken cancellationToken)
     {
         // Versions that must be preserved regardless of age/count: the active version, anything referenced by
         // the append-only activation log (FK, no cascade — deleting would fail), and anything a retained run
@@ -235,7 +257,7 @@ public sealed class JournalRetentionWorker : BackgroundService
 
         var toDelete = versions
             .GroupBy(v => v.WorkflowDefinitionId.Value)
-            .SelectMany(g => g.OrderByDescending(v => v.VersionNumber).Skip(_maxWorkflowVersionsPerWorkflow))
+            .SelectMany(g => g.OrderByDescending(v => v.VersionNumber).Skip(maxWorkflowVersionsPerWorkflow))
             .Where(v => !referenced.Contains(v.Id.Value))
             .Select(v => v.Id.Value)
             .ToList();
@@ -257,7 +279,7 @@ public sealed class JournalRetentionWorker : BackgroundService
         return deleted;
     }
 
-    private async Task<long> CapOpenApiSpecVersionsAsync(AppDbContext db, CancellationToken cancellationToken)
+    private async Task<long> CapOpenApiSpecVersionsAsync(AppDbContext db, int maxOpenApiSpecVersionsPerSpec, CancellationToken cancellationToken)
     {
         var versions = await db.OpenApiSpecVersions.AsNoTracking()
             .Select(v => new { v.RowId, v.SpecId, v.VersionNumber })
@@ -265,7 +287,7 @@ public sealed class JournalRetentionWorker : BackgroundService
 
         var toDelete = versions
             .GroupBy(v => v.SpecId)
-            .SelectMany(g => g.OrderByDescending(v => v.VersionNumber).Skip(_maxOpenApiSpecVersionsPerSpec))
+            .SelectMany(g => g.OrderByDescending(v => v.VersionNumber).Skip(maxOpenApiSpecVersionsPerSpec))
             .Select(v => v.RowId)
             .ToList();
 
@@ -286,9 +308,9 @@ public sealed class JournalRetentionWorker : BackgroundService
         return deleted;
     }
 
-    private async Task<long> RollOverAuditEntriesAsync(AppDbContext db, CancellationToken cancellationToken)
+    private async Task<long> RollOverAuditEntriesAsync(AppDbContext db, int auditEntryDays, CancellationToken cancellationToken)
     {
-        var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromDays(_auditEntryDays);
+        var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromDays(auditEntryDays);
 
         var deleted = await db.AuditEntries
             .Where(a => a.Timestamp < cutoff)
@@ -307,7 +329,7 @@ public sealed class JournalRetentionWorker : BackgroundService
 
         _logger.LogWarning(
             "Retention rolled over {Count} audit entries older than {Days} day(s) and re-anchored the chain.",
-            deleted, _auditEntryDays);
+            deleted, auditEntryDays);
         return deleted;
     }
 }

@@ -3,6 +3,7 @@
 
 using Knotarium.Core.Contracts;
 using Knotarium.Features.Settings;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 // .NET convention: DI registration extensions live in Microsoft.Extensions.DependencyInjection
 // so callers get AddSettings() without an extra using.
@@ -26,6 +27,13 @@ public static class SettingsServiceCollectionExtensions
         // Capability policy: same shape — concrete store for the API, ICapabilityPolicy seam for the nodes.
         services.AddScoped<CapabilityPolicyStore>();
         services.AddScoped<ICapabilityPolicy>(sp => sp.GetRequiredService<CapabilityPolicyStore>());
+
+        // Data-retention policy: read by the settings API and re-read live by the JournalRetentionWorker
+        // on each sweep. No Core seam — the worker resolves this concrete store from its per-sweep scope.
+        // TryAdd a built-in defaults fallback so the slice works standalone; the host overrides it with a
+        // config-bound RetentionDefaults (last AddSingleton wins) so appsettings "Retention:*" seeds the UI.
+        services.TryAddSingleton(new RetentionDefaults());
+        services.AddScoped<RetentionPolicyStore>();
         return services;
     }
 }

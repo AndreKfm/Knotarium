@@ -111,5 +111,19 @@ public static class RuntimeSettingsEndpoints
             await store.SetDtoAsync(request ?? CapabilityPolicyDto.Empty, ct);
             return Results.Ok(await store.GetDtoAsync(ct));
         });
+
+        // --- Data-retention policy (bounds DB growth: run history + logs, version history, audit log) ---
+        // The JournalRetentionWorker re-reads this on every sweep, so an edit applies without a restart.
+        // Reads are open to any authenticated user; mutations require the admin role (a no-op without auth).
+
+        app.MapGet("/api/settings/retention", async (RetentionPolicyStore store, CancellationToken ct) =>
+            Results.Ok(await store.GetDtoAsync(ct)));
+
+        app.MapPut("/api/settings/retention", async (RetentionPolicyDto request, RetentionPolicyStore store, AuthOptions auth, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
+            if (request is null) return Results.BadRequest(new { error = "A retention policy body is required." });
+            return Results.Ok(await store.SetDtoAsync(request, ct));
+        });
     }
 }

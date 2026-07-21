@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from 'react';
-import { Bell, Box, Database, FolderLock, Plug, ShieldAlert, Sparkles } from 'lucide-react';
+import { Bell, Box, Database, FolderLock, HardDrive, Plug, ShieldAlert, Sparkles } from 'lucide-react';
 import { ErrorWorkflowSetting } from './ErrorWorkflowSetting';
 import { NotificationChannelManager } from './NotificationChannelManager';
 import { BackupRestorePanel } from './BackupRestorePanel';
@@ -12,8 +12,9 @@ import { FileAccessSetting } from './FileAccessSetting';
 import { usePendingFileAccessGrantStore } from '../stores/usePendingFileAccessGrantStore';
 import { CapabilitiesSetting } from './CapabilitiesSetting';
 import { SandboxSetting } from './SandboxSetting';
+import { RetentionSetting } from './RetentionSetting';
 
-type SettingsSection = 'notifications' | 'ai' | 'fileAccess' | 'capabilities' | 'sandbox' | 'systems' | 'backup';
+type SettingsSection = 'notifications' | 'ai' | 'fileAccess' | 'capabilities' | 'sandbox' | 'retention' | 'systems' | 'backup';
 
 const SECTIONS: { key: SettingsSection; label: string; icon: typeof Bell }[] = [
   { key: 'notifications', label: 'Notifications', icon: Bell },
@@ -21,6 +22,7 @@ const SECTIONS: { key: SettingsSection; label: string; icon: typeof Bell }[] = [
   { key: 'fileAccess', label: 'File Access', icon: FolderLock },
   { key: 'capabilities', label: 'Capabilities', icon: ShieldAlert },
   { key: 'sandbox', label: 'Sandbox', icon: Box },
+  { key: 'retention', label: 'Retention', icon: HardDrive },
   { key: 'systems', label: 'External Systems', icon: Plug },
   { key: 'backup', label: 'Backup & Restore', icon: Database },
 ];
@@ -131,6 +133,19 @@ export function SettingsView({ armed, onDisarm }: SettingsViewProps) {
                 </p>
               </div>
               <SandboxSetting />
+            </>
+          )}
+
+          {section === 'retention' && (
+            <>
+              <div className="iset-head">
+                <h1><span className="ih-ic"><HardDrive size={20} /></span> Retention</h1>
+                <p>
+                  Bound how large the database can grow so it can't fill the disk — prune old finished runs
+                  and their logs, and cap version histories and the audit log. Applies on the next sweep.
+                </p>
+              </div>
+              <RetentionSetting />
             </>
           )}
 
