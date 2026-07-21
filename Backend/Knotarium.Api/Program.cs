@@ -241,10 +241,17 @@ builder.Services.AddHostedService<SchedulingWorker>();
 builder.Services.AddHostedService<PollingWorker>();
 // Bounds run-history growth: prunes old terminal runs (cascades to their journal + node states).
 builder.Services.AddHostedService<JournalRetentionWorker>();
-// Pauses arming (stops new runs) when free disk on the data volume falls below a threshold.
+// Seed the disk-space guard fallback from the "Storage" section so an instance that never opens the
+// Settings → Retention UI keeps its appsettings-configured thresholds (overrides the built-in default
+// that AddSettings TryAdds; last AddSingleton wins on resolve).
+builder.Services.AddSingleton(new Knotarium.Features.Settings.DiskSpaceDefaults(
+    builder.Configuration.GetValue("Storage:MinFreeSpaceMb", 256),
+    builder.Configuration.GetValue("Storage:FreeSpaceCheckSeconds", 60)));
+// Pauses arming (stops new runs) when free disk on the data volume falls below a threshold. Reads its
+// policy live from DiskSpacePolicyStore on each check, so an admin edit applies without a restart.
 builder.Services.AddHostedService(sp => new DiskSpaceGuardWorker(
+    sp,
     sp.GetRequiredService<RuntimeArmingState>(),
-    builder.Configuration,
     sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DiskSpaceGuardWorker>>(),
     dataDir));
 

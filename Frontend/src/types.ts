@@ -126,6 +126,18 @@ export interface RetentionConfigDto {
 }
 
 /**
+ * Disk-space guard policy (Settings → Retention) — the hard backstop against filling the disk. When free
+ * space on the data volume drops below `minFreeSpaceMb`, the runtime is disarmed so no new runs start; it
+ * never auto-rearms. Mirrors the backend DiskSpacePolicyDto; values are clamped server-side.
+ */
+export interface DiskSpaceConfigDto {
+  /** Free-space floor (MB) below which the runtime is disarmed. 0 = disable the guard. */
+  minFreeSpaceMb: number;
+  /** How often to check free space, in seconds. Minimum 30. */
+  freeSpaceCheckSeconds: number;
+}
+
+/**
  * Sandbox configuration for user-authored node code (Settings → Sandbox).
  * `mode: 'Process'` runs Inline Code / custom-package C# in pooled, OS-confined worker
  * processes; `'InProcess'` is the compatible legacy behavior. Mirrors the backend

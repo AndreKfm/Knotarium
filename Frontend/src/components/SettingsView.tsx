@@ -13,6 +13,7 @@ import { usePendingFileAccessGrantStore } from '../stores/usePendingFileAccessGr
 import { CapabilitiesSetting } from './CapabilitiesSetting';
 import { SandboxSetting } from './SandboxSetting';
 import { RetentionSetting } from './RetentionSetting';
+import { DiskSpaceSetting } from './DiskSpaceSetting';
 
 type SettingsSection = 'notifications' | 'ai' | 'fileAccess' | 'capabilities' | 'sandbox' | 'retention' | 'systems' | 'backup';
 
@@ -146,6 +147,7 @@ export function SettingsView({ armed, onDisarm }: SettingsViewProps) {
                 </p>
               </div>
               <RetentionSetting />
+              <DiskSpaceSetting />
             </>
           )}
 

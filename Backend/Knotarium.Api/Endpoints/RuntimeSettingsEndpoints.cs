@@ -125,5 +125,18 @@ public static class RuntimeSettingsEndpoints
             if (request is null) return Results.BadRequest(new { error = "A retention policy body is required." });
             return Results.Ok(await store.SetDtoAsync(request, ct));
         });
+
+        // --- Disk-space guard (disarms the runtime to stop new runs when free space runs low) ---
+        // The DiskSpaceGuardWorker re-reads this on every check, so an edit applies without a restart.
+
+        app.MapGet("/api/settings/disk-space", async (DiskSpacePolicyStore store, CancellationToken ct) =>
+            Results.Ok(await store.GetDtoAsync(ct)));
+
+        app.MapPut("/api/settings/disk-space", async (DiskSpacePolicyDto request, DiskSpacePolicyStore store, AuthOptions auth, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            if (auth.RequireAdmin(user) is { } denied) return denied;
+            if (request is null) return Results.BadRequest(new { error = "A disk-space policy body is required." });
+            return Results.Ok(await store.SetDtoAsync(request, ct));
+        });
     }
 }
