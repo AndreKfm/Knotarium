@@ -226,3 +226,70 @@ jobs:
             done
           } > release-notes.md
           gh release edit "$TAG" --notes-file release-notes.md
+
+  # Builds and pushes a multi-arch (amd64 + arm64) container image to the GitHub Container Registry on a
+  # tag push. The build is framework-dependent (arch-neutral IL on the multi-arch aspnet base), so buildx
+  # handles both platforms without per-RID gymnastics. A manual workflow_dispatch BUILDS the image (a
+  # validation build) but does NOT push. Tagging: every build publishes the exact `:<version>`; `:latest`
+  # moves only on a STABLE tag (no hyphen), while pre-releases (rc/beta) also move a rolling `:edge`.
+  # No external secret needed — pushes to ghcr.io with the built-in GITHUB_TOKEN. ONE-TIME manual step:
+  # after the first push, set the GHCR package visibility to Public in the repo's Packages settings.
+  docker:
+    name: Build + push Docker image (GHCR)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # push to ghcr.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve version and image tags
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="0.0.0-dev"
+          fi
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"   # GHCR requires a lowercase image path
+          IMAGE="ghcr.io/${OWNER}/knotarium"
+          TAGS="${IMAGE}:${VER}"
+          # A hyphen ⇒ pre-release: roll :edge. Otherwise it's stable: roll :latest.
+          if [[ "${VER}" == *-* ]]; then
+            TAGS="${TAGS},${IMAGE}:edge"
+          else
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.ref_type == 'tag' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          provenance: false
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}

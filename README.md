@@ -35,7 +35,7 @@ Prebuilt releases are on the [**Releases page**](https://github.com/AndreKfm/Kno
 | **Windows — installer** | `Knotarium-<version>-setup.exe` | Installs Knotarium as an auto-starting **Windows service** on `http://localhost:43120`. |
 | **Windows — zero-install** | `Knotarium-<version>-win-x64.zip` | Unzip and run `Start.bat`; runs in the foreground, nothing installed. |
 | **Linux** | `Knotarium-<version>-linux-x64.tar.gz` | Self-contained x64 build — extract and run `./Knotarium.Api`. |
-| **Any OS — container** | — | `docker compose up --build` (see [Quickstart](#quickstart-docker) below). |
+| **Any OS — container** | `ghcr.io/andrekfm/knotarium` | Prebuilt multi-arch image (amd64 + arm64) — `docker run` or `docker compose` (see [Quickstart](#quickstart-docker) below). |
 
 Verify your download against the published checksum before running, e.g. on Windows:
 
@@ -50,6 +50,14 @@ Then open **http://localhost:43120** and create your admin account on first run.
 ---
 
 ## Quickstart (Docker)
+
+Run the prebuilt image from the GitHub Container Registry — multi-arch (amd64 + arm64), nothing to build:
+
+```bash
+docker run -d --name knotarium -p 43120:43120 -v knotarium-data:/data ghcr.io/andrekfm/knotarium:latest
+```
+
+`:latest` tracks the newest **stable** release. During the current pre-release phase, use `:edge` (newest pre-release) or an exact version tag such as `:1.0.0-rc.12`. Or build from source with Compose instead:
 
 ```bash
 docker compose up --build
