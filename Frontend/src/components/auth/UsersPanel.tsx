@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Trash2, UserPlus, KeyRound } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useAuth } from './AuthContext';
@@ -64,9 +65,12 @@ export function UsersPanel({ onClose }: { onClose: () => void }) {
   const btn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 7, border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-secondary)', fontSize: '0.8rem', cursor: 'pointer' };
   const sectionTitle: React.CSSProperties = { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' };
 
-  return (
+  // Portal to <body>: the app header carries `backdrop-filter`, which makes it the containing block for
+  // any `position: fixed` descendant — so without this the modal is trapped inside the header strip
+  // (clipped, and its scrim doesn't cover the viewport). Rendering at the body escapes that.
+  return createPortal((
     <div onMouseDown={onScrimMouseDown} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.55)', display: 'grid', placeItems: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 520, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: 24, borderRadius: 14, background: 'var(--bg-surface-opaque)', border: '1px solid var(--border-color)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+      <div role="dialog" aria-modal="true" aria-label="Users" onClick={(e) => e.stopPropagation()} style={{ width: 520, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: 24, borderRadius: 14, background: 'var(--bg-surface-opaque)', border: '1px solid var(--border-color)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#fff' }}>Users</h2>
           <button onClick={onClose} aria-label="Close" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={18} /></button>
@@ -113,5 +117,5 @@ export function UsersPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
