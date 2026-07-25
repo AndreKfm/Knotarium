@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write   # needed to create the GitHub Release and upload assets
+  actions: read     # SignPath's action reads this run's uploaded build artifact for server-side signing
 
 jobs:
   windows:
@@ -65,6 +66,7 @@ jobs:
         run: ./publish.ps1 -Version '${{ steps.ver.outputs.version }}' -Zip -Installer
 
       - name: Upload build artifacts (always)
+        id: upload_windows
         uses: actions/upload-artifact@v7
         with:
           name: knotarium-${{ steps.ver.outputs.version }}
@@ -73,6 +75,68 @@ jobs:
             publish/*.zip.sha256
             publish/*setup.exe
             publish/*setup.exe.sha256
+
+      # ── Optional SignPath Foundation (free OSS) code signing ────────────────────────────────────────
+      # Server-side Authenticode signing via SignPath's GitHub trusted-build-system integration. This is
+      # an ALTERNATIVE to the local PFX hook in "Build zip + installer" above — use one or the other, not
+      # both. Opt-in and fail-safe: the steps below run only when the SIGNPATH_API_TOKEN secret AND the
+      # SIGNPATH_ORGANIZATION_ID repo variable are set; otherwise they are skipped and the release
+      # publishes the unsigned build exactly as before.
+      #
+      # One-time maintainer setup (https://app.signpath.io — requires a public repo + OSI license):
+      #   1. Add the predefined "GitHub.com" trusted build system to your SignPath organization and link
+      #      it to the project.
+      #   2. Create a project, a signing policy (e.g. "release-signing"), and an artifact configuration
+      #      that signs the setup.exe AND the *.exe files inside the .zip (SignPath signs within archives).
+      #   3. Install the SignPath GitHub App and grant it access to this repository.
+      #   4. Create an API token for a user with submitter permission.
+      #   5. Add repo secret:    SIGNPATH_API_TOKEN
+      #      Add repo variables: SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
+      #                          SIGNPATH_SIGNING_POLICY_SLUG, and (optional) SIGNPATH_ARTIFACT_CONFIGURATION_SLUG.
+      - name: SignPath gate
+        id: signpath_gate
+        shell: bash
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: |
+          if [ -n "${SIGNPATH_API_TOKEN}" ] && [ -n "${SIGNPATH_ORGANIZATION_ID}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SignPath not configured (SIGNPATH_API_TOKEN / SIGNPATH_ORGANIZATION_ID missing); publishing the unsigned build."
+          fi
+
+      - name: Submit SignPath signing request
+        id: signpath_sign
+        if: steps.signpath_gate.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG || 'default artifact configuration' }}
+          github-artifact-id: ${{ steps.upload_windows.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: publish-signed
+
+      - name: Swap in signed artifacts and refresh checksums
+        if: steps.signpath_gate.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          # SignPath returns the signed distributables under publish-signed/. Replace the unsigned
+          # zip/installer with them, then regenerate the .sha256 sidecars from the SIGNED bytes — signing
+          # changes the file hash, so the originals are stale. Matches publish.ps1's "<HASH>  <name>" format.
+          Get-ChildItem publish-signed -File |
+            Where-Object { $_.Name -like '*.zip' -or $_.Name -like '*setup.exe' } |
+            ForEach-Object { Copy-Item $_.FullName (Join-Path 'publish' $_.Name) -Force }
+          Get-ChildItem publish -File |
+            Where-Object { $_.Name -like '*.zip' -or $_.Name -like '*setup.exe' } |
+            ForEach-Object {
+              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+              Set-Content -Path "$($_.FullName).sha256" -Value "$hash  $($_.Name)" -Encoding ascii
+            }
 
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
