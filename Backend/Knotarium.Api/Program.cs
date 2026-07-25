@@ -422,7 +422,15 @@ app.UseHttpsRedirection();
 // (the productive build copies Frontend/dist there). The frontend calls the API via
 // relative `/api` URLs, so serving it same-origin needs no extra config. In dev the UI
 // runs on Vite and there's no wwwroot, so this block is skipped entirely.
-var spaRoot = Path.Combine(appBaseDir, "wwwroot");
+// Probe the exe directory first (single-file publish: AppContext.BaseDirectory is the temp
+// extraction folder, so the UI sits next to the exe), then AppContext.BaseDirectory: when the app
+// is launched through the shared dotnet host (`dotnet Knotarium.Api.dll`, e.g. the Docker image),
+// ProcessPath is the host binary in the runtime install dir — NOT the app directory — and only
+// BaseDirectory points at the published output with the bundled wwwroot.
+var spaRoot = new[] { appBaseDir, AppContext.BaseDirectory }
+    .Select(dir => Path.Combine(dir, "wwwroot"))
+    .FirstOrDefault(dir => File.Exists(Path.Combine(dir, "index.html")))
+    ?? Path.Combine(appBaseDir, "wwwroot");
 var serveSpa = File.Exists(Path.Combine(spaRoot, "index.html"));
 IFileProvider? spaFileProvider = null;
 // SPA cache policy. Vite emits content-hashed filenames under /assets (e.g. index-ab12cd.js), so those
