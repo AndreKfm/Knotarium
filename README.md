@@ -61,10 +61,10 @@ On Windows the same image also runs on the built-in WSL container tooling (`wslc
 
 ```bash
 wslc image pull ghcr.io/andrekfm/knotarium:edge
-wslc container run -d --name knotarium -p 43121:43120 -v knotarium-data:/data ghcr.io/andrekfm/knotarium:edge
+wslc container run -d --name knotarium -p 43120:43120 -v knotarium-data:/data ghcr.io/andrekfm/knotarium:edge
 ```
 
-The left half of `-p host:container` is yours to choose — the example above serves the UI on **http://localhost:43121**. To upgrade later, pull the tag again and recreate the container (`wslc container rm -f knotarium`, then the same `run` command); your data lives in the `knotarium-data` volume and survives.
+The left half of `-p host:container` is yours to choose (e.g. `-p 43121:43120` serves the UI on port 43121 instead). To upgrade later, pull the tag again and recreate the container (`wslc container rm -f knotarium`, then the same `run` command); your data lives in the `knotarium-data` volume and survives.
 
 `:latest` tracks the newest **stable** release. During the current pre-release phase, use `:edge` (newest pre-release) or an exact version tag such as `:1.0.0-rc.15`. Or build from source with Compose instead:
 
