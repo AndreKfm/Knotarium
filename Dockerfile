@@ -17,10 +17,14 @@ RUN npm run build
 
 # ---- 2. Publish the backend (framework-dependent) -> /app/publish ----
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend
+# Stamp the build version (surfaced by GET /api/version). Defaults to 0.0.0 for a plain `docker build`;
+# the CI image build passes the release version via --build-arg, mirroring publish.ps1 -Version.
+ARG VERSION=0.0.0
 WORKDIR /src
 COPY Backend/ ./Backend/
 RUN dotnet publish Backend/Knotarium.Api/Knotarium.Api.csproj \
       -c Release \
+      -p:Version=$VERSION \
       -p:DebugType=none -p:DebugSymbols=false \
       -o /app/publish
 
