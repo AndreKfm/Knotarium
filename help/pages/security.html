@@ -1,0 +1,509 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The security posture in one page. Every control and default here is read from the code
+  (Program.cs, LoopbackBindingGuard, HttpEgressPolicyEvaluator, RateLimitPolicies, FileAccessGuard)
+  rather than from SECURITY.md, and the places where the two differ are called out.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security model · Knotarium Help</title>
+<meta name="description" content="The trust boundary, the layered defences that enforce it, and honest guidance about exposing a Knotarium instance to a network.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="security.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Security model</h1>
+      <p class="kg-lead">
+        Knotarium exists to run code and touch systems on your behalf. That makes a running instance a
+        privileged thing, and the question that matters is not which nodes exist but who can author,
+        import or trigger a workflow. This page sets out that trust boundary, walks through each layer of
+        defence that backs it up, and is deliberately honest about what the product does not yet protect
+        against.
+      </p>
+
+      <h2>The trust boundary</h2>
+      <p>
+        Everything else on this page follows from one sentence: <strong>anyone who can author, import or
+        trigger a workflow can potentially run code on the host.</strong> The engine compiles real C# at
+        runtime, opens database connections, reads and writes local files, makes outbound HTTP calls and
+        sends mail. Those are the product's features, not accidents, and no in-application control makes
+        an untrusted author safe.
+      </p>
+      <p>
+        The layered defences below are therefore about two things: making the dangerous capabilities
+        <em>off until deliberately enabled</em>, and limiting the blast radius when something does go
+        wrong. They are not a substitute for deciding carefully who holds an account.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Treat an authenticated user as an administrator</span>
+        <p>
+          A per-role permission system is not implemented yet. Only a handful of security-settings
+          mutations — user management and the backup and restore endpoints — check for the
+          <code>admin</code> role. Everything else an authenticated session can reach is unrestricted, and
+          an ordinary user who can edit a workflow can reach the same host the administrator can. Do not
+          rely on in-application roles for multi-user isolation today.
+        </p>
+      </div>
+
+      <h2>The layers</h2>
+      <p>
+        A request arriving at the instance passes through the network and session controls; a workflow
+        reaching outward or downward passes through the capability, filesystem, sandbox and egress
+        controls. The diagram below reads top to bottom in the order the checks actually happen.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 496" role="img" aria-labelledby="layers-title">
+          <title id="layers-title">The layered defences a request and a workflow pass through</title>
+          <defs>
+            <marker id="layer-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+          </defs>
+
+          <text x="40" y="20" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.09em">A REQUEST ARRIVES</text>
+          <path d="M350 26 L350 44" stroke="#6366f1" stroke-width="1.6" marker-end="url(#layer-arrow)"/>
+
+          <rect x="40" y="50" width="620" height="44" rx="9" fill="rgba(239,68,68,0.08)" stroke="#ef4444" stroke-width="1.5"/>
+          <text x="58" y="70" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">Binding guard</text>
+          <text x="58" y="86" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Startup fails if sign-in is off and the binding is not loopback</text>
+
+          <rect x="40" y="102" width="620" height="44" rx="9" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="58" y="122" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">Rate limiting</text>
+          <text x="58" y="138" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Per-IP fixed windows on sign-in and the anonymous machine routes</text>
+
+          <rect x="40" y="154" width="620" height="44" rx="9" fill="rgba(99,102,241,0.10)" stroke="#6366f1" stroke-width="1.5"/>
+          <text x="58" y="174" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">Authentication</text>
+          <text x="58" y="190" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Cookie session; every endpoint requires one unless it opts out</text>
+
+          <rect x="40" y="206" width="620" height="44" rx="9" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="58" y="226" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">Same-origin check</text>
+          <text x="58" y="242" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Opt-in cross-site defence on state-changing methods</text>
+
+          <path d="M350 256 L350 274" stroke="#6366f1" stroke-width="1.6" marker-end="url(#layer-arrow)"/>
+          <text x="40" y="270" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.09em">A NODE REACHES OUT</text>
+
+          <rect x="40" y="280" width="620" height="44" rx="9" fill="rgba(245,158,11,0.09)" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="58" y="300" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">Capability gate</text>
+          <text x="58" y="316" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Code execution, database and the agent loop are off by default</text>
+
+          <rect x="40" y="332" width="620" height="44" rx="9" fill="rgba(6,182,212,0.09)" stroke="#06b6d4" stroke-width="1.5"/>
+          <text x="58" y="352" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">File-access policy</text>
+          <text x="58" y="368" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Deny by default; traversal and symlink escapes resolved and refused</text>
+
+          <rect x="40" y="384" width="620" height="44" rx="9" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="58" y="404" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">Sandbox</text>
+          <text x="58" y="420" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Optional worker processes with memory, CPU, time and privilege limits</text>
+
+          <rect x="40" y="436" width="620" height="44" rx="9" fill="rgba(16,185,129,0.09)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="58" y="456" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="700">HTTP egress policy</text>
+          <text x="58" y="472" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Private and loopback destinations refused, re-checked after DNS</text>
+        </svg>
+        <figcaption>Each layer fails closed. None of them makes an untrusted workflow author safe.</figcaption>
+      </figure>
+
+      <h2>Authentication</h2>
+      <p>
+        Cookie sign-in is on by default. On a fresh instance with no accounts the browser is shown a
+        first-run screen that creates the initial administrator, so an unconfigured instance is reachable
+        but immediately secured. Authorization is deny-by-default: a fallback policy requires an
+        authenticated user on <em>every</em> endpoint, and only a short list opts out — the sign-in
+        bootstrap routes, the machine-facing webhook trigger and resume, and the single-page application
+        shell itself so the login screen can render before a session exists.
+      </p>
+      <p>
+        The session cookie's properties are fixed in code and cannot be configured: it is named
+        <code>kg_auth</code>, marked HttpOnly, carries <code>SameSite=Lax</code>, expires seven days out
+        on a sliding window, and is HTTPS-only outside the development environment. Because this is an
+        API rather than a server-rendered application, an unauthenticated request receives a plain
+        <code>401</code> and a forbidden one a <code>403</code>, instead of a redirect to a login page.
+      </p>
+      <p>
+        The details of first-run setup, the unattended seed and the user-management panel are on
+        <a href="users.html">Users and sign-in</a>.
+      </p>
+
+      <h2>The loopback binding guard</h2>
+      <p>
+        Authentication can be turned off with <code>Auth__Enabled=false</code>. In that mode there is no
+        authentication middleware at all and <em>every</em> endpoint is anonymous — including the
+        capability toggle and the Inline Code test endpoint. That combination is only defensible when the
+        server can be reached from the local machine alone.
+      </p>
+      <p>
+        So the composition root checks it. At startup, with authentication disabled, the configured
+        binding addresses are inspected and any non-loopback address is collected. Outside the development
+        environment the application <strong>throws and refuses to start</strong> with an explanatory
+        message; in development the same message is written to standard error as a warning and startup
+        continues, because development binds plain HTTP and device addresses freely.
+      </p>
+      <p>
+        The guard reads both the aggregate <code>urls</code> key — which covers
+        <code>ASPNETCORE_URLS</code>, <code>DOTNET_URLS</code> and <code>--urls</code> — and any explicit
+        Kestrel endpoint URLs in configuration. Its classification errs toward refusing:
+      </p>
+      <ul>
+        <li><code>localhost</code> and any parsable loopback IP address count as loopback.</li>
+        <li>The wildcards <code>*</code>, <code>+</code>, <code>0.0.0.0</code> and <code>::</code> are explicitly <strong>not</strong> loopback — they bind every interface.</li>
+        <li>A DNS hostname is treated as non-loopback, because it could resolve anywhere.</li>
+        <li>A URL with no host it can reason about is treated as non-loopback.</li>
+      </ul>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The override is not a deployment option</span>
+        <p>
+          <code>Security__AllowUnauthenticatedNonLoopback=true</code> lifts the check. It exists for
+          isolated test harnesses and for an operator who has genuinely put their own authentication in
+          front of the instance — a reverse proxy, mutual TLS, a network access-control list — and accepts
+          the risk consciously. Setting it because startup failed and you wanted it to stop failing turns
+          the instance into an unauthenticated remote code-execution service for anyone who finds it.
+        </p>
+      </div>
+
+      <h2>Rate limiting</h2>
+      <p>
+        Two surfaces are abuse-prone and both are throttled with a per-client fixed window, where the
+        client is identified by its remote IP address. Rejections are answered with
+        <code>429 Too Many Requests</code>, and nothing is queued — a request over the limit is refused
+        outright rather than delayed.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Policy</th><th>Covers</th><th>Default</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Sign-in</td>
+              <td>The interactive login endpoint, throttling online password guessing.</td>
+              <td>10 per minute</td>
+            </tr>
+            <tr>
+              <td>Anonymous machine routes</td>
+              <td>The inbound webhook trigger and the token-authenticated resume of a suspended run.</td>
+              <td>60 per minute</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Both limits are configurable — see <code>Security__RateLimit__LoginPerMinute</code> and
+        <code>Security__RateLimit__AnonymousMachinePerMinute</code> in the
+        <a href="configuration.html">configuration reference</a>. Raise the machine limit if legitimate
+        webhook traffic is being rejected; the symptom is a burst of <code>429</code> responses at the
+        caller with nothing recorded as a failed run, because the request never reached the engine.
+      </p>
+      <p>
+        Note what is <em>not</em> limited: every other authenticated endpoint. Rate limiting here is a
+        brake on scripted abuse of the two anonymous surfaces, not a general quota system.
+      </p>
+
+      <h2>The same-origin check</h2>
+      <p>
+        With <code>Security__EnforceSameOrigin=true</code>, an authenticated request using
+        <code>POST</code>, <code>PUT</code>, <code>PATCH</code> or <code>DELETE</code> is rejected with
+        <code>403</code> when it carries an <code>Origin</code> header that matches neither this host's
+        own scheme and host nor a configured CORS origin. A request with no <code>Origin</code> header at
+        all passes, which is why this is defence in depth layered on top of the
+        <code>SameSite=Lax</code> session cookie rather than a complete cross-site request forgery
+        defence on its own.
+      </p>
+      <p>
+        It is <strong>off by default</strong>, and the reason is practical rather than philosophical: a
+        reverse proxy that rewrites the <code>Host</code> header produces false rejections that look like
+        a broken application. On an instance bound directly, with no proxy in between, turning it on costs
+        nothing and closes a real gap.
+      </p>
+
+      <h2>Capability gating</h2>
+      <p>
+        Three node capabilities are refused unless an administrator has enabled them: code execution,
+        database access, and the AI agent loop. The policy lives in the database, an unset or unparseable
+        value means everything is off, and the fallback implementation wired into a host that never
+        registers the real store reports every capability as disabled. Every path fails closed.
+      </p>
+      <p>
+        Filesystem access is deliberately excluded from that coarse switch because it has its own
+        finer-grained policy. The full account, including exactly which nodes each capability unlocks and
+        what a workflow does when it hits a disabled one, is on <a href="capabilities.html">Capabilities</a>.
+      </p>
+
+      <h2>Deny-by-default file access</h2>
+      <p>
+        The File Read and File Write nodes consult an instance-global policy before any input or output.
+        A fresh instance grants nothing, so every file operation is denied until an administrator allows a
+        directory. Within an enforced policy the guard is strict: a relative path is refused outright
+        rather than resolved against an unpredictable working directory, textual <code>..</code> is
+        collapsed, and every symlink and junction along the path's existing prefix is resolved to its real
+        target before the result is boundary-checked against the granted roots.
+      </p>
+      <p>
+        Resolution is fail-closed. A path whose real location cannot be determined — an unresolvable
+        reparse point, a link cycle, an I/O error — is denied rather than trusted textually. The boundary
+        test is a relative-path comparison, so a sibling directory like <code>C:\data-evil</code> never
+        matches a grant on <code>C:\data</code>, and a path on a different volume is rejected outright.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">One race is accepted rather than eliminated</span>
+        <p>
+          The guard validates a path and hands back a string; the node opens the file afterwards. Check
+          and open are therefore not a single atomic handle operation. An actor able to swap a validated
+          directory component for a junction in between could still redirect the access outside an allowed
+          root. This is accepted under the assumption that operating-system permissions on granted roots
+          stop untrusted parties creating reparse points inside them. If you grant a writable root that
+          untrusted content can reach, set its access-control list accordingly.
+        </p>
+      </div>
+      <p>
+        Grants, the free-space reserve, the total-access escape hatch and the remediation flow from a
+        failed run are covered on <a href="file-access.html">File access</a>.
+      </p>
+
+      <h2>The HTTP egress policy</h2>
+      <p>
+        Every outbound request the engine makes — the HTTP Request node, AI provider calls, anything a
+        sandboxed script proxies through the host — is checked against an egress policy. The default
+        posture blocks server-side request forgery against your own internal network.
+      </p>
+      <p>
+        With <code>Security__HttpEgress__DenyPrivateNetworks</code> left at its default of true, a
+        destination is refused when it is private, loopback, link-local or otherwise not publicly
+        routable. The classification is broader than most people expect and is worth knowing, because it
+        explains refusals that look surprising:
+      </p>
+      <ul>
+        <li>IPv4 loopback <code>127.0.0.0/8</code>, and the "this host on this network" block <code>0.0.0.0/8</code>, which routes to localhost on many stacks.</li>
+        <li>The RFC 1918 private ranges <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code> and <code>192.168.0.0/16</code>.</li>
+        <li>Link-local <code>169.254.0.0/16</code>, which is where cloud instance-metadata services live.</li>
+        <li>Carrier-grade NAT shared address space <code>100.64.0.0/10</code>.</li>
+        <li>IPv6 link-local and site-local addresses, and unique local addresses in <code>fc00::/7</code>.</li>
+        <li>An IPv4-mapped IPv6 address is unwrapped first, so an attacker-controlled <code>AAAA</code> record cannot smuggle a private address past the IPv6 branch.</li>
+      </ul>
+      <p>
+        Separately, and regardless of that switch, a host is refused when it is literally
+        <code>localhost</code> or ends in <code>.local</code> or <code>.internal</code>, and only the
+        <code>http</code> and <code>https</code> schemes are accepted at all.
+      </p>
+
+      <h3>The DNS-rebinding recheck</h3>
+      <p>
+        Checking the literal hostname is not enough, because a hostname that looks public can resolve to
+        an internal address. So the policy resolves the host itself and validates every candidate address
+        before connecting, then <strong>pins the connection to an address it approved</strong>. Because
+        this runs in the connection callback, it happens for the initial request and again for every
+        redirect hop, and there is no window between checking and connecting in which a rebound record
+        could take effect.
+      </p>
+      <p>
+        The judgement is deliberately conservative: if <em>any</em> resolved address is private, loopback
+        or link-local, the whole request is refused. A rebinding attacker controls which record is
+        returned, so a single private answer among several is disqualifying rather than something to route
+        around. A host that resolves to no address at all is also refused.
+      </p>
+
+      <h3>Allow-lists and block-lists</h3>
+      <p>
+        Two optional domain lists narrow things further. The block-list is checked first and always
+        refuses. The allow-list, when non-empty, restricts outbound traffic to those domains only; left
+        empty, no allow-list is applied. Both match a host exactly or as a subdomain, and a leading
+        <code>*.</code> in a pattern is stripped, so <code>*.example.com</code> and
+        <code>example.com</code> behave identically — both match the domain itself and everything beneath
+        it.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Switching to an allow-list breaks the AI provider first</span>
+        <p>
+          The moment <code>Security__HttpEgress__AllowDomains</code> becomes non-empty, everything not
+          listed is refused — including whichever AI vendor you configured. Add the provider host along
+          with your own integrations, or the first symptom will be workflow generation failing for
+          reasons that read like a network fault.
+        </p>
+      </div>
+
+      <h2>Package signature trust</h2>
+      <p>
+        Compiled node packages carry an Ed25519 signature over a canonical digest of the package identity,
+        manifest, source and declared capabilities. On install the signature is verified against
+        <code>Security__PackageSigning__TrustedPublicKeys</code>, and a package that fails verification is
+        rejected outright.
+      </p>
+      <p>
+        A resolved package lands in one of three trust levels. <strong>Verified</strong> means its
+        signature checked out against a trusted key, which is sufficient regardless of where it came from.
+        <strong>Provisional</strong> is reserved for a locally authored, unsigned package — installable
+        only with an explicit opt-in, and flagged in the interface when you take it.
+        <strong>Untrusted</strong> is anything else, in particular a package claiming a remote or official
+        origin without a valid signature, and it is never installable.
+      </p>
+      <p>
+        Signing your own packages requires <code>Security__PackageSigning__HostPrivateKeyBase64</code>,
+        which must decode to exactly 32 bytes. You only need it if you publish packages for other
+        instances to consume.
+      </p>
+
+      <h2>The privileged-node acknowledgement on import</h2>
+      <p>
+        An imported bundle is untrusted input, and the installer treats it that way. Before anything is
+        written, the payload is scanned for nodes declaring a privileged capability — filesystem read or
+        write, code execution, database access, or the AI agent loop. If any are found, the install is
+        <strong>blocked</strong> and returns the list of offending nodes with the capabilities each one
+        carries.
+      </p>
+      <p>
+        The interface then shows a warning naming every privileged node and requires you to tick <em>I
+        understand and want to install this bundle</em>; the install button stays disabled until you do,
+        and the request is resubmitted with the acknowledgement attached. The warning makes an important
+        point that is easy to miss: acknowledging the import does not enable anything. Filesystem,
+        database and code capabilities remain off until you turn them on under
+        <span class="kg-path">Settings &rsaquo; Capabilities</span>.
+      </p>
+      <p>
+        Treat the acknowledgement as what it is — a prompt to read the node list, not a formality to click
+        through. A bundle from a source you cannot vouch for deserves the same suspicion as an executable
+        attachment.
+      </p>
+
+      <h2>Credentials at rest</h2>
+      <p>
+        Stored credentials and notification-channel configurations are encrypted at rest with a 32-byte
+        key. Left unconfigured, one is generated into <code>.credential-key</code> in the data directory
+        on first use and reused forever after; you can supply your own with
+        <code>Security__Credentials__EncryptionKeyBase64</code>, but changing it afterwards makes every
+        saved secret unreadable. In the development environment the application deliberately refuses to
+        auto-generate a key.
+      </p>
+      <p>
+        The consequence for backups is severe enough to have its own page: a copy of the database without
+        the credential key beside it leaves you with credentials that can never be read again. See
+        <a href="backup-restore.html">Backup and restore</a>.
+      </p>
+      <p>
+        Where a sandbox worker is involved there is a further protection. With credential proxying on —
+        the default in process mode — a script receives an opaque placeholder rather than the secret, and
+        the host substitutes the real value into the outgoing HTTP request just before sending. Node code
+        can <em>use</em> a credential without ever being able to <em>read</em> it. See
+        <a href="sandbox.html">Sandbox</a>.
+      </p>
+
+      <h2>Exposing an instance to a network</h2>
+      <p>
+        The honest guidance is short. <strong>Do not put an instance directly on the public internet.</strong>
+        Cookie authentication being on by default is not a substitute for network-level controls, and the
+        product does not yet have the role model that would make a shared, semi-trusted deployment safe.
+      </p>
+      <p>
+        If you must make an instance reachable beyond the machine it runs on:
+      </p>
+      <ul>
+        <li>
+          Put it behind a reverse proxy that terminates TLS. The session cookie is HTTPS-only outside
+          development, so a plain-HTTP LAN deployment will not carry a session at all — a symptom that
+          looks like sign-in silently failing.
+        </li>
+        <li>
+          Add your own authentication in front of it if the users are not all people you would trust with
+          the host, and restrict who can reach the port with a firewall or network access-control list.
+        </li>
+        <li>
+          Leave authentication on. If it is off, the binding guard will refuse to start a non-loopback
+          instance, and that refusal is doing its job.
+        </li>
+        <li>
+          Run the host process with least privilege — a dedicated account with minimal filesystem access.
+          The in-application controls limit who can author a dangerous node; operating-system permissions
+          limit what happens if one runs.
+        </li>
+        <li>
+          Turn on <code>Security__EnforceSameOrigin</code> if there is no proxy rewriting the
+          <code>Host</code> header, and leave the egress policy's private-network denial on unless
+          reaching internal hosts is the entire point of your workflows.
+        </li>
+      </ul>
+
+      <h2>Known limitations</h2>
+      <p>
+        Stated plainly, because a security page that only lists strengths is not useful:
+      </p>
+      <ul>
+        <li>
+          <strong>No role model worth relying on.</strong> Two roles exist, <code>admin</code> and
+          <code>user</code>, but only user management and the backup and restore endpoints check for
+          admin. Everything else an authenticated session reaches is unrestricted.
+        </li>
+        <li>
+          <strong>Inline code and SQL are not sandboxed by design.</strong> They need the runtime compiler
+          and a live connection. The capability switch decides whether they run at all; it does not
+          constrain what they do once enabled. The sandbox adds process-level confinement on top, and that
+          is a different and weaker guarantee than a language-level sandbox.
+        </li>
+        <li>
+          <strong>Single instance, one SQLite file.</strong> There is no multi-tenant isolation and no
+          clustered hardening.
+        </li>
+        <li>
+          <strong>The file-access check-then-open race</strong> described above is accepted rather than
+          closed.
+        </li>
+        <li>
+          <strong>Rate limiting partitions by remote IP.</strong> Behind a proxy that does not preserve
+          the client address, every caller shares one bucket.
+        </li>
+      </ul>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Reporting a vulnerability</span>
+        <p>
+          Security problems should not be filed as public issues. The project accepts private reports
+          through its source repository's private vulnerability reporting channel. In scope: authentication
+          or authorization bypass, path-traversal and sandbox escapes in the file-access guard, credential
+          disclosure, injection, and privilege escalation beyond the boundary described here. Out of scope:
+          the documented ability of an authorized author to run code once the matching capability has been
+          deliberately enabled.
+        </p>
+      </div>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="capabilities.html">
+          <div class="kg-card-title">Capabilities</div>
+          <div class="kg-card-desc">The three master switches, which nodes they unlock, and the trust decision behind them.</div>
+        </a>
+        <a class="kg-card" href="file-access.html">
+          <div class="kg-card-title">File access</div>
+          <div class="kg-card-desc">Granting directory subtrees, the free-space reserve, and the escape hatch to avoid.</div>
+        </a>
+        <a class="kg-card" href="sandbox.html">
+          <div class="kg-card-title">Sandbox</div>
+          <div class="kg-card-desc">Confining user-authored C# in worker processes, and every limit you can set on one.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

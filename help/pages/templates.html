@@ -1,0 +1,546 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Templates. Every label, extension and limit here is taken from the Templates components and the
+  Knotarium.Features/Templates services, not from the README.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Templates · Knotarium Help</title>
+<meta name="description" content="Install a workflow from the built-in gallery, save your own to the library, and share workflows as .kgtpl archives that never carry a secret.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="templates.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Templates</h1>
+      <p class="kg-lead">
+        A template is one workflow packaged as a portable file with its credentials removed. Use the
+        built-in gallery to start from a working example, save your own workflows into a library you can
+        reinstall later, and hand a <code>.kgtpl</code> to a colleague knowing it cannot possibly contain
+        one of your passwords. This page covers all four tabs of the
+        <span class="kg-path">Templates</span> screen.
+      </p>
+
+      <h2>The four tabs</h2>
+      <p>
+        <span class="kg-path">Templates</span> opens on Browse and offers four tabs, in this order:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Tab</th><th>What it is</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Browse</strong></td>
+              <td>The read-only gallery of starter templates shipped with the application. Nothing you do here can change it.</td>
+            </tr>
+            <tr>
+              <td><strong>Library</strong></td>
+              <td>Templates you saved on this instance. Stored in the database, installable and deletable.</td>
+            </tr>
+            <tr>
+              <td><strong>Import</strong></td>
+              <td>Upload a <code>.kgtpl</code> from somewhere else, inspect it, and create a workflow from it.</td>
+            </tr>
+            <tr>
+              <td><strong>Export</strong></td>
+              <td>Package one of your workflows as a <code>.kgtpl</code>, or save it straight into the Library.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Choosing <span class="kg-path">Export as template</span> from the editor jumps to this screen with
+        the Export tab already selected and the workflow preselected, so you rarely reach Export by
+        clicking through the tabs.
+      </p>
+
+      <h2>What is inside a .kgtpl</h2>
+      <p>
+        A template file is a zip with the extension <code>.kgtpl</code> and the media type
+        <code>application/vnd.knotarium.template+zip</code>. For the current format —
+        <strong>schema version 1</strong> — the archive contains exactly two entries and nothing else:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Entry</th><th>Contents</th></tr></thead>
+          <tbody>
+            <tr><td><code>template.json</code></td><td>The manifest: name, author, description, tags, category, template version, creation timestamp, the workflow checksum, the declared credential slots and the declared parameters.</td></tr>
+            <tr><td><code>workflow.json</code></td><td>The exported workflow graph, with every credential reference already replaced by a <code>slot:</code> placeholder.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The <em>closed entry set</em> is enforced on read: an archive carrying a third file, a duplicate
+        entry, or a schema version other than 1 is rejected outright rather than partially imported. This
+        is deliberate anti-smuggling, and it is why editing a <code>.kgtpl</code> by hand and adding a
+        stray file makes it unusable.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">A template is not a bundle</span>
+        <p>
+          A template is a single workflow with no node packages, no dependency lock and no signature. If
+          you need to ship node packages alongside workflows, or you need the recipient to be able to
+          verify who published the file, that is a bundle — see
+          <a href="bundles.html">Bundles</a>.
+        </p>
+      </div>
+
+      <h3>Content limits</h3>
+      <p>
+        Reading a template bounds the work before anything is deserialized into live types, so a hostile
+        file fails fast instead of exhausting memory:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Limit</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Maximum JSON nesting depth</td><td>64</td></tr>
+            <tr><td>Maximum nodes in the workflow</td><td>2000</td></tr>
+            <tr><td>Maximum properties on one node</td><td>200</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        After those checks, the checksum recorded in <code>template.json</code> is recomputed from
+        <code>workflow.json</code> and compared. A mismatch reports that the archive may be corrupt or
+        tampered with, and the import stops. Note what this check does and does not buy you: it detects
+        accidental corruption and casual edits, but since the checksum travels inside the same file as the
+        content, anyone who edits the workflow can recompute it. A checksum is not a signature.
+      </p>
+
+      <h2>Browse — installing from the gallery</h2>
+      <p>
+        The gallery is built from reviewable, unzipped sources shipped next to the application rather than
+        from committed binaries, and each entry is packed into a consistent archive on demand. Every
+        built-in template in the current build carries the category <strong>starter</strong>, the author
+        <strong>Knotarium</strong>, and version <strong>1.0.0</strong>:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Template</th><th>What it demonstrates</th></tr></thead>
+          <tbody>
+            <tr><td>Hello World</td><td>A manual trigger that logs a greeting and ends — the smallest thing worth running.</td></tr>
+            <tr><td>Log Run Markers</td><td>A start marker and a finish marker around an empty middle step, as a scaffold for your own logic.</td></tr>
+            <tr><td>Set and Use a Variable</td><td>Storing a value and reading it back with <code>{{ $variables.&lt;name&gt; }}</code>.</td></tr>
+            <tr><td>Delay Then Log</td><td>The non-blocking Delay node, visible as a pause on the run timeline.</td></tr>
+            <tr><td>Fetch from an API</td><td>An HTTP Request with its success and error branches, and the <code>{{ $node.&lt;id&gt;.output.&lt;field&gt; }}</code> reference syntax.</td></tr>
+            <tr><td>HTTP POST a Payload</td><td>An HTTP Request with a method, body and headers.</td></tr>
+            <tr><td>Fetch, Wait, Fetch Again</td><td>A call, a delay, and a second call — the shape of a simple poll.</td></tr>
+            <tr><td>Scheduled Heartbeat</td><td>A cron schedule trigger firing every five minutes.</td></tr>
+            <tr><td>Scheduled API Fetch</td><td>A schedule trigger combined with an HTTP request, for a daily sync or digest.</td></tr>
+            <tr><td>Webhook Receiver</td><td>A webhook trigger that logs the JSON payload of every incoming call.</td></tr>
+            <tr><td>AI Summarize</td><td>A single AI Prompt call turning text into bullet points.</td></tr>
+            <tr><td>AI Support Triage</td><td>AI Prompt extraction, an AI Router branch, and a second prompt that drafts a reply.</td></tr>
+            <tr><td>AI Contract Diff</td><td>The AI Semantic Diff node routing on whether a change is material, cosmetic or none.</td></tr>
+            <tr><td>AI Evidence Check</td><td>The AI Verify node routing on a verified / unsupported / contradicted / uncertain verdict.</td></tr>
+            <tr><td>AI Agent: Order Concierge</td><td>The AI Agent node running a bounded tool-use loop whose tools are your own workflows.</td></tr>
+            <tr><td>Tool: Order Status Lookup</td><td>The companion workflow the Order Concierge agent calls as a tool.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Search matches against the name, the description and the tags at once; the category chips beside
+        the search box filter to one category, with <strong>All</strong> as the default. Because every
+        built-in template is currently in the <strong>starter</strong> category, the chips are of limited
+        use until you have imported templates of your own.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The AI starters need setting up first</span>
+        <p>
+          All six AI templates install and open happily with no configuration, but they will fail at run
+          time until a provider is configured under
+          <span class="kg-path">Settings &rsaquo; AI Provider</span>. The Order Concierge template needs
+          more than that: the <code>aiAgent</code> capability enabled under
+          <span class="kg-path">Settings &rsaquo; Capabilities</span>, and the companion
+          <em>Tool: Order Status Lookup</em> template installed and published so it can be selected as the
+          agent's tool.
+        </p>
+      </div>
+
+      <h3>The install form</h3>
+      <p>
+        Each card shows the name, the author, the template version, the description, its tags, and a count
+        of how many credential slots it declares. The first click on <strong>Use template</strong> does not
+        install anything — it expands the card into the install form. The button then reads
+        <strong>Create workflow</strong>, and that second click is the one that creates something.
+      </p>
+      <p>The form has up to three parts, and only the first is always present:</p>
+      <ul>
+        <li><strong>Workflow name</strong> — prefilled with the template's name and editable.</li>
+        <li><strong>Parameters</strong> — one input per declared parameter, shown only when the template
+            declares any.</li>
+        <li><strong>Credential slots</strong> — one binding row per declared slot, shown only when the
+            template declares any.</li>
+      </ul>
+      <p>
+        None of the built-in templates declare parameters or credential slots, so installing a gallery
+        starter is a matter of accepting or changing the name and pressing
+        <strong>Create workflow</strong>. Parameters and slots become relevant the moment you import
+        someone else's template or export one of your own.
+      </p>
+      <p>
+        The new workflow is created as an inactive draft under a freshly minted workflow id, so installing
+        the same template twice gives you two independent copies rather than overwriting the first. If a
+        workflow with the chosen name already exists, the new one is saved with a numeric suffix — a second
+        <em>Hello World</em> becomes <em>Hello World (2)</em>. From the gallery, a successful install takes
+        you straight to the new workflow on the canvas.
+      </p>
+
+      <h3>Parameters</h3>
+      <p>
+        A parameter is a non-secret value the template's author left blank for you to supply: a channel
+        name, a base URL, a polling interval. The workflow references it with a
+        <code>{{param:&lt;key&gt;}}</code> token, and the token is replaced with your value as the workflow
+        is created. Four types exist, and each renders a different input:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Type</th><th>Input</th><th>Accepted</th></tr></thead>
+          <tbody>
+            <tr><td><code>string</code></td><td>Text box</td><td>Anything.</td></tr>
+            <tr><td><code>number</code></td><td>Number box</td><td>Parsed with invariant culture, so the decimal separator is a full stop regardless of your locale.</td></tr>
+            <tr><td><code>boolean</code></td><td>Dropdown</td><td><code>true</code> or <code>false</code>.</td></tr>
+            <tr><td><code>enum</code></td><td>Dropdown</td><td>One of the options the author declared.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Required parameters are marked with an asterisk, and the install button stays disabled until every
+        one of them has a value. Optional parameters are guaranteed to have a default — a template
+        declaring an optional parameter without one is rejected at export time, which is what makes the
+        value map complete at install time.
+      </p>
+      <p>
+        When a property's <em>entire</em> value is a single token, the substituted value keeps its declared
+        type: a <code>number</code> parameter produces a JSON number, not the string <code>"30"</code>. A
+        token embedded in a longer string is interpolated as text instead. Two things are rejected rather
+        than substituted: a value that is itself a <code>slot:</code> token, and a value containing a
+        <code>{{param:…}}</code> token, both of which would otherwise let a supplied value inject a
+        placeholder into the credential-binding pass that runs immediately afterwards.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">An undeclared parameter fails the install</span>
+        <p>
+          If the graph references <code>{{param:foo}}</code> but the manifest never declares
+          <code>foo</code>, the install is refused with an error naming the undeclared key. This is treated
+          as an authoring bug, not a "configure it later" state, because a workflow persisted with a
+          literal token in it would silently do the wrong thing at run time. An <em>unbound credential
+          slot</em>, by contrast, is allowed through — see below.
+        </p>
+      </div>
+
+      <h3>Credential slot binding</h3>
+      <p>
+        This is the mechanism that makes sharing a workflow safe. When a workflow is exported, every node
+        property whose value is one of your credential ids is replaced with a symbolic token
+        <code>slot:&lt;key&gt;</code>, and the manifest declares one slot per distinct credential. The slot
+        carries a display name and, optionally, a description and a required credential type. It never
+        carries the credential itself, the credential's id, or anything derived from its secret value.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 250" role="img" aria-labelledby="slots-title">
+          <title id="slots-title">A credential id becomes a slot on export and is rebound to a different credential on install</title>
+          <defs>
+            <marker id="tarw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+          </defs>
+
+          <text x="14" y="24" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">AUTHOR'S INSTANCE</text>
+          <rect x="10" y="36" width="196" height="72" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="26" y="62" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">HTTP Request node</text>
+          <text x="26" y="84" fill="#6b7280" font-family="'JetBrains Mono',monospace" font-size="11">credentialId:</text>
+          <text x="26" y="99" fill="#ef4444" font-family="'JetBrains Mono',monospace" font-size="11">"cred_7f3a…"</text>
+
+          <path d="M212 72 L256 72" stroke="#6366f1" stroke-width="1.6" marker-end="url(#tarw)"/>
+          <text x="234" y="62" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10.5" text-anchor="middle">export</text>
+
+          <text x="266" y="24" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">THE .KGTPL FILE</text>
+          <rect x="262" y="36" width="180" height="72" rx="10" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.5"/>
+          <text x="278" y="62" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">HTTP Request node</text>
+          <text x="278" y="84" fill="#6b7280" font-family="'JetBrains Mono',monospace" font-size="11">credentialId:</text>
+          <text x="278" y="99" fill="#10b981" font-family="'JetBrains Mono',monospace" font-size="11">"slot:billing-api"</text>
+
+          <path d="M448 72 L492 72" stroke="#6366f1" stroke-width="1.6" marker-end="url(#tarw)"/>
+          <text x="470" y="62" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10.5" text-anchor="middle">install</text>
+
+          <text x="502" y="24" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">YOUR INSTANCE</text>
+          <rect x="498" y="36" width="192" height="72" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="514" y="62" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">HTTP Request node</text>
+          <text x="514" y="84" fill="#6b7280" font-family="'JetBrains Mono',monospace" font-size="11">credentialId:</text>
+          <text x="514" y="99" fill="#06b6d4" font-family="'JetBrains Mono',monospace" font-size="11">"cred_c1d8…"</text>
+
+          <rect x="10" y="136" width="680" height="98" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="30" y="162" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">WHAT TRAVELS IN THE FILE</text>
+          <text x="30" y="188" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">The slot key, and the credential's display name for the binding form.</text>
+          <text x="30" y="212" fill="#ef4444" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Never the secret, and never the host credential id it came from.</text>
+        </svg>
+        <figcaption>Export lifts credential ids into slots; install binds those slots to credentials that exist on your own instance.</figcaption>
+      </figure>
+
+      <p>
+        Slot keys are derived from the credential's display name by lower-casing it and replacing every
+        run of non-alphanumeric characters with a hyphen, so <em>Billing API</em> becomes
+        <code>billing-api</code>. The key must start with a letter and is at most 64 characters; a name
+        that would produce a key starting with a digit is prefixed with <code>c-</code>, and a name that
+        produces nothing usable falls back to <code>credential</code>. Colliding keys — including
+        collisions that differ only in case — get a numeric suffix. Several nodes referring to the same
+        credential collapse into a single slot, so a workflow with eight HTTP nodes on one API asks you to
+        bind once, not eight times.
+      </p>
+      <p>
+        In the binding form each slot is a row showing its display name, its required credential type when
+        the author declared one, the <code>slot:</code> token itself, and a dropdown of your own
+        credentials. The row's icon and token turn from amber to green once bound.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Required credential type is advisory today</span>
+        <p>
+          A slot may declare a <code>requiredCredentialType</code>, and it is displayed next to the slot
+          name — but nothing enforces it. Credentials carry no type in the current schema, so there is
+          nothing to match against, and binding a slot marked as needing an API key to a
+          username-and-password credential is accepted without complaint. It will fail later, at run time,
+          in the node that tries to use it.
+        </p>
+      </div>
+
+      <p>
+        What <em>is</em> validated on install is that every slot key you supply a binding for was actually
+        declared by the manifest, and that every credential id you bind to still exists. Either failing
+        rejects the whole install with a field-level error list, and nothing is written — the install runs
+        inside a single database transaction, so there is no half-imported workflow to clean up.
+      </p>
+      <p>
+        Leaving a slot unbound is permitted from the gallery and library, though the Import tab disables
+        the install button until every slot has a binding. An unbound slot leaves the
+        <code>slot:</code> placeholder in the saved workflow, and the install result reports
+        <em>Configuration required</em> together with the names of the open slots. Such a workflow is
+        stored as an inactive draft and cannot be published or run until you bind the remainder on the
+        workflow itself.
+      </p>
+
+      <h3>Previewing before you install</h3>
+      <p>
+        The expanded card carries a <strong>Preview</strong> button that renders the template's graph as a
+        read-only mini-canvas: one card per node showing its label and its node type, laid out
+        left-to-right, with the edges drawn between them. It is deliberately inert — no dragging, panning,
+        zooming or selecting.
+      </p>
+      <p>
+        The preview is generated from the template with your current parameter values already substituted,
+        so it shows what you are about to create rather than the raw template. It does not create a
+        workflow, and it is fetched fresh each time you open it. Pressing the button again hides it.
+      </p>
+
+      <h2>Import — installing someone else's template</h2>
+      <p>
+        The Import tab takes a <code>.kgtpl</code> by clicking the drop zone or dragging a file onto it.
+        The file is inspected immediately, before anything is created: the manifest is parsed, the
+        checksum verified, the graph compiled to assess compatibility, and the node types scanned for
+        privileged capabilities. Nothing is written to the database during inspection.
+      </p>
+      <p>The inspection panel then shows:</p>
+      <ul>
+        <li>The template's name, author and version.</li>
+        <li>A compatibility badge, either <strong>Runs here</strong> or <strong>Check compatibility</strong>.</li>
+        <li>The number of credential slots, and that it <strong>installs as</strong> a draft.</li>
+        <li>The privileged-node acknowledgement, when applicable.</li>
+        <li>The workflow name, the parameter form and the slot binding rows.</li>
+      </ul>
+      <p>
+        Compatibility is assessed by compiling the graph rather than by comparing version numbers alone,
+        because a workflow can reference node types that simply do not exist on this instance. An unknown
+        node type marks the template as not runnable here; other compiler diagnostics — including the
+        expected complaint about a still-unbound credential slot — are surfaced as warnings but do not
+        block anything. A template flagged as not runnable can still be imported as a draft so you can
+        open it and see what it wanted.
+      </p>
+      <p>
+        If a workflow of the same name already exists, a live hint under the name field tells you the
+        import will be saved with a <code>(2)</code> suffix rather than silently merging into or replacing
+        the existing one.
+      </p>
+      <p>
+        Three buttons sit at the bottom of the panel. <strong>Preview</strong> behaves exactly as it does
+        in the gallery. <strong>Save to library</strong> stores the uploaded archive under the Library tab
+        without creating a workflow — useful when you want the template available for later but do not
+        want a draft right now. <strong>Create workflow</strong> performs the install. That last button
+        stays disabled until every credential slot is bound, every required parameter is filled, and the
+        privileged-node acknowledgement (if shown) is ticked; the reason it is disabled is spelled out in
+        text beside it.
+      </p>
+
+      <h3>The privileged-node acknowledgement</h3>
+      <p>
+        Inspection resolves every distinct node type in the template against its package manifest and
+        collects the ones declaring a privileged capability — filesystem access, code execution, or
+        database access. If any are found, an amber panel appears listing each privileged node by its
+        display name together with the capabilities it carries, followed by a checkbox reading
+        <em>I understand and want to install this template.</em>
+      </p>
+      <p>
+        Until that box is ticked, <strong>Create workflow</strong> stays disabled and a line beside it
+        reads that you must acknowledge the warning. The prompt appears on the Import tab only, because
+        that is the only place a template of unknown provenance enters the system — the built-in gallery
+        ships with the application and the library contains templates you already accepted once.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The acknowledgement is a speed bump, not a sandbox</span>
+        <p>
+          Ticking the box does not grant anything, and leaving it unticked does not revoke anything: it
+          exists so that installing a workflow which can write to your disk or execute code is a deliberate
+          act rather than an accident. The capabilities themselves stay disabled until you enable them
+          under <span class="kg-path">Settings &rsaquo; Capabilities</span>. The corollary is the
+          uncomfortable one — a template from an untrusted source that you install <em>and</em> whose
+          capabilities you then enable has exactly the access those capabilities describe. Read the graph
+          before you enable anything.
+        </p>
+      </div>
+
+      <h2>Export — packaging a workflow</h2>
+      <p>
+        Export packages a workflow's <strong>currently published state</strong>. This matters: unsaved
+        canvas edits and unpublished drafts are not what gets exported, and a workflow that has never been
+        published has nothing to export — the attempt reports that no version is available.
+      </p>
+      <p>The form collects the metadata that will be shown to whoever installs the result:</p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Default when left blank</th></tr></thead>
+          <tbody>
+            <tr><td>Workflow</td><td>Required; there is no default.</td></tr>
+            <tr><td>Template name</td><td>The workflow's own name. Also determines the file name.</td></tr>
+            <tr><td>Author</td><td>Empty.</td></tr>
+            <tr><td>Description</td><td>Empty.</td></tr>
+            <tr><td>Tags</td><td>Empty. Entered as a comma-separated list.</td></tr>
+            <tr><td>Category</td><td><code>uncategorized</code>.</td></tr>
+            <tr><td>Version</td><td><code>1.0.0</code>. Must be a valid semantic version or the export is refused.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A live manifest preview beside the form shows the file name that will be produced, derived from the
+        template name and the version. The name is lower-cased and every run of non-alphanumeric characters
+        becomes a hyphen, so a template named <em>Nightly DB Backup</em> at version <code>1.3.2</code>
+        downloads as <code>nightly-db-backup-1.3.2.kgtpl</code>.
+      </p>
+
+      <pre><code><span class="tok-comment"># Template name and version determine the file name</span>
+<span class="tok-str">"Nightly DB Backup"</span> + <span class="tok-str">"1.3.2"</span>  <span class="tok-comment">→</span>  <span class="tok-key">nightly-db-backup-1.3.2.kgtpl</span></code></pre>
+
+      <p>
+        Below the manifest preview sit three counters — nodes, slots and secrets. The secrets counter is a
+        constant zero, and it is honest: portabilization runs before the archive is written, and the export
+        walks every node property at every depth, including inside nested objects and arrays. Any string
+        whose whole value matches one of your credential ids is rewritten to a <code>slot:</code>
+        placeholder. Once the export completes, the panel lists each credential that was lifted, showing
+        the original credential's display name and the slot token it became, and the confirmation banner
+        states plainly that the file is safe to share.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Only credential references are stripped</span>
+        <p>
+          Portabilization replaces values that <em>are</em> credential ids. A secret you typed directly into
+          a node property — an API key pasted into a header field instead of stored as a credential, a
+          password inside a connection string, a token in a URL — is an ordinary string as far as the
+          exporter is concerned, and it travels in the file. If a workflow has any hand-entered secrets,
+          move them into credentials before exporting it.
+        </p>
+      </div>
+
+      <p>
+        The <strong>Export template</strong> button downloads the file. <strong>Save to library</strong>
+        packs the same archive and stores it on this instance instead of downloading it. Both are disabled
+        until a workflow is selected, and both clear their confirmation banner as soon as you change any
+        field, so a stale "Exported" message can never sit above a form you have since edited.
+      </p>
+
+      <h2>Library — your own saved templates</h2>
+      <p>
+        The Library tab lists templates saved on this instance, most recently saved first. Templates arrive
+        there in two ways: <strong>Save to library</strong> on the Export tab, which packs one of your
+        workflows, and <strong>Save to library</strong> on the Import tab, which stores an archive someone
+        sent you. In both cases the archive is verified before it is stored, so a corrupt file is refused
+        rather than persisted.
+      </p>
+      <p>
+        Each library card installs exactly like a gallery card: <strong>Use template</strong> expands the
+        install form, <strong>Create workflow</strong> creates the draft, and <strong>Preview</strong>
+        renders the graph. Each card also carries a <strong>Delete</strong> button, which removes the saved
+        template and nothing else — workflows already created from it are untouched.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Saving is an upsert, keyed to the source workflow</span>
+        <p>
+          A template's id is derived from the workflow it was exported from, so saving the same workflow to
+          the library a second time <strong>replaces</strong> the existing entry rather than adding a
+          second one. This is what you want for keeping a library entry current, and a surprise if you
+          expected two versions side by side: to keep both, export the older one to a file first.
+        </p>
+      </div>
+
+      <p>
+        Library entries live in the database, which means they are covered by a backup of the data
+        directory and, equally, that they do not travel with the application if you move to a new instance
+        without bringing the database. Anything you want to keep independently of this instance should be
+        exported to a file.
+      </p>
+
+      <h2>What installing never does</h2>
+      <p>
+        Two properties are worth stating explicitly, because they bound the risk of accepting a template
+        from someone else:
+      </p>
+      <ul>
+        <li>An install always creates a <strong>new</strong> workflow under a new id. It never modifies,
+            overwrites or deletes a workflow you already have, even when the names collide.</li>
+        <li>The imported workflow is created <strong>inactive</strong>. Nothing about installing a template
+            causes anything to run: you still have to publish it, enable it, and have the runtime armed.</li>
+      </ul>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="bundles.html">
+          <div class="kg-card-title">Bundles</div>
+          <div class="kg-card-desc">Multi-package integration bundles, and the signing that lets you verify who published one.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Where exported files are written, and the settings that govern credential encryption.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

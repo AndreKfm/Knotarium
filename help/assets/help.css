@@ -1,0 +1,656 @@
+/*
+ * Copyright 2026 Andre Kaufmann
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Knotarium help — design system.
+ *
+ * Tokens mirror Frontend/src/index.css so the help reads as the same product. Where a value
+ * differs it is deliberate and commented: the app is a dense dark tool UI, the help is long-form
+ * reading, so surfaces are calmer and line lengths are capped.
+ *
+ * No build step: this file is served as-is from /help/assets/help.css.
+ */
+
+/* ---------------------------------------------------------------- fonts --
+ * Self-hosted rather than pulled from the Google Fonts CDN (as the app does): bundled help must
+ * render on an air-gapped install. If the woff2 files are absent the stack below degrades to the
+ * system UI font, which is why every family list carries a full fallback chain.
+ *
+ * Both files are the *latin* subset only (U+0000-00FF and friends, ~58 kB together) — enough for
+ * English and for German umlauts, and a tenth of the size of the full families. Text outside that
+ * range falls back to the system font rather than rendering as tofu. Both are SIL Open Font
+ * License 1.1; see THIRD-PARTY-NOTICES.md.
+ */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('fonts/plus-jakarta-sans.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('fonts/jetbrains-mono.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+/* --------------------------------------------------------------- tokens -- */
+:root {
+  /* Surfaces — from the app. */
+  --bg-main: #0a0d16;
+  --bg-surface: #17212f;
+  /* Between canvas and surface: used for the sidebar rail and code blocks so three distinct
+     depths are readable even on the crushed-gamma displays index.css calls out. */
+  --bg-sunken: #0e1420;
+  --bg-raised: #1c2839;
+
+  --border-color: rgba(255, 255, 255, 0.14);
+  --border-strong: #2e3f56;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  /* Long-form body copy sits between primary and secondary: pure #f3f4f6 over #0a0d16 is fine for
+     a UI label but glares over multiple paragraphs. */
+  --text-body: #d3d8e0;
+
+  --color-accent: #6366f1;
+  --color-accent-soft: #818cf8;
+  --color-accent-glow: rgba(99, 102, 241, 0.3);
+  --color-accent-wash: rgba(99, 102, 241, 0.12);
+
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #06b6d4;
+  --color-violet: #7c6cf0;
+
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  --header-h: 60px;
+  --sidebar-w: 290px;
+  --toc-w: 232px;
+  --content-max: 780px;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+
+  --shadow-panel: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--bg-main);
+  color: var(--text-body);
+  font-size: 15.5px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Anchor targets must clear the fixed header when jumped to. */
+:target { scroll-margin-top: calc(var(--header-h) + 16px); }
+h1, h2, h3, h4 { scroll-margin-top: calc(var(--header-h) + 16px); }
+
+/* --------------------------------------------------------------- header -- */
+.kg-header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--header-h);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  background: rgba(10, 13, 22, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.kg-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text-primary);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.kg-brand svg { flex-shrink: 0; }
+.kg-brand span.kg-brand-sub {
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.kg-header-spacer { flex: 1; }
+
+.kg-header-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 7px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.kg-header-link:hover { color: var(--text-primary); border-color: var(--color-accent); }
+
+/* Hamburger — only on narrow screens. */
+.kg-menu-btn {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  cursor: pointer;
+  line-height: 0;
+}
+.kg-menu-btn:hover { color: var(--text-primary); }
+
+/* --------------------------------------------------------------- search -- */
+.kg-search {
+  position: relative;
+  width: min(340px, 38vw);
+}
+.kg-search input {
+  width: 100%;
+  height: 34px;
+  padding: 0 32px 0 32px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.kg-search input::placeholder { color: var(--text-muted); }
+.kg-search input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-wash);
+}
+.kg-search-icon {
+  position: absolute;
+  left: 9px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+  line-height: 0;
+}
+.kg-search-kbd {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 5px;
+  pointer-events: none;
+}
+.kg-search input:not(:placeholder-shown) ~ .kg-search-kbd { display: none; }
+
+.kg-search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0; right: 0;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+  padding: 6px;
+  display: none;
+}
+.kg-search-results.is-open { display: block; }
+.kg-search-result {
+  display: block;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  color: var(--text-body);
+  border: 1px solid transparent;
+}
+.kg-search-result:hover,
+.kg-search-result.is-active {
+  background: var(--color-accent-wash);
+  border-color: var(--color-accent);
+}
+.kg-search-result-title { font-weight: 600; color: var(--text-primary); font-size: 0.88rem; }
+.kg-search-result-crumb { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.kg-search-result-snippet { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+.kg-search-result mark { background: rgba(99, 102, 241, 0.35); color: var(--text-primary); border-radius: 2px; padding: 0 1px; }
+.kg-search-empty { padding: 14px; color: var(--text-muted); font-size: 0.85rem; text-align: center; }
+
+/* -------------------------------------------------------------- sidebar -- */
+.kg-sidebar {
+  position: fixed;
+  top: var(--header-h);
+  bottom: 0; left: 0;
+  width: var(--sidebar-w);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-sunken);
+  border-right: 1px solid var(--border-color);
+  padding: 22px 12px 60px 20px;
+  z-index: 30;
+}
+.kg-nav-group { margin-bottom: 22px; }
+.kg-nav-group-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 8px 8px;
+}
+.kg-nav-link {
+  display: block;
+  padding: 5px 10px;
+  margin-bottom: 1px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.86rem;
+  border-left: 2px solid transparent;
+  transition: color 0.12s ease, background-color 0.12s ease;
+}
+.kg-nav-link:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.04); }
+.kg-nav-link.is-current {
+  color: var(--color-accent-soft);
+  background: var(--color-accent-wash);
+  border-left-color: var(--color-accent);
+  font-weight: 600;
+}
+
+.kg-scrim {
+  display: none;
+  position: fixed;
+  inset: var(--header-h) 0 0 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 29;
+}
+.kg-scrim.is-open { display: block; }
+
+/* ----------------------------------------------------------------- main -- */
+.kg-layout { padding-top: var(--header-h); }
+
+.kg-main {
+  margin-left: var(--sidebar-w);
+  padding: 40px 40px 120px;
+  display: flex;
+  gap: 40px;
+  justify-content: center;
+}
+.kg-article {
+  flex: 1 1 auto;
+  max-width: var(--content-max);
+  min-width: 0; /* lets overflow-x children shrink instead of pushing the layout wide */
+}
+
+/* ------------------------------------------------------------------ toc -- */
+.kg-toc {
+  position: sticky;
+  top: calc(var(--header-h) + 40px);
+  align-self: flex-start;
+  width: var(--toc-w);
+  flex: 0 0 var(--toc-w);
+  max-height: calc(100vh - var(--header-h) - 80px);
+  overflow-y: auto;
+  font-size: 0.8rem;
+  border-left: 1px solid var(--border-subtle);
+  padding-left: 16px;
+}
+.kg-toc-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.kg-toc a {
+  display: block;
+  padding: 3px 0;
+  color: var(--text-muted);
+  text-decoration: none;
+  line-height: 1.45;
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+  margin-left: -12px;
+}
+.kg-toc a:hover { color: var(--text-primary); }
+.kg-toc a.is-active { color: var(--color-accent-soft); border-left-color: var(--color-accent); }
+.kg-toc a.lvl-3 { padding-left: 22px; font-size: 0.76rem; }
+
+/* ------------------------------------------------------------- typography */
+.kg-article h1 {
+  font-size: 2.1rem;
+  line-height: 1.2;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+.kg-article .kg-lead {
+  font-size: 1.06rem;
+  color: var(--text-secondary);
+  margin: 0 0 34px;
+  line-height: 1.65;
+}
+.kg-article h2 {
+  font-size: 1.42rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin: 52px 0 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+.kg-article h3 {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 32px 0 10px;
+}
+.kg-article h4 {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin: 24px 0 8px;
+}
+.kg-article p { margin: 0 0 16px; }
+.kg-article ul, .kg-article ol { margin: 0 0 16px; padding-left: 22px; }
+.kg-article li { margin-bottom: 7px; }
+.kg-article li > ul, .kg-article li > ol { margin-top: 7px; }
+.kg-article strong { color: var(--text-primary); font-weight: 700; }
+.kg-article hr { border: none; border-top: 1px solid var(--border-subtle); margin: 36px 0; }
+
+.kg-article a { color: var(--color-accent-soft); text-decoration: none; border-bottom: 1px solid rgba(129, 140, 248, 0.3); }
+.kg-article a:hover { border-bottom-color: var(--color-accent-soft); }
+
+/* Heading anchor — revealed on hover, always reachable by keyboard. */
+.kg-anchor {
+  color: var(--text-muted);
+  border: none !important;
+  margin-left: 8px;
+  opacity: 0;
+  font-weight: 400;
+  text-decoration: none;
+}
+h2:hover .kg-anchor, h3:hover .kg-anchor, .kg-anchor:focus { opacity: 1; }
+
+/* ------------------------------------------------------------------ code -- */
+code {
+  font-family: var(--font-mono);
+  font-size: 0.855em;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 1px 5px;
+  color: #c7d2fe;
+  overflow-wrap: anywhere;
+}
+pre {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+  line-height: 1.6;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.83rem;
+  color: var(--text-body);
+  overflow-wrap: normal;
+}
+/* Minimal, hand-applied highlighting — no syntax-highlighter dependency. */
+.tok-comment { color: var(--text-muted); font-style: italic; }
+.tok-key     { color: var(--color-accent-soft); }
+.tok-str     { color: #86efac; }
+.tok-num     { color: #fbbf24; }
+.tok-cmd     { color: var(--color-info); }
+
+/* ---------------------------------------------------------------- tables -- */
+.kg-table-wrap { overflow-x: auto; margin: 0 0 20px; border-radius: var(--radius); border: 1px solid var(--border-strong); }
+.kg-article table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+.kg-article th {
+  text-align: left;
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.kg-article td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+.kg-article tbody tr:last-child td { border-bottom: none; }
+.kg-article tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+.kg-article td code { white-space: nowrap; }
+/* Config tables carry long keys; let those wrap rather than force a scrollbar. */
+.kg-table-keys td:first-child code { white-space: normal; }
+
+/* -------------------------------------------------------------- callouts -- */
+.kg-note {
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  padding: 13px 16px;
+  margin: 0 0 20px;
+  font-size: 0.92rem;
+}
+.kg-note > :last-child { margin-bottom: 0; }
+.kg-note-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-accent-soft);
+  margin-bottom: 5px;
+}
+.kg-note.is-warning { border-left-color: var(--color-warning); }
+.kg-note.is-warning .kg-note-label { color: var(--color-warning); }
+.kg-note.is-danger { border-left-color: var(--color-error); }
+.kg-note.is-danger .kg-note-label { color: var(--color-error); }
+.kg-note.is-tip { border-left-color: var(--color-success); }
+.kg-note.is-tip .kg-note-label { color: var(--color-success); }
+
+/* UI path breadcrumb, e.g. Settings -> Capabilities. The app has no routable URLs, so every
+   instruction has to name a click path; this makes those visually consistent and scannable. */
+.kg-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-size: 0.83em;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.kg-path::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Inline status pills — default values, capability flags, etc. */
+.kg-pill {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.kg-pill.is-on      { color: var(--color-success); border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); }
+.kg-pill.is-off     { color: var(--text-muted);    border-color: var(--border-color);     background: rgba(255, 255, 255, 0.03); }
+.kg-pill.is-danger  { color: var(--color-error);   border-color: rgba(239, 68, 68, 0.4);  background: rgba(239, 68, 68, 0.1); }
+.kg-pill.is-warning { color: var(--color-warning); border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.1); }
+.kg-pill.is-info    { color: var(--color-info);    border-color: rgba(6, 182, 212, 0.4);  background: rgba(6, 182, 212, 0.1); }
+
+/* ----------------------------------------------------------------- cards -- */
+.kg-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 0 0 24px;
+}
+.kg-card {
+  display: block;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  text-decoration: none !important;
+  color: inherit;
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+.kg-card:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.kg-card-title { font-weight: 700; color: var(--text-primary); margin-bottom: 4px; font-size: 0.98rem; }
+.kg-card-desc { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; }
+
+/* --------------------------------------------------------------- figures -- */
+.kg-figure { margin: 0 0 24px; }
+.kg-figure svg { width: 100%; height: auto; display: block; }
+.kg-figure figcaption {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* ------------------------------------------------------------ page nav --- */
+.kg-pagenav {
+  display: flex;
+  gap: 14px;
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle);
+}
+.kg-pagenav a {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  text-decoration: none !important;
+  color: inherit;
+  transition: border-color 0.18s ease;
+}
+.kg-pagenav a:hover { border-color: var(--color-accent); }
+.kg-pagenav .kg-pagenav-dir { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-muted); }
+.kg-pagenav .kg-pagenav-title { font-weight: 700; color: var(--color-accent-soft); }
+.kg-pagenav .is-next { text-align: right; }
+
+/* ------------------------------------------------------------ responsive -- */
+@media (max-width: 1380px) {
+  .kg-toc { display: none; }
+  .kg-main { justify-content: flex-start; }
+}
+@media (max-width: 1000px) {
+  .kg-sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow-panel);
+  }
+  .kg-sidebar.is-open { transform: translateX(0); }
+  .kg-main { margin-left: 0; padding: 28px 20px 100px; }
+  .kg-menu-btn { display: block; }
+  .kg-search { width: auto; flex: 1; }
+  .kg-header-link.is-optional { display: none; }
+  .kg-brand span.kg-brand-sub { display: none; }
+}
+@media (max-width: 560px) {
+  body { font-size: 15px; }
+  .kg-article h1 { font-size: 1.7rem; }
+  .kg-article h2 { font-size: 1.25rem; }
+  .kg-pagenav { flex-direction: column; }
+  .kg-search-kbd { display: none; }
+}
+
+/* ----------------------------------------------------------------- print -- */
+@media print {
+  .kg-header, .kg-sidebar, .kg-toc, .kg-pagenav, .kg-scrim { display: none !important; }
+  .kg-layout { padding-top: 0; }
+  .kg-main { margin-left: 0; padding: 0; }
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .kg-article h1, .kg-article h2, .kg-article h3, .kg-article strong { color: #000; }
+  pre, code, .kg-note, .kg-table-wrap { border-color: #999; background: #f5f5f5; color: #000; }
+  .kg-article a { color: #000; }
+}
+
+/* Focus visibility — the accent ring, consistent with the app's inputs. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.kg-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--color-accent);
+  color: #fff;
+  padding: 10px 16px;
+  z-index: 100;
+  border-radius: 0 0 var(--radius-sm) 0;
+  font-weight: 700;
+}
+.kg-skip-link:focus { left: 0; }

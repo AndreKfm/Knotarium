@@ -39,6 +39,10 @@ WORKDIR /app
 COPY --from=backend /app/publish ./
 # The backend serves the SPA from ./wwwroot (same origin) when present.
 COPY --from=frontend /ui/dist ./wwwroot
+# Offline help: hand-written static HTML with no build step, so it is copied straight from the
+# build context rather than produced by a stage. Landing inside wwwroot means the existing
+# static-file middleware serves it at /help without any backend route.
+COPY help/ ./wwwroot/help/
 
 # The SQLite database AND the auto-generated at-rest credential key live under this one
 # directory, mounted as a volume so both survive container restarts/recreation. Storage__DataDirectory

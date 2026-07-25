@@ -1,0 +1,317 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The Sandbox screen. Field labels and hints from Frontend/src/components/SandboxSetting.tsx;
+  defaults and clamp ranges from Features/Nodes/Sandbox/SandboxOptions.cs; persistence and the
+  live-apply caveat from SandboxSettingsStore.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sandbox · Knotarium Help</title>
+<meta name="description" content="Where user-authored C# runs — in the backend process or in pooled worker processes — and every limit you can put on a worker.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="sandbox.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Sandbox</h1>
+      <p class="kg-lead">
+        <span class="kg-path">Settings &rsaquo; Sandbox</span> decides where user-authored C# — the Inline
+        Code node and compiled custom node packages — actually executes, and how hard the operating system
+        confines it while it does. It is the companion to <a href="capabilities.html">Capabilities</a>:
+        that screen decides <em>whether</em> code may run, this one decides <em>how safely</em>.
+      </p>
+
+      <h2>The two modes</h2>
+      <p>
+        The card offers a choice of two, presented as radio buttons.
+      </p>
+
+      <h3>In-process (compatible)</h3>
+      <p>
+        The default. Scripts run inside the backend process with full access, which is fast — there is no
+        process to start, no data to marshal across a boundary — but means a runaway script can stall or
+        crash the whole instance. An endless loop occupies a thread the engine needed; a memory bomb takes
+        the engine's memory with it; an unhandled fault can take the process down.
+      </p>
+      <p>
+        The timeout is still enforced in this mode, but it is <strong>cooperative</strong>: a script has to
+        observe the cancellation token it is given for a long operation to be interruptible. A tight loop
+        that never checks will not stop when the timeout expires, because there is no boundary to kill.
+      </p>
+
+      <h3>Isolated process (recommended)</h3>
+      <p>
+        Scripts run in pooled worker processes with operating-system-enforced memory and CPU limits.
+        Endless loops and memory bombs are killed hard and the backend stays up. This is the mode that
+        makes the numeric limits below mean anything, and the only mode in which restricted tokens and
+        credential proxying are available.
+      </p>
+      <p>
+        The trade-off is the one you would expect: a process boundary costs start-up time on a cold worker
+        and marshalling on every call, and a script that relied on touching the host directly may stop
+        working under a restricted token. That second point is the usual reason people leave in-process
+        mode alone.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">When to switch to process mode</span>
+        <p>
+          Switch as soon as the code running on the instance is not exclusively yours — anything imported,
+          anything generated from a description, anything written by someone whose mistakes you would
+          rather contain. Switch also on any instance where uptime matters more than the milliseconds a
+          process hop costs, because in-process mode gives a single bad script the ability to take the
+          engine with it. Stay in-process only for a single-operator instance where you wrote every script
+          and some of them legitimately need host access.
+        </p>
+      </div>
+
+      <h2>The toggles</h2>
+      <p>
+        Three checkboxes sit under the mode selector. Two of them are dimmed and disabled outside process
+        mode, labelled <em>isolated mode only</em>.
+      </p>
+
+      <h3>Screen code before running</h3>
+      <p>
+        Rejects scripts that use banned APIs — filesystem, process control and similar — at run time,
+        applying the same check the node editor applies while you are writing. It works in both modes,
+        because it happens before compilation rather than during execution. <span class="kg-pill is-on">On by default</span>
+      </p>
+      <p>
+        This is a screening pass, not a sandbox. It stops the obvious calls; it is not a proof that a
+        script cannot reach the host, and it should not be the only thing standing between an untrusted
+        script and your machine.
+      </p>
+
+      <h3>Restricted worker privileges (Windows)</h3>
+      <p>
+        Runs workers with stripped privileges and low integrity: no access to user profiles, service data
+        or most of the file system. Under the hood this launches the worker with a restricted token,
+        restricting security identifiers, and a Low integrity level, which denies access to user- and
+        admin-scoped filesystem and registry objects. <span class="kg-pill is-on">On by default</span>
+      </p>
+      <p>
+        It is best-effort: if the restricted launch fails, the worker starts normally and a warning is
+        logged rather than the execution being refused. That is a deliberate availability choice, but it
+        does mean the presence of the switch is not a guarantee the confinement is in force — check the
+        log if it matters. The setting is Windows-only and the hint says so; disable it for legacy node
+        code that genuinely must touch the filesystem.
+      </p>
+
+      <h3>Keep secrets out of the sandbox</h3>
+      <p>
+        Credential proxying. With it on, a script that asks for a secret receives an opaque placeholder
+        rather than the value, and the host substitutes the real secret into a proxied outgoing HTTP
+        request — the URL, the headers and a textual body — immediately before sending. Node code can
+        <em>use</em> a credential but never <em>read</em> one. <span class="kg-pill is-on">On by default</span>
+      </p>
+      <p>
+        The interface's advice on turning it off is exact: disable it only for scripts that need the raw
+        value for something other than an HTTP call, such as computing an HMAC signature. Turning it off
+        puts decrypted secrets inside the worker process, which is most of the reason for running a worker
+        process in the first place.
+      </p>
+
+      <h2>The worker limits</h2>
+      <p>
+        The numeric fields are grouped under <em>Worker limits</em> and dimmed outside process mode. The
+        card is explicit that these apply <strong>only in isolated mode</strong> and have no effect
+        in-process, with one exception noted on the screen: the timeout and hard kill are always enforced.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Default</th><th>Range</th><th>What it bounds</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Worker processes</td>
+              <td><code>4</code></td>
+              <td>1–32</td>
+              <td>Pool size, and therefore the maximum number of concurrently sandboxed node executions.</td>
+            </tr>
+            <tr>
+              <td>Memory limit (MB)</td>
+              <td><code>512</code></td>
+              <td>64–16384</td>
+              <td>Hard per-worker memory cap, enforced by the operating system.</td>
+            </tr>
+            <tr>
+              <td>CPU limit (%)</td>
+              <td><code>100</code></td>
+              <td>5–100</td>
+              <td>Share of one core per worker. 100 means uncapped.</td>
+            </tr>
+            <tr>
+              <td>Max run (s)</td>
+              <td><code>300</code></td>
+              <td>1–3600</td>
+              <td>The ceiling applied when a node declares no timeout of its own.</td>
+            </tr>
+            <tr>
+              <td>Kill grace (s)</td>
+              <td><code>5</code></td>
+              <td>1–60</td>
+              <td>How long the cooperative cancel is given after a timeout before the process is killed.</td>
+            </tr>
+            <tr>
+              <td>Recycle after runs</td>
+              <td><code>100</code></td>
+              <td>1–10000</td>
+              <td>A worker is replaced after this many executions.</td>
+            </tr>
+            <tr>
+              <td>HTTP response cap (MB)</td>
+              <td><code>32</code></td>
+              <td>1–100</td>
+              <td>The largest proxied response body marshalled back into the sandbox.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Every value is clamped to its range on save, using the same clamping logic the configuration
+        binder uses, so a number outside the range is silently corrected rather than rejected. If a field
+        does not keep the value you typed, that is the clamp, not a failed save.
+      </p>
+
+      <h3>What the individual limits are actually for</h3>
+      <p>
+        <strong>Worker processes</strong> is a concurrency ceiling as much as a resource one. Four workers
+        means at most four sandboxed node executions at a time; a fifth waits. Raising it raises both
+        throughput and the total memory the pool can occupy, which is the memory limit multiplied by the
+        worker count.
+      </p>
+      <p>
+        <strong>Memory limit</strong> and <strong>CPU limit</strong> are enforced at the operating-system
+        level and are described on the screen as best-effort, using a Windows Job Object or a Linux
+        control group. The card states the important caveat plainly: <strong>on Linux without cgroup v2
+        the CPU cap is not enforced</strong>. Do not plan capacity around a CPU cap you have not verified
+        on the platform you deploy to.
+      </p>
+      <p>
+        <strong>Max run</strong> is a fallback, not an override. It applies when a node declares no
+        timeout of its own; a node that declares one keeps it. This is why raising the figure does not
+        extend an Inline Code node that already has its own timeout.
+      </p>
+      <p>
+        <strong>Kill grace</strong> is the window between the cooperative cancel and the operating system
+        taking over. The script gets that long to unwind on its own; then the process is killed. Set it
+        long enough for genuine cleanup, short enough that a script ignoring cancellation does not hold a
+        worker hostage.
+      </p>
+      <p>
+        <strong>Recycle after runs</strong> bounds slow leaks and pinned state. A worker retired after a
+        hundred executions cannot accumulate a hundred thousand executions' worth of leaked handles, and
+        anything a script left behind in static state is discarded with the process.
+      </p>
+      <p>
+        <strong>HTTP response cap</strong> bounds what comes back across the process boundary. A script
+        requesting a very large body gets it truncated at this ceiling rather than being allowed to
+        marshal an arbitrary amount into the worker.
+      </p>
+
+      <h2>Saving, and the one thing that does not apply immediately</h2>
+      <p>
+        The card's description says changes apply immediately with no restart needed, and after a
+        successful save the confirmation reads <em>Saved — active immediately</em>. That is true of the
+        mode and of every toggle: saving rewrites the live options object the engine reads.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Worker count only sizes a new pool</span>
+        <p>
+          This is stated in the field's own hint and is easy to miss: an already-running process pool keeps
+          its current size until the application restarts. Lowering the worker count on a busy instance
+          does not shrink the pool that is already up. The per-worker limits do apply to workers spawned
+          after the save, so raising the memory limit takes effect as workers recycle rather than all at
+          once.
+        </p>
+      </div>
+
+      <p>
+        A corrupt stored value never fails a read. If the persisted settings will not parse, the screen
+        falls back to showing the live options — which are whatever configuration seeded at startup — and
+        at startup a corrupt blob is ignored so the secure configuration defaults stay in force.
+      </p>
+
+      <h2>Configuration and precedence</h2>
+      <p>
+        These settings are seeded from the <code>Security__Sandbox__*</code> configuration keys at startup
+        and, once you save this screen, are persisted in the database. From that point the
+        <strong>stored values override the configuration file</strong>, and editing
+        <code>appsettings.json</code> appears to do nothing. The restore happens during startup: if a
+        persisted blob exists it is overlaid onto the configuration-bound options and the log notes that
+        persisted sandbox settings were restored; if none exists, configuration stays authoritative.
+      </p>
+      <p>
+        The screen always reflects what is actually enforced rather than what is configured — it shows the
+        persisted values when they exist and the live options otherwise. So if the screen and your
+        configuration file disagree, the screen is right.
+      </p>
+      <p>
+        The full key list, with the same defaults and ranges expressed as configuration, is in the
+        <a href="configuration.html">configuration reference</a>. Note one wrinkle there: the banned-API
+        screening flag travels with these settings through the interface but is applied to the compiler
+        rather than to the options object, which is why it keeps working in in-process mode where the rest
+        of the limits do not.
+      </p>
+
+      <h2>What the sandbox does not do</h2>
+      <p>
+        Worth stating so the confinement is not over-trusted. The sandbox is process isolation with
+        operating-system resource limits — it is not a language-level sandbox and it does not make
+        arbitrary C# safe. A script running in a worker still executes real code; what changes is how much
+        of the host that code can reach and what happens when it misbehaves.
+      </p>
+      <p>
+        In particular: inline code and SQL are not sandboxed by design in the sense of being restricted in
+        what they may express, because they need the runtime compiler and a real connection. The
+        capability switch decides whether they run at all. The sandbox decides the blast radius. Neither
+        makes an untrusted author safe — see <a href="security.html">Security model</a> for the trust
+        boundary that actually matters.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="capabilities.html">
+          <div class="kg-card-title">Capabilities</div>
+          <div class="kg-card-desc">The switch that decides whether user-authored code may run at all.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The same limits as startup configuration keys, plus everything else read at boot.</div>
+        </a>
+        <a class="kg-card" href="security.html">
+          <div class="kg-card-title">Security model</div>
+          <div class="kg-card-desc">Where process confinement sits among the other layers, and its honest limits.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

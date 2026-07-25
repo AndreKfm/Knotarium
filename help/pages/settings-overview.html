@@ -1,0 +1,351 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Map of the Settings screen. Describes the eight sections, when each takes effect, and the
+  database-overrides-configuration rule. The exhaustive key list lives in configuration.html.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings overview · Knotarium Help</title>
+<meta name="description" content="A map of the eight instance-settings sections, what each one controls, when a change takes effect, and which screens override the configuration file.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="settings-overview.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Settings overview</h1>
+      <p class="kg-lead">
+        Everything an administrator changes at runtime lives on one screen, split into eight sections.
+        This page is the map: what each section is responsible for, how quickly a change takes hold, and
+        the one rule that catches people out — several of these screens write their values into the
+        database, where they permanently outrank the same settings in <code>appsettings.json</code>.
+      </p>
+
+      <h2>Finding the screen</h2>
+      <p>
+        Open <span class="kg-path">Settings</span> from the application's navigation rail. The screen has
+        its own left-hand sub-navigation headed <em>Instance Settings</em>, and a breadcrumb at the top of
+        the content area reading <em>Instance Settings / &lt;section&gt;</em> so you can always tell which
+        section you are on. Throughout this documentation a location is written as a click path — for
+        example <span class="kg-path">Settings &rsaquo; Sandbox</span> — because the screens are React
+        state and have no address of their own.
+      </p>
+      <p>
+        The screen opens on <strong>Notifications</strong>. There is one exception: when you arrive by
+        pressing <em>Grant access in File Access settings</em> on a failed run, the screen opens directly
+        on <strong>File Access</strong> with the denied path already filled in as a new grant. That
+        shortcut is described on the <a href="file-access.html">File access</a> page.
+      </p>
+
+      <h2>The eight sections</h2>
+      <p>
+        The sections are listed in the order the interface shows them. Two of them — Notifications and
+        External Systems — are about integration rather than security; the other six are the ones that
+        decide how much of the host a workflow can reach.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Section</th><th>Decides</th><th>Takes effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Notifications</strong></td>
+              <td>The global error workflow and the channels that carry failure alerts.</td>
+              <td>Immediately</td>
+            </tr>
+            <tr>
+              <td><strong>AI Provider</strong></td>
+              <td>Which vendor and model the AI features use, and the encrypted credential holding the key.</td>
+              <td>Immediately</td>
+            </tr>
+            <tr>
+              <td><strong>File Access</strong></td>
+              <td>Which directories the File Read and File Write nodes may touch.</td>
+              <td>Immediately</td>
+            </tr>
+            <tr>
+              <td><strong>Capabilities</strong></td>
+              <td>Whether privileged node capabilities — code execution, database access — may run at all.</td>
+              <td>Immediately</td>
+            </tr>
+            <tr>
+              <td><strong>Sandbox</strong></td>
+              <td>Where user-authored C# executes and how hard the operating system confines it.</td>
+              <td>Immediately, with one caveat</td>
+            </tr>
+            <tr>
+              <td><strong>Retention</strong></td>
+              <td>How much history the database keeps, plus the free-space floor that disarms the runtime.</td>
+              <td>Next sweep or next check</td>
+            </tr>
+            <tr>
+              <td><strong>External Systems</strong></td>
+              <td>Connection targets for an installed external-signal provider.</td>
+              <td>Immediately</td>
+            </tr>
+            <tr>
+              <td><strong>Backup &amp; Restore</strong></td>
+              <td>Creating an encrypted instance snapshot, and the destructive restore.</td>
+              <td>Not a setting</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Notifications</h3>
+      <p>
+        Two cards. <strong>Error Workflow</strong> nominates one workflow to run automatically whenever
+        any other workflow fails; it receives the failure context — the workflow, the failed node and the
+        error — on its Error Trigger node. An error workflow is never re-triggered by its own failures, so
+        a broken alerting workflow cannot spiral. Select <em>None (disabled)</em> to switch the mechanism
+        off entirely.
+      </p>
+      <p>
+        Below it, the channel manager holds the delivery endpoints a failure alert can be sent to. Three
+        transports exist: a generic <strong>webhook</strong> that posts the alert payload as JSON, a
+        <strong>Slack</strong> incoming webhook, and <strong>e-mail</strong> over SMTP. A channel's
+        configuration — including its URL, token or SMTP password — is stored encrypted, which is why
+        channels live here under instance settings rather than inside a workflow.
+      </p>
+
+      <h3>AI Provider</h3>
+      <p>
+        Picks the vendor and model used by <em>Generate with AI</em> and the AI nodes, and points at the
+        encrypted credential that holds the API key. Four vendors are offered: Anthropic, OpenAI, Azure
+        OpenAI, and Google Gemini. Azure is the one that requires a base URL, because the endpoint is
+        specific to your resource; for the others the base URL is optional and only needed to reach a
+        proxy or a compatible gateway.
+      </p>
+      <p>
+        The key itself never enters this configuration — it is stored in the credential store and resolved
+        server-side at the moment a request is made. If you have switched the egress policy to an explicit
+        allow-list, remember to add the provider's host, or every AI call will be refused. The generator's
+        token and length limits are separate startup settings, listed in the
+        <a href="configuration.html">configuration reference</a>.
+      </p>
+
+      <h3>File Access</h3>
+      <p>
+        Deny-by-default directory grants for the two file nodes, a free-space reserve that blocks writes
+        which would fill the drive, and an escape hatch that grants unrestricted access. On a fresh
+        instance nothing is granted, so every file operation fails until you allow a path. See
+        <a href="file-access.html">File access</a>.
+      </p>
+
+      <h3>Capabilities</h3>
+      <p>
+        Master switches for the privileged capabilities that have no finer-grained policy of their own.
+        Turning one on is an instance-wide grant: every workflow can use it, including workflows that
+        arrived by import or were generated by a language model. See
+        <a href="capabilities.html">Capabilities</a>.
+      </p>
+
+      <h3>Sandbox</h3>
+      <p>
+        Complements Capabilities. Where that screen decides <em>whether</em> user-authored C# may run,
+        this one decides <em>how safely</em>: in the backend process, or in pooled worker processes with
+        operating-system limits on memory, CPU, run time and privileges. See
+        <a href="sandbox.html">Sandbox</a>.
+      </p>
+
+      <h3>Retention</h3>
+      <p>
+        Two cards on one page. <strong>Data retention</strong> prunes old finished runs and their journals,
+        and optionally caps version histories and the audit log. <strong>Disk-space guard</strong> is the
+        backstop underneath it: when free space on the data volume drops below a floor, the runtime is
+        disarmed so no new runs start. See <a href="retention.html">Retention and disk space</a>.
+      </p>
+
+      <h3>External Systems</h3>
+      <p>
+        This section manages the connection targets of an installed external-signal provider — the plugin
+        that lets workflows react to events from an outside system and send actions back to it. For each
+        target you configure a name, host, port and optional user with a stored password, and the manager
+        adds three operations: <em>Test</em> checks connectivity before you save, <em>Sync</em> refreshes
+        the live catalog of channels, events and actions that the canvas editor offers, and delete removes
+        the target after a confirmation. Edits apply live; nothing needs restarting.
+      </p>
+      <p>
+        The section is deliberately vendor-neutral. Its heading, and even the noun it uses for a target,
+        come from the installed provider's own descriptor rather than being hard-coded, so the same screen
+        serves whichever connection manager you have. With no such plugin installed the section shows
+        <em>No configurable integration installed</em> and nothing else — that is the expected state on a
+        stock instance, not a fault.
+      </p>
+      <p>
+        Stored passwords behave the way you would want on an edit: leaving the password field blank keeps
+        the secret already on file, and typing a value replaces it. There is no way to read an existing
+        secret back out of the form.
+      </p>
+
+      <h3>Backup &amp; Restore</h3>
+      <p>
+        Not a settings screen at all, but instance-level data management: it downloads a complete encrypted
+        snapshot of the instance including its secrets, and performs the destructive restore. It is
+        deliberately kept on its own page rather than sharing a screen with a webhook test button. See
+        <a href="backup-restore.html">Backup and restore</a>.
+      </p>
+
+      <h2>When a change takes effect</h2>
+      <p>
+        Nothing on this screen requires a restart, but "immediately" means different things depending on
+        what is doing the reading.
+      </p>
+      <ul>
+        <li>
+          <strong>Read on every use.</strong> The capability policy, the file-access policy and the AI
+          provider configuration are fetched at the moment a node needs them. A capability you switch off
+          stops the very next node execution that wanted it.
+        </li>
+        <li>
+          <strong>Applied to a live object.</strong> Saving the sandbox settings rewrites the running
+          options object, so the execution mode changes for the next sandboxed run. The one caveat:
+          <strong>worker count only sizes a new pool</strong>. An already-running worker pool keeps its
+          current size until the application restarts, though the per-worker limits do apply to workers
+          spawned afterwards.
+        </li>
+        <li>
+          <strong>Read at the top of a background cycle.</strong> Retention is re-read on every sweep and
+          the disk-space policy on every check, so a change lands on the next tick rather than instantly.
+          The retention sweep interval defaults to sixty minutes and the disk check to sixty seconds, with
+          a thirty-second floor on the latter.
+        </li>
+      </ul>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The first sweep is one interval late, on purpose</span>
+        <p>
+          Both background workers wait a full interval before their first pass. A process that starts and
+          stops quickly therefore never prunes anything and never trips the disk guard — which is what you
+          want during upgrades and short-lived test runs, but does mean you cannot verify a new retention
+          setting by restarting and watching.
+        </p>
+      </div>
+
+      <h2>These screens override the configuration file</h2>
+      <p>
+        This is the single most confusing behaviour in the product, and it is worth reading twice.
+        <strong>Four groups of settings are persisted into the database the moment you save them, and the
+        stored value then wins over the configuration file forever after.</strong> Editing
+        <code>appsettings.json</code> or the matching environment variable afterwards appears to do
+        nothing at all, and it fails silently — there is no warning at startup that a stored value is
+        shadowing your configuration.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Screen</th><th>Shadows the configuration section</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="kg-path">Settings &rsaquo; Sandbox</span></td>
+              <td><code>Security__Sandbox__*</code></td>
+            </tr>
+            <tr>
+              <td><span class="kg-path">Settings &rsaquo; Retention</span></td>
+              <td><code>Retention__*</code> and the disk-guard half of <code>Storage__*</code></td>
+            </tr>
+            <tr>
+              <td>The arming switch in the header</td>
+              <td><code>Runtime__Armed</code></td>
+            </tr>
+            <tr>
+              <td><span class="kg-path">Settings &rsaquo; AI Provider</span></td>
+              <td>No configuration equivalent — the provider is database-only by design</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The precedence is one-directional and only ever applied at startup. If no value has been stored,
+        the configuration section stays authoritative — which is why a fresh instance that never opens
+        this screen behaves exactly as its <code>appsettings.json</code> says. Once you save the screen
+        once, that ceases to be true.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">There is no "reset to configuration" button</span>
+        <p>
+          Nothing in the interface clears a stored override and hands control back to the configuration
+          file. The practical remedy is to set the value you want on the screen itself rather than in the
+          file. Treat the configuration keys as the seed for a fresh install, and the screens as the
+          steady-state control surface.
+        </p>
+      </div>
+
+      <p>
+        Two policies are stored in the database and have <strong>no</strong> configuration-file
+        counterpart at all: the <a href="capabilities.html">capability policy</a> and the
+        <a href="file-access.html">file-access policy</a>. You cannot pre-seed them from
+        <code>appsettings.json</code>, and an unset or unreadable stored value is treated as
+        deny-everything rather than allow-everything. That is deliberate: the secure state is the one you
+        get by doing nothing.
+      </p>
+
+      <h2>What is not on this screen</h2>
+      <p>
+        Several things administrators expect to find here live elsewhere, and knowing that saves a search:
+      </p>
+      <ul>
+        <li>
+          <strong>Users and sign-in</strong> — the user list is reached from the <em>Users</em> button in
+          the application header, not from Settings. See <a href="users.html">Users and sign-in</a>.
+        </li>
+        <li>
+          <strong>Runtime arming</strong> — the armed/disarmed pill sits in the header so it is visible
+          and reachable from every screen.
+        </li>
+        <li>
+          <strong>Credentials</strong> — there is no central credential manager. Credentials are created
+          inline from the node property form that needs one, and selected by reference elsewhere. The
+          honest account of that gap is on <a href="users.html">Users and sign-in</a>.
+        </li>
+        <li>
+          <strong>Everything read at startup</strong> — the data directory, the database connection, the
+          binding address, egress rules, execution concurrency, package signing keys. Those are in the
+          <a href="configuration.html">configuration reference</a>.
+        </li>
+      </ul>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="security.html">
+          <div class="kg-card-title">Security model</div>
+          <div class="kg-card-desc">The whole posture in one page — what each layer defends against and where the honest limits are.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Every startup setting and environment variable, with its type, default and effect.</div>
+        </a>
+        <a class="kg-card" href="backup-restore.html">
+          <div class="kg-card-title">Backup and restore</div>
+          <div class="kg-card-desc">What a snapshot contains, what it leaves behind, and why the credential key matters.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

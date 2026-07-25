@@ -1,0 +1,568 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  AI node reference. Parameters and ports come from
+  Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs; runtime defaults and the
+  deterministic verdict logic come from Backend/Knotarium.Features/Nodes/Ai*NodeTask.cs and, for the
+  agent tool loop, Backend/Knotarium.Features/Execution/AgentToolRunner.cs. Dynamic router ports mirror
+  Frontend/src/node-editor/aiRouterPorts.ts. The since-retired docs/ VitePress site was deliberately
+  not used as a source; every claim here was read out of the executors.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI nodes · Knotarium Help</title>
+<meta name="description" content="Reference for the AI Prompt, AI Router, AI Verify, AI Semantic Diff and AI Agent nodes, their parameters, ports and the deterministic logic behind their verdicts.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="nodes-ai.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>AI nodes</h1>
+      <p class="kg-lead">
+        Five nodes put a language model inside a workflow: one that runs a single prompt, three that
+        turn a model's judgement into a branch, and one that lets a model call your other workflows as
+        tools. The three branching nodes are the interesting ones — the model does the linguistic work
+        and returns structured data, but the decision about which edge to follow is made by ordinary
+        deterministic code. This page documents every parameter, every port, and where the boundary
+        between the model and the code actually sits.
+      </p>
+
+      <h2>What every AI node needs</h2>
+
+      <p>
+        All five nodes call the instance-wide provider configured at
+        <span class="kg-path">Settings &rsaquo; AI Provider</span> — the vendor, the model and the
+        encrypted API-key credential live there, not on the node. Until that is set up, every AI node
+        fails at run time with the same message: <em>"The AI provider is not configured. Choose a
+        provider, model, and API-key credential in Settings &rsaquo; AI Provider."</em> Nothing fails at
+        design time, so a workflow containing AI nodes saves, publishes and looks healthy on an instance
+        that has never been given a key.
+      </p>
+      <p>
+        Every AI node also declares the <code>network</code> capability, which is descriptive metadata
+        and is not enforced. Outbound provider calls do go through the same egress guard as the HTTP
+        Request node, so <code>Security__HttpEgress__*</code> applies to them — relevant if you point the
+        instance at a locally hosted, OpenAI-compatible model, because
+        <code>DenyPrivateNetworks</code> is on by default and will block it.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Node</th><th>Node id</th><th>Timeout</th><th>Automatic retry</th><th>Extra gate</th></tr></thead>
+          <tbody>
+            <tr><td>AI Prompt</td><td><code>aiPrompt</code></td><td>300 s</td><td>Yes</td><td>none</td></tr>
+            <tr><td>AI Router</td><td><code>aiRouter</code></td><td>300 s</td><td>Yes</td><td>none</td></tr>
+            <tr><td>AI Verify</td><td><code>aiVerify</code></td><td>300 s</td><td>Yes</td><td>none</td></tr>
+            <tr><td>AI Semantic Diff</td><td><code>aiDiff</code></td><td>300 s</td><td>Yes</td><td>none</td></tr>
+            <tr><td>AI Agent</td><td><code>aiAgent</code></td><td>600 s</td><td><strong>No</strong></td><td><span class="kg-pill is-off">Off by default</span> <span class="kg-pill is-danger">Privileged</span> <code>aiAgent</code> capability</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The first four are marked as idempotent side effects — a model call changes nothing on the far
+        end — so the engine retries them after a transport failure, three attempts by default with
+        exponential backoff. A retried call may of course return a different answer, which is something
+        any workflow using a language model has to tolerate anyway. The AI Agent is deliberately
+        excluded: its loop can fire side-effectful tools, so a half-finished loop is never re-run.
+      </p>
+
+      <p>
+        Every node offers the same two override fields, so they are documented once here rather than in
+        five tables:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>model</code></td>
+              <td>aiModel</td>
+              <td>the configured model</td>
+              <td>Overrides the instance model for this node only. Useful for sending a cheap classification to a small model while a summarization uses a larger one.</td>
+            </tr>
+            <tr>
+              <td><code>maxTokens</code></td>
+              <td>number</td>
+              <td>the configured cap</td>
+              <td>Overrides the completion token cap for this node only. Values of zero or below, and anything unparseable, are ignored rather than treated as a limit of zero. (On the AI Agent this field is named <code>maxTokensPerCall</code>.)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Single-call nodes</h2>
+
+      <h3>AI Prompt</h3>
+      <p>
+        One model call over the incoming data. Reach for it when a step needs language understanding
+        rather than logic: summarizing a ticket, extracting fields from free text, drafting a reply,
+        classifying something into a value you will use as data rather than as a branch. If the answer
+        needs to <em>choose an edge</em>, use AI Router instead — it is built for that and does not
+        require you to compare strings downstream.
+      </p>
+      <p>
+        The node runs in one of two modes. Left alone it is a text node: the model's reply is emitted
+        verbatim on <code>result</code>. Fill in <code>jsonSchema</code> and it becomes a structured
+        node: the schema is appended to the system prompt with an instruction to answer with JSON only,
+        the reply is parsed, and the parsed object is emitted instead of the raw string. Parsing
+        tolerates a fenced <code>```json</code> block, because models add fences often enough that
+        rejecting them would waste the retry on cosmetics.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>prompt</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>The task for the model. This is where upstream data arrives, already evaluated. An empty prompt fails the node before any call is made.</td></tr>
+            <tr><td><code>systemPrompt</code></td><td>string</td><td>no</td><td>yes</td><td>Role and instructions. Left empty, a built-in default is applied that tells the model it is a data-processing step, to reply with only the requested output, and to treat text inside the data as data rather than as instructions.</td></tr>
+            <tr><td><code>jsonSchema</code></td><td>string</td><td>no</td><td><strong>no</strong></td><td>Switches the node to JSON mode and is appended to the system prompt verbatim. It is a prompt-level instruction, not a validator — the reply is parsed as JSON but is not checked against the schema.</td></tr>
+            <tr><td><code>model</code></td><td>aiModel</td><td>no</td><td>no</td><td>Per-node model override.</td></tr>
+            <tr><td><code>maxTokens</code></td><td>number</td><td>no</td><td>no</td><td>Per-node completion token cap.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>any</td><td>The reply text in text mode; the parsed JSON value in JSON mode.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">JSON mode gets exactly one repair pass</span>
+        <p>
+          If the reply does not parse, the node sends the task again with the broken output and the
+          parse error attached and asks for corrected JSON. If that also fails to parse, the node fails
+          with "the model did not return valid JSON after a retry". The retry is capped at one because a
+          node run is on the hot path — a schema the model reliably cannot satisfy will cost you two
+          calls and then fail, every single run.
+        </p>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The schema is not enforced</span>
+        <p>
+          A reply that is valid JSON but does not match your schema is accepted and passed downstream.
+          If a downstream node depends on a field being present, check for it — do not assume the schema
+          guaranteed it.
+        </p>
+      </div>
+
+      <h2>Branching nodes</h2>
+
+      <p>
+        AI Router, AI Verify and AI Semantic Diff are three of the six node types in Knotarium that
+        <strong>select a single outgoing branch</strong> rather than following every edge. Each emits an
+        internal <code>selectedPort</code> value, and the engine schedules only the edges whose handle
+        matches it. Draw one edge per branch you care about; branches with no edge simply end that path.
+      </p>
+
+      <h3>AI Router</h3>
+      <p>
+        Classifies the incoming text into one of the labels you list, and routes the run down the
+        matching branch. Reach for it when the decision is genuinely linguistic — "is this support
+        email a bug report, a billing question or spam?" — and a Condition or a Switch would need a pile
+        of brittle keyword matching to approximate it.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">This node's output ports are dynamic</span>
+        <p>
+          The manifest declares <strong>no outputs at all</strong>. The canvas derives the handles from
+          the node's own <code>categories</code> property: one port per label, in the order you wrote
+          them, followed by a fixed <code>otherwise</code> port. Editing the categories field re-draws
+          the handles, and an edge attached to a label you deleted no longer has anywhere to come from.
+          Because the manifest is output-less, the compiler skips socket validation for this node — a
+          mis-wired router is not caught at publish time.
+        </p>
+      </div>
+
+      <p>
+        Labels are parsed by splitting on commas, semicolons and newlines, trimming each piece, dropping
+        empty ones, and removing case-insensitive duplicates while keeping the first spelling you used.
+        The canvas and the runtime use identical rules, which is what guarantees the handle you drew
+        from is the port the run will actually take.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>input</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>The text to classify. Empty fails the node.</td></tr>
+            <tr><td><code>categories</code></td><td>string</td><td><strong>yes</strong></td><td><strong>no</strong></td><td>The label list. <strong>At least two labels are required</strong> — fewer fails the node with "'categories' needs at least two labels". Not expression-enabled, because the ports have to be derivable at design time.</td></tr>
+            <tr><td><code>instructions</code></td><td>string</td><td>no</td><td>yes</td><td>Extra guidance appended to the classifier's system prompt — where to put ambiguous cases, what a label means in your domain.</td></tr>
+            <tr><td><code>model</code></td><td>aiModel</td><td>no</td><td>no</td><td>Per-node model override.</td></tr>
+            <tr><td><code>maxTokens</code></td><td>number</td><td>no</td><td>no</td><td>Per-node completion token cap. A classifier only needs to emit one label, so this can be set very low.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Origin</th><th>When it fires</th></tr></thead>
+          <tbody>
+            <tr><td>one port per label</td><td>derived from <code>categories</code></td><td>The model's reply matched that label.</td></tr>
+            <tr><td><code>otherwise</code></td><td>always present</td><td>The reply matched no label, even after one corrective retry.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Matching is forgiving in the ways models are sloppy and strict everywhere else: the reply is
+        trimmed, surrounding straight or curly quotes are stripped, a trailing period is removed, and the
+        comparison is case-insensitive. The label is then reported back in the <em>configured</em>
+        spelling, because that is what the canvas edges reference. Alongside the routing decision the
+        node emits <code>category</code> (the matched label, empty when it fell through) and
+        <code>reply</code> (the raw model text), which is what you inspect when a route looks wrong.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">An unroutable answer is not an error</span>
+        <p>
+          If the model answers with something outside the list, the node retries once with the off-list
+          answer quoted back. If it still does not match, the run takes <code>otherwise</code> rather
+          than failing — a wrong route is a routing concern, not an exception. Always wire
+          <code>otherwise</code> to something; an unwired fallback silently ends that path.
+        </p>
+      </div>
+
+      <h3>AI Verify</h3>
+      <p>
+        An evidence gate. Give it a piece of content and the sources it is supposed to be based on, and
+        it checks the content's factual claims against those sources claim by claim, then routes by the
+        overall verdict. The obvious use is guarding an AI-generated draft before it is sent or
+        published: generate with AI Prompt, verify against the retrieved source documents, and send only
+        down the <code>verified</code> branch.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The verdict is code, not a second opinion</span>
+        <p>
+          This is deliberately not "ask another model whether the first one looks right". The model is
+          only asked to do what models are good at — extract each distinct claim and map it to source
+          passages — and it must return structured JSON. Two rules are then applied in ordinary code:
+        </p>
+        <p>
+          <strong>The evidence rule.</strong> A claim the model labelled "verified" but backed with no
+          evidence item marked as supporting is downgraded to <code>unsupported</code>. No evidence never
+          means "probably true".
+        </p>
+        <p>
+          <strong>The aggregation rule.</strong> The overall verdict is the worst per-claim status
+          present, by severity: contradicted beats unsupported, which beats uncertain, which beats
+          verified. It is computed from the parsed claim list, never read from a summary label the model
+          wrote. A reply containing no claims at all is <code>uncertain</code>, because nothing was
+          actually checked.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>content</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>The text whose factual claims should be checked — typically the output of an upstream AI Prompt node.</td></tr>
+            <tr><td><code>sources</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>The reference material. Plain text is treated as a single source with the id <code>source-1</code>. A JSON array of <code>{id, content}</code> objects gives each source a real id the model can cite; <code>sourceId</code> and <code>text</code> are accepted as alternative key names, and a bare array of strings becomes <code>source-1</code>, <code>source-2</code> and so on.</td></tr>
+            <tr><td><code>instructions</code></td><td>string</td><td>no</td><td>yes</td><td>Domain rules — what counts as a claim worth checking, what counts as material in your context.</td></tr>
+            <tr><td><code>model</code></td><td>aiModel</td><td>no</td><td>no</td><td>Per-node model override.</td></tr>
+            <tr><td><code>maxTokens</code></td><td>number</td><td>no</td><td>no</td><td>Per-node completion token cap. Set it generously — the reply is a claim-by-claim JSON document, not a sentence.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>When it fires</th></tr></thead>
+          <tbody>
+            <tr><td><code>verified</code></td><td>Every claim is supported by at least one source passage. The only "pass".</td></tr>
+            <tr><td><code>unsupported</code></td><td>At least one claim has no supporting evidence, and nothing is contradicted.</td></tr>
+            <tr><td><code>contradicted</code></td><td>At least one claim is contradicted by a source. Wins over everything else.</td></tr>
+            <tr><td><code>uncertain</code></td><td>The sources are genuinely ambiguous, or the model returned no claims at all.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Unlike AI Router, these four ports are declared in the manifest, so the compiler validates the
+        wiring normally. Alongside the branch, the node emits the full audited record on
+        <code>result</code>: the overall <code>status</code>, the <code>model</code> override string that
+        was in effect (empty when no override was set — it does not report the instance-wide model), a
+        <code>promptVersion</code> of <code>verify-1</code> that pins which instructions did the judging,
+        and the complete <code>claims</code> array with per-claim status and cited evidence. Because the
+        engine journals node outputs, that record is the replayable verification trail.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A malformed reply is a failure, not a verdict</span>
+        <p>
+          If the model does not return a JSON object containing a <code>claims</code> array, the node
+          retries once with the parse error fed back and then fails. It never falls through to
+          <code>uncertain</code> — a broken response is not evidence of anything, and treating it as a
+          soft verdict would let a flaky model quietly gate your content.
+        </p>
+      </div>
+
+      <h3>AI Semantic Diff</h3>
+      <p>
+        Compares two versions of a document by meaning rather than by characters, and routes by whether
+        anything meaningful actually changed. The use it is built for is watching something that gets
+        re-published constantly with cosmetic churn — terms of service, a supplier price list, a policy
+        page — and only waking a human when a deadline, a number or an obligation moves.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Identical input never reaches the model</span>
+        <p>
+          Before anything else, the node compares the two inputs after trimming surrounding whitespace.
+          If they are identical it routes straight to <code>none</code> with <strong>no model call
+          at all</strong> — no tokens, no latency, no cost. For a poller that runs every few minutes on a
+          page that rarely changes, that short-circuit is the difference between a workflow you can
+          afford to run and one you cannot.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>previous</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>The earlier version. Typically read from a variable or a stored file.</td></tr>
+            <tr><td><code>current</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>The version to compare against it. Both must be present — a missing value fails the node rather than being treated as an empty document.</td></tr>
+            <tr><td><code>instructions</code></td><td>string</td><td>no</td><td>yes</td><td>What counts as material in your domain. This is the field that turns a generic diff into a useful one — "treat any change to a delivery date as material; ignore contact-name changes".</td></tr>
+            <tr><td><code>model</code></td><td>aiModel</td><td>no</td><td>no</td><td>Per-node model override.</td></tr>
+            <tr><td><code>maxTokens</code></td><td>number</td><td>no</td><td>no</td><td>Per-node completion token cap.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>When it fires</th></tr></thead>
+          <tbody>
+            <tr><td><code>material</code></td><td>At least one change alters meaning — a fact, number, date, deadline, price, obligation, scope, name or term.</td></tr>
+            <tr><td><code>cosmetic</code></td><td>Changes exist but every one of them is formatting, whitespace, reordering or a synonym rewrite.</td></tr>
+            <tr><td><code>none</code></td><td>No changes at all — either the short-circuit fired, or the model reported neither material nor cosmetic changes.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        As with AI Verify, the routing decision is computed in code from the parsed lists: any material
+        change means <code>material</code>; otherwise any ignored change means <code>cosmetic</code>;
+        otherwise <code>none</code>. The auditable record on <code>result</code> carries
+        <code>changeType</code>, <code>impact</code> (the highest impact among the material changes —
+        <code>high</code>, <code>medium</code>, <code>low</code>, or empty when there are none),
+        <code>model</code>, a <code>promptVersion</code> of <code>diff-1</code>, the
+        <code>materialChanges</code> array (each with a snake_case <code>type</code>, the
+        <code>old</code> and <code>new</code> values and an <code>impact</code>) and the
+        <code>ignoredChanges</code> descriptions.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Unknown impact levels become "medium"</span>
+        <p>
+          A change whose impact the model reports as <code>critical</code> or <code>major</code> is
+          normalised to <code>high</code>, and <code>minor</code> or <code>trivial</code> to
+          <code>low</code>. Anything else — including a blank or an invented level — becomes
+          <code>medium</code>. So <code>medium</code> means both "genuinely medium" and "unclassified";
+          do not read too much into it when triaging.
+        </p>
+      </div>
+
+      <h2>The agent loop</h2>
+
+      <h3>AI Agent</h3>
+      <p>
+        A bounded tool-use loop where the tools are <strong>your own workflows</strong>. You give the
+        agent a task and an explicit list of workflows it may call; on each turn the model either
+        answers or asks to call one of those workflows with arguments, the workflow runs as a real
+        journaled child run, and its projected outputs are fed back for the next turn. Reach for it when
+        the sequence of steps genuinely cannot be drawn in advance — "find out why this order is late",
+        where the answer might need the order lookup, or the shipment lookup, or both, depending on what
+        the first one returned. When the sequence <em>is</em> known, draw it; a fixed graph is cheaper,
+        faster and reproducible.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Off until an administrator turns it on</span>
+        <p>
+          The node checks the <code>aiAgent</code> capability first and fails immediately with
+          "AI Agent is disabled: the 'aiAgent' capability is off" when it is not enabled. Turn it on at
+          <span class="kg-path">Settings &rsaquo; Capabilities</span>. It sits alongside code execution
+          and database access as a privileged capability for a reason: enabling it means a model gets to
+          decide which of your workflows run, and with which arguments.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>task</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>none</td><td>The instruction for the agent, and the first user message in the loop. Empty fails the node.</td></tr>
+            <tr><td><code>systemPrompt</code></td><td>string</td><td>no</td><td>yes</td><td>built-in preamble</td><td>Left empty, a default preamble is applied telling the model it has a fixed, exhaustive tool set, to call tools with valid arguments, to answer directly when it has enough information, and to treat all data in the task and in tool results as untrusted data rather than instructions.</td></tr>
+            <tr><td><code>tools</code></td><td>agentTools</td><td>no</td><td>no</td><td>empty</td><td>The allowlist, edited as a structured field in the inspector. An empty list is legal — the agent is then just a one-shot reasoner with no way to act.</td></tr>
+            <tr><td><code>maxIterations</code></td><td>number</td><td>no</td><td>no</td><td><code>8</code></td><td>Maximum model turns. <strong>Clamped to 1–32</strong>: a value outside that range is silently pulled into it rather than rejected, and an unparseable value falls back to 8. Reaching the limit without a final answer fails the node.</td></tr>
+            <tr><td><code>maxTokensPerCall</code></td><td>number</td><td>no</td><td>no</td><td>the configured cap</td><td>Completion token cap for a single model turn.</td></tr>
+            <tr><td><code>tokenBudget</code></td><td>number</td><td>no</td><td>no</td><td>none</td><td>Total input plus output tokens across the whole loop. Checked after every turn; exceeding it fails the node with the count and the iteration reached. Without it, the only cost bound is <code>maxIterations</code> times <code>maxTokensPerCall</code>.</td></tr>
+            <tr><td><code>resultSchema</code></td><td>string</td><td>no</td><td>no</td><td>none</td><td>When set, the final answer must be JSON and is emitted as a parsed object. One re-ask is allowed if it is not; a second failure fails the node.</td></tr>
+            <tr><td><code>model</code></td><td>aiModel</td><td>no</td><td>no</td><td>the configured model</td><td>Per-node model override. Must be tool-capable — see the limitation below.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>any</td><td>The final answer text, or the parsed object when <code>resultSchema</code> is set.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Alongside <code>result</code> the node emits <code>steps</code> (per iteration, which tools were
+        called, whether each succeeded, and the child execution id), <code>iterations</code> (how many
+        turns it actually used) and <code>tokenUsage</code> with input and output counts. Those three are
+        what you read when an agent run costs more than expected or takes a path you did not anticipate.
+        A failure surfaces through the normal node-failure path, so an <code>error</code> edge or a
+        workflow-level error handler catches it.
+      </p>
+
+      <h3>Defining a tool</h3>
+      <p>
+        Each entry in the allowlist binds one of your workflows to a model-facing name. The name must be
+        1–64 characters of letters, digits and underscores; duplicates and empty target workflows are
+        rejected when the node starts rather than at the first call, so a misconfigured agent fails fast.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>target workflow</td><td>Which workflow this tool runs. Its <em>published, active</em> version is what executes.</td></tr>
+            <tr><td>name</td><td>What the model sees and calls. Letters, digits and underscores only.</td></tr>
+            <tr><td>description</td><td>The only thing telling the model when this tool is the right one. Vague descriptions are the usual cause of an agent calling the wrong workflow.</td></tr>
+            <tr><td>parameters</td><td>Name, type (<code>string</code>, <code>number</code>, <code>boolean</code>; anything else is treated as string), required flag and description. Each validated argument is seeded as a global in the child run, so the tool workflow reads it as an ordinary variable.</td></tr>
+            <tr><td>outputs</td><td>Which globals are read out of the finished run and returned to the model. A name that does not exist comes back as <code>null</code> and is listed under <code>__missing</code>, so the model can react rather than silently seeing nothing.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Arguments are validated in code before a tool ever runs: keys the binding does not declare are
+        dropped, every required parameter must be present, and types are <strong>checked, never
+        coerced</strong> — the string <code>"3"</code> for a number parameter is rejected. A rejected
+        call is not a node failure; it is returned to the model as a tool error it can correct on the
+        next turn. The same is true of a tool that runs and fails: the model hears "it failed" and may
+        retry differently or give up, while the failed child run is journaled and dead-lettered exactly
+        like any other failed run.
+      </p>
+
+      <h3>What a workflow must look like to be a tool</h3>
+      <p>
+        Eligibility is checked at call time, not at design time, so an ineligible workflow shows up as a
+        tool error in the run rather than as a validation message on the canvas. A workflow must:
+      </p>
+      <ul>
+        <li>have a published, active version — an unpublished draft is not callable;</li>
+        <li>exist, not be archived, and be enabled;</li>
+        <li><strong>begin with a plain Start node</strong>, and contain no Webhook, Polling, Cron
+            Scheduler or Error trigger. A tool has to be a callable function, not an event handler;</li>
+        <li><strong>contain no AI Agent node of its own.</strong></li>
+      </ul>
+      <p>
+        The no-nested-agent rule is enforced twice. The tool workflow's nodes are inspected before the
+        child run is created, and separately, any run that was itself started as a tool is forbidden from
+        spawning further tool runs. The recursion depth is therefore capped at one: your agent may call
+        your workflows, and those workflows may not call agents.
+      </p>
+      <p>
+        Tool runs execute synchronously inside the parent's run slot rather than being queued, so an
+        agent does not deadlock on an instance configured with a single concurrent run — but it does
+        mean the child's cost is honestly charged to the parent's slot and its timeout. Results handed
+        back to the model are capped at 16 KiB of UTF-8; an oversize result is replaced by a truncated
+        preview with an explicit marker so a chatty tool cannot blow up the context.
+      </p>
+
+      <h3>Why an injected instruction is contained</h3>
+      <p>
+        Everything an agent reads is untrusted: the task may contain data from a webhook, and tool
+        results come from workflows that fetched who-knows-what. The default preamble tells the model to
+        treat all of it as data, but a prompt instruction is a mitigation, not a boundary — assume it
+        can be talked around.
+      </p>
+      <p>
+        The actual containment is structural, and it is worth stating precisely because it is what makes
+        the node safe to enable. <strong>An injected instruction can, at worst, steer the agent within
+        the tools you listed and its iteration budget.</strong> It cannot introduce a tool that is not on
+        the allowlist — an unknown tool name is answered with a tool error. It cannot pass an argument
+        shape the binding did not declare, because arguments are schema-validated in code. It cannot
+        reach a webhook- or schedule-triggered workflow, because those are ineligible as tools. It
+        cannot recurse into another agent. And it cannot run forever, because
+        <code>maxIterations</code> and <code>tokenBudget</code> are enforced by the loop rather than
+        requested of the model.
+      </p>
+      <p>
+        Which turns the security question into a design question you can actually answer: <em>if an
+        attacker controlled the task text, what is the worst sequence of the tools I listed?</em> Keep
+        the allowlist to the smallest set that does the job, prefer read-only workflows as tools, and
+        put anything irreversible behind a human approval step rather than behind a tool binding.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">OpenAI reasoning models cannot drive the tool loop</span>
+        <p>
+          Reasoning models such as the GPT-5 family reject function tools on the OpenAI Chat Completions
+          API unless reasoning effort is switched off. Knotarium adapts automatically: it sends the
+          request without the parameter, and on the specific rejection it retries once with reasoning
+          effort set to none, remembering the model so later turns skip the wasted round-trip. If the
+          call still fails while tools are in play, the node reports an actionable error rather than a
+          raw HTTP status: <strong>the AI Agent needs a tool-capable model</strong>. Set a per-node
+          override such as <code>gpt-4o</code> or <code>gpt-4.1</code>, or choose a non-reasoning model
+          at <span class="kg-path">Settings &rsaquo; AI Provider</span>. Full reasoning-model tool
+          support is a planned follow-up, not a current capability.
+        </p>
+      </div>
+
+      <h2>Where to look next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="nodes-network.html">
+          <div class="kg-card-title">Network nodes</div>
+          <div class="kg-card-desc">HTTP, SQL, files, mail and MQTT — including the egress policy AI provider calls share.</div>
+        </a>
+        <a class="kg-card" href="nodes-utility.html">
+          <div class="kg-card-title">Utility nodes</div>
+          <div class="kg-card-desc">Log, variables and Inline Code — the other privileged capability, and the sandbox that confines it.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The token limits that bound the workflow generator, and why the provider itself is not configured there.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,541 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Utility node reference. Parameters and ports come from
+  Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs; behaviour and defaults from
+  LogNodeTask / SetVariableNodeTask / SetVariablesNodeTask / VariableWriter / InlineCodeNodeTask and the
+  Sandbox runners. Annotation and device pin behaviour from Frontend/src/node-editor/*. The manifests
+  under nodes/ are stale and were not used.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Utility nodes · Knotarium Help</title>
+<meta name="description" content="Reference for Log, Set Variable, Set Variables and Inline Code, the editor-only Sticky Note and Group annotations, and the External Device block.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="nodes-utility.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Utility nodes</h1>
+      <p class="kg-lead">
+        The small nodes that make a workflow legible and debuggable — writing to the run log, setting
+        variables, and dropping to C# when the built-in nodes run out. Plus two nodes that never execute
+        at all, because they exist purely to make the canvas readable, and the External Device block
+        whose ports come from a plugin rather than from a manifest.
+      </p>
+
+      <h2>Everyday utilities</h2>
+
+      <p>
+        Log, Set Variable and Set Variables share a shape: no capabilities, no credentials, a
+        ten-second default timeout, and a recovery mode of "fail immediately" — none of them is ever
+        retried automatically, because none of them can fail for a transient reason. If one of these
+        fails, running it again will fail the same way.
+      </p>
+
+      <h3>Log</h3>
+      <p>
+        Writes a message into the application log and the run journal. Reach for it while you are
+        building — dropping a Log between two nodes is the fastest way to see what is actually flowing
+        along an edge, and the message it wrote is preserved in the run history rather than only in the
+        moment.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>message</code></td>
+              <td>string</td>
+              <td>no</td>
+              <td>yes</td>
+              <td><code>log message</code></td>
+              <td>What to write. An empty or unset message logs the literal text <code>log message</code> rather than an empty line, so an unconfigured Log node is visible in the journal instead of invisible.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>The final message string, after expression evaluation and variable substitution. Wiring Log into a downstream node passes the text along, so it can double as a formatting step.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        A value that is not already a string is rendered before logging: a <code>JsonElement</code> uses
+        its own representation, a list or array is serialized to JSON, primitives use their normal string
+        form, and anything else is serialized to JSON. So logging a whole upstream object gives you
+        readable JSON rather than a type name.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Single braces are substituted too</span>
+        <p>
+          After the usual <code>{{ }}</code> expression evaluation, the Log node performs a second,
+          simpler pass: any occurrence of <code>{name}</code> — single braces — is replaced with the
+          value of the global variable <code>name</code>, if one exists. This is convenient and
+          occasionally surprising, because a message containing literal JSON braces can be rewritten
+          when a key happens to match a variable name. Log entries appear in the run journal prefixed
+          with <code>[LOG]</code>, which is how you tell them apart from the generic "completed
+          successfully" entries.
+        </p>
+      </div>
+
+      <h3>Set Variable</h3>
+      <p>
+        Writes one global variable. Use it to carry a value across a branch, to accumulate something in
+        a loop, or to name an expression once instead of repeating it in five nodes. Its real power is
+        that the variable name may be a <strong>path</strong>, so you can build up a structured object
+        piece by piece rather than assembling JSON in a string.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>variableName</code></td>
+              <td>string</td>
+              <td>no</td>
+              <td><strong>no</strong></td>
+              <td>The variable to write, or a path into one. An empty name makes the node a silent no-op — it succeeds and writes nothing, which is the usual explanation for a variable that never appears.</td>
+            </tr>
+            <tr>
+              <td><code>value</code></td>
+              <td>string</td>
+              <td>no</td>
+              <td>yes</td>
+              <td>The value to store, evaluated before the write.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>Nothing. The executor returns success with no outputs, so this handle exists to continue the flow, not to pass data. Read the variable downstream instead.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Writing into a nested path</h4>
+      <p>
+        The name is parsed as a head followed by segments. The head is everything up to the first
+        <code>.</code> or <code>[</code>, and it is the variable that actually gets stored. After that,
+        <code>.member</code> descends into an object key, <code>["key"]</code> or <code>['key']</code>
+        does the same for a key that is not a bare identifier, and <code>[0]</code> indexes into an
+        array with a non-negative integer.
+      </p>
+
+      <pre><code><span class="tok-comment"># All four are valid variableName values</span>
+config                     <span class="tok-comment"># a plain variable</span>
+myDict[<span class="tok-str">"name"</span>]           <span class="tok-comment"># a key inside myDict</span>
+list[<span class="tok-num">0</span>]                   <span class="tok-comment"># the first element of list</span>
+config.servers[<span class="tok-num">2</span>].host    <span class="tok-comment"># nested object, array index, then a member</span></code></pre>
+
+      <p>
+        A path write materialises the head variable's current value into a mutable tree, sets the leaf,
+        and stores the head back. Intermediate containers are created on demand, and siblings are
+        preserved — writing <code>config.servers[2].host</code> does not disturb
+        <code>config.servers[0]</code> or any other key under <code>config</code>.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A malformed path becomes a flat variable name</span>
+        <p>
+          If the name does not parse as a path — an unterminated bracket, an empty member as in
+          <code>a..b</code>, a trailing dot, a negative or non-numeric index — the node does not fail.
+          It falls back to setting a variable whose <em>literal name</em> is the whole string you typed.
+          You then have a variable called <code>a..b</code> that nothing downstream can read. A path that
+          parses but conflicts structurally, such as indexing a value that is not an array, <em>does</em>
+          fail the node, with a message naming the variable.
+        </p>
+      </div>
+
+      <h3>Set Variables</h3>
+      <p>
+        The same write, several times over, from one node. Reach for it at the top of a workflow to
+        initialise everything the run needs in a single visible place, instead of a chain of five Set
+        Variable nodes that makes the canvas harder to read than the logic deserves.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>variables</code></td>
+              <td>keyValue</td>
+              <td>no</td>
+              <td>yes</td>
+              <td>Rows of name and value. Each value is expression-evaluated before the node runs, so a row may be a literal or a reference to an upstream output or another variable.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>A <code>count</code> field holding the number of rows actually written. Note that the value is published under <code>count</code>, not under <code>result</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Names go through exactly the same path parser as Set Variable, so
+        <code>myDict["k"]</code> and <code>list[0]</code> behave identically in either node. Rows are
+        applied in order, which means a later row may overwrite an earlier one and a row may reference a
+        variable a previous row set — but only if that reference was evaluated after the earlier write,
+        which is not guaranteed. Do not chain dependent assignments within one node; use two nodes.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Rows with no name are skipped silently</span>
+        <p>
+          A row whose name is missing, blank or not a string is ignored and does not count towards
+          <code>count</code>, and the node still succeeds. If a variable you expected is missing, compare
+          <code>count</code> against the number of rows you wrote before looking anywhere else. A
+          structural conflict in a path, on the other hand, fails the node and names the offending row.
+        </p>
+      </div>
+
+      <h2>Inline Code</h2>
+
+      <p>
+        A short C# script typed straight into the node, filling the gap between an expression — which can
+        only read — and authoring a whole custom node package. Reach for it when a transformation is
+        genuinely awkward to express with the data nodes: parsing an unusual format, a computation with
+        real branching, or reshaping a payload into something a downstream API expects. Anything you
+        reach for repeatedly across workflows deserves to become a node package instead.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Off until an administrator turns it on</span>
+        <p>
+          The node checks the <code>code.execute</code> capability before it compiles anything and fails
+          with "Inline Code is disabled: the 'code execution' capability is off" when it is not enabled.
+          Turn it on at <span class="kg-path">Settings &rsaquo; Capabilities</span>. It is the
+          highest-privilege capability in the system: a workflow that can run arbitrary C# can do
+          anything the Knotarium process can do, which on a service install may be a great deal more
+          than you intended.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>language</code></td>
+              <td>enum</td>
+              <td>no</td>
+              <td>no</td>
+              <td><code>csharp</code></td>
+              <td>The only value the manifest offers, and the only one the executor accepts — <code>c#</code> and an empty value are also treated as C#, anything else fails with "language '…' is not supported in v1". The field exists as the seam for adding another language later.</td>
+            </tr>
+            <tr>
+              <td><code>code</code></td>
+              <td>code</td>
+              <td><strong>yes</strong></td>
+              <td><strong>no</strong></td>
+              <td>none</td>
+              <td>The script body. <strong>Deliberately not expression-enabled</strong>: the evaluator must never rewrite <code>{{ }}</code> that happens to appear inside source code. Reach your data through <code>Input.Get</code> instead. An empty script fails with "no script provided".</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>When it fires</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>The script completed. Carries whatever the script returned.</td></tr>
+            <tr><td><code>error</code></td><td>The node failed — a compilation error, a thrown exception, a timeout, or an explicit <code>Fail(...)</code>. As with every non-branching node, this handle is also scheduled on success.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>What the script can see</h3>
+      <p>
+        The body you type is wrapped in a method, so you write statements rather than a class. Inside it
+        you have <code>Input.Get&lt;T&gt;(name, defaultValue)</code> for the node's inputs (deserialized
+        case-insensitively, falling back to the default rather than throwing on a mismatch),
+        <code>Logger</code> for structured logging, <code>context</code> for workflow state, HTTP and
+        credentials, and <code>cancellationToken</code>. Two helpers end the script:
+        <code>Success(payload)</code> and <code>Fail(message)</code>. A script that never returns is
+        treated as a successful side-effect-only run.
+      </p>
+      <p>
+        Returning an object spreads its properties into top-level outputs <em>and</em> exposes the whole
+        value under <code>result</code>, so both <code>output.myField</code> and
+        <code>output.result</code> resolve. <code>Fail(message)</code> produces an ordinary node failure
+        carrying your message, which means an <code>error</code> or <code>failure</code> edge picks it up
+        exactly like any other failure. Common usings are pre-declared, and duplicates you write are
+        dropped rather than causing a compile error.
+      </p>
+
+      <h3>The timeout is thirty seconds, and how it bites depends on the sandbox</h3>
+      <p>
+        Execution is bounded at <strong>30 seconds</strong> by default; the manifest's declared timeout
+        is derived from the same shared constant, so the catalog and the executor can never disagree.
+        A node-level <code>timeoutSeconds</code> property overrides the manifest value the engine uses.
+        On expiry the node fails with "Inline Code timed out after 30s".
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">In-process, the timeout is cooperative</span>
+        <p>
+          In the default in-process mode the deadline is a cancellation signal. A script that never
+          observes <code>cancellationToken</code> — a tight loop, a blocking call — <strong>keeps
+          running past the timeout</strong> even though the node has already reported failure. In
+          process mode the runner additionally kills the worker at a hard deadline, which is the only
+          configuration where a runaway script is genuinely stopped.
+        </p>
+      </div>
+
+      <h3>Where the code runs</h3>
+      <p>
+        <span class="kg-path">Settings &rsaquo; Sandbox</span> decides whether user-authored C# — this
+        node and compiled custom node packages — runs inside the main process or in pooled worker
+        processes with operating-system limits. The choice is read <strong>at every execution</strong>,
+        so flipping it takes effect on the next run: no restart, no redeploy. The worker pool is created
+        lazily on the first execution in process mode and kept alive afterwards.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Mode</th><th>What it means for a script</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>InProcess</code> <span class="kg-pill is-warning">Default</span></td>
+              <td>The script runs inside the Knotarium process with its privileges. Fastest, and the posture assumes you trust whoever authored the workflow. A crash or a memory leak in a script is a crash or a leak in the engine.</td>
+            </tr>
+            <tr>
+              <td><code>Process</code></td>
+              <td>The script runs in a pooled worker process with a memory ceiling, a CPU share, a hard kill deadline and worker recycling; on Windows the worker runs under a restricted token at low integrity. Credentials are proxied rather than handed over, so decrypted secrets never enter the worker.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Independently of the mode, a runtime analyzer is on by default and rejects code that calls
+        banned APIs <em>before</em> it is allowed to compile — so a script reaching for something
+        forbidden fails with a compilation error rather than at the moment it would have done damage.
+        The exact limits, and the settings behind them, are in the
+        <a href="configuration.html">configuration reference</a>; note that the values stored by the
+        settings screen override the configuration file.
+      </p>
+
+      <h2>Annotations that never execute</h2>
+
+      <p>
+        Two node types exist only to make the canvas readable. They have <strong>no parameters and no
+        ports</strong>, they are never reached by the executor, and they are registered in the node
+        catalog purely so the compiler recognises the type and they round-trip through save, version and
+        restore like any other node. Neither appears in the palette: both are filtered out by id,
+        because they are inserted from the canvas toolbar instead of being dragged.
+      </p>
+
+      <h3>Sticky Note</h3>
+      <p>
+        A free-text card you drop on the canvas to explain why something is wired the way it is. Use it
+        for the reasoning that will not survive in your head — why this retry count, which team owns the
+        endpoint, what the ticket number was.
+      </p>
+      <p>
+        The note button on the canvas toolbar inserts a card at the centre of the current viewport,
+        already selected so you can start typing. It defaults to 220&nbsp;&times;&nbsp;150 pixels and is
+        resizable. Five colours are available — amber (the default), green, blue, pink and slate — each
+        rendered as a translucent wash so the canvas grid shows through rather than as a solid block. A
+        note sits behind real nodes, so one used as a backdrop never intercepts a click meant for a node
+        on top of it.
+      </p>
+      <p>
+        Text and colour live in the node's properties and its size in its style; both are persisted
+        through the same metadata channel as node positions, so a note survives a version restore
+        exactly as it was.
+      </p>
+
+      <h3>Group</h3>
+      <p>
+        A visual container that wraps a set of nodes into a labelled, collapsible box. Reach for it when
+        a workflow has grown past the point where the shape is obvious — collapsing a finished
+        sub-section removes it from view without removing it from the run.
+      </p>
+      <p>
+        Groups are created from the canvas toolbar's group action over the current selection, and
+        <strong>at least two top-level nodes must be selected</strong> — the action does nothing with
+        fewer. A group can later be collapsed or ungrouped, which restores its children to the top
+        level.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Grouping is purely visual</span>
+        <p>
+          Membership is carried by each child's metadata, not by the graph. The backend treats a grouped
+          child as an ordinary top-level node, so putting nodes in a group changes nothing about
+          execution order, scoping, error handling or variable visibility. It is a drawing, not a
+          construct — if you want real containment, that is what a Sub-flow is for.
+        </p>
+      </div>
+
+      <h2>External Device and nodes from other packages</h2>
+
+      <h3>External Device</h3>
+      <p>
+        A generic, configuration-driven block representing one device or instance managed by an
+        installed provider plugin. It is how a workflow reacts to something happening in the physical
+        or third-party world: you pick a target, tick the signals you care about, and each ticked signal
+        becomes a pin you can wire into ordinary nodes.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Options come from</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>targetId</code></td>
+              <td>resourceLocator</td>
+              <td><strong>yes</strong></td>
+              <td><code>reactor.targets</code></td>
+              <td>Which configured device or instance this block represents. Free-text entry is permitted as a fallback when the provider is unreachable at design time.</td>
+            </tr>
+            <tr>
+              <td><code>eventPins</code></td>
+              <td>resourceLocator (multi)</td>
+              <td>no</td>
+              <td><code>reactor.events</code>, depends on <code>targetId</code></td>
+              <td>Events raised by the device that you want to react to. Each selection becomes an output pin.</td>
+            </tr>
+            <tr>
+              <td><code>actionPins</code></td>
+              <td>resourceLocator (multi)</td>
+              <td>no</td>
+              <td><code>reactor.actions</code>, depends on <code>targetId</code></td>
+              <td>Incoming actions raised by the device that you want to react to. These are also output pins — see below.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The pins are dynamic, and they are all outputs</span>
+        <p>
+          The manifest declares no outputs. The canvas derives the handles from the two pin selections:
+          <code>evt:&lt;type&gt;</code> for each event and <code>act:&lt;name&gt;</code> for each action.
+          Despite the name, <strong>action pins are source pins too</strong> — the block is a pure
+          inbound surface that you react to, and it exposes no input handles at all. Sending a command
+          <em>to</em> a device is a separate node, not an edge drawn back into this one. Removing a pin
+          from the selection prunes the edges that were attached to it.
+        </p>
+      </div>
+
+      <p>
+        Because the manifest is output-less, the control-flow compiler skips socket validation for this
+        node; the reactive layer validates the pin wiring instead. The picker values and the device
+        branding come from a host plugin at run time, so on an instance with no such plugin installed the
+        three pickers are empty and manual entry is the only way to fill them in.
+      </p>
+
+      <h3>Node ids supplied by external packages</h3>
+      <p>
+        The catalog you see in the palette is not fixed. Two separate extension folders add to it, and
+        they do different things:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>What it contributes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>NodeRuntime__WatchPath</code></td>
+              <td><code>&lt;app folder&gt;/nodes</code></td>
+              <td>Compiled node packages. Each brings its own node id, display name, category, parameters and ports, and executes through the same run path as a built-in node — a prebuilt binary executor rather than C# compiled from the database.</td>
+            </tr>
+            <tr>
+              <td><code>NodeRuntime__PluginsPath</code></td>
+              <td><code>&lt;app folder&gt;/plugins</code></td>
+              <td>Host plugins. These contribute long-lived capabilities rather than nodes: the external-signal provider behind the External Device block, the option loaders that fill its pickers, workflow import providers, and background loops. Discovered once at startup.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        A node id that appears in your palette but is documented nowhere in this reference almost
+        certainly came from a package in the watched folder. <strong>Fire Action</strong> — the
+        counterpart that sends a command to a device, filed under a "Device Workflow" category — is one
+        such node: it is not part of the built-in catalog and arrives with an external package.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Two palette behaviours worth knowing</span>
+        <p>
+          A package manifest may set <code>secondary</code> to true, which moves the node out of its
+          normal category into a single collapsed <strong>Advanced</strong> section — the convention for
+          escape-hatch nodes you should not reach for first. Separately, palette search matches only what
+          you can see (name, description, category) and deliberately not the internal node id, so
+          searching for a node by its id will not find it.
+        </p>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Leave hot-reload off in production</span>
+        <p>
+          <code>NodeRuntime__DevMode</code> reloads node packages when the watched folder changes. It is
+          on in development builds and should stay off elsewhere: reloading swaps code that may be
+          executing, and a package replaced mid-run is not something the engine can make safe for you.
+        </p>
+      </div>
+
+      <h2>Where to look next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="nodes-network.html">
+          <div class="kg-card-title">Network nodes</div>
+          <div class="kg-card-desc">HTTP, SQL, files, mail and MQTT — the other privileged capabilities and the egress policy.</div>
+        </a>
+        <a class="kg-card" href="nodes-ai.html">
+          <div class="kg-card-title">AI nodes</div>
+          <div class="kg-card-desc">Prompt, Router, Verify, Semantic Diff and the bounded Agent loop.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Every sandbox limit, the plugin folders, and the settings the interface overrides.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Expressions. The grammar here comes from Backend/Knotarium.NodeRuntime/ExpressionEvaluator.cs and
+  VariablePath.cs, and the evaluation gate from Features/Execution/PropertyValueEvaluator.cs. The
+  evaluator is a hand-written scanner, not a regex — claims about "the pattern" would be invented.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expressions and data · Knotarium Help</title>
+<meta name="description" content="How a node reads data produced earlier: the {{ }} expression syntax, output chips, the Node I/O inspector, and pinned sample outputs.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="expressions.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Expressions and data</h1>
+      <p class="kg-lead">
+        Edges carry control, not values. When a node needs something an earlier node produced, it asks
+        for it by name inside a <code>{{ … }}</code> expression. This page covers the two reference
+        forms that exist, how a path into nested data is written, what happens when a reference does
+        not resolve, and the two design-time tools — the Node I/O inspector and pinned outputs — that
+        let you build a downstream node before the upstream one is finished.
+      </p>
+
+      <h2>The two reference forms</h2>
+      <p>
+        There are exactly two roots. Everything else you may have seen in other automation tools —
+        <code>$trigger</code>, <code>$env</code>, <code>$json</code>, <code>$item</code> — does not
+        exist here.
+      </p>
+
+      <pre><code><span class="tok-comment"># Read a named output field of a specific node</span>
+{{ <span class="tok-key">$node</span>.<span class="tok-str">fetch-user</span>.output.<span class="tok-str">statusCode</span> }}
+
+<span class="tok-comment"># Read a variable from the workflow's variable store</span>
+{{ <span class="tok-key">$variables</span>.<span class="tok-str">customerId</span> }}</code></pre>
+
+      <p>
+        <code>$node</code> references are addressed by the <strong>node id</strong>, which is shown
+        under the title in the property inspector — not by the node's display name. The literal
+        <code>.output.</code> in the middle is required; without it the reference resolves to nothing.
+        Node ids containing hyphens are fine.
+      </p>
+      <p>
+        A bare identifier inside the braces is also accepted and is treated as a variable name, so
+        <code>{{ customerId }}</code> means the same thing as
+        <code>{{ $variables.customerId }}</code>. The explicit form is worth preferring: it survives
+        being read by somebody else, and it is the form the editor's own tools insert.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The root tokens are case-sensitive</span>
+        <p>
+          <code>$node.</code> and <code>$variables.</code> are matched as exact lowercase text. Writing
+          <code>{{ $Node.a.output.b }}</code> does not resolve to nothing — it fails to parse, and an
+          expression that fails to parse <strong>throws and fails the entire run</strong>, not just the
+          node. There is no diagnostic for it and nothing catches it, so the symptom is a run that dies
+          at that step with a parser message rather than a node-level failure you can retry.
+        </p>
+      </div>
+
+      <h2>Reaching into nested data</h2>
+      <p>
+        Both forms share one path grammar. The head is everything up to the first <code>.</code> or
+        <code>[</code>; after that you may chain member and index segments freely.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Segment</th><th>Means</th></tr></thead>
+          <tbody>
+            <tr><td><code>.name</code></td><td>A member of an object.</td></tr>
+            <tr><td><code>["name"]</code> or <code>['name']</code></td><td>The same, but the key may contain dots or other awkward characters.</td></tr>
+            <tr><td><code>[0]</code></td><td>An element of an array. The index must be a non-negative whole number.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code>{{ $node.fetch-user.output.payload.user.age }}
+{{ $node.fetch-user.output.payload<span class="tok-str">[</span><span class="tok-num">0</span><span class="tok-str">]</span>.email }}
+{{ $variables.config.servers<span class="tok-str">[</span><span class="tok-num">2</span><span class="tok-str">]</span>.host }}
+{{ $variables.lookup<span class="tok-str">[</span><span class="tok-str">"order.id"</span><span class="tok-str">]</span> }}</code></pre>
+
+      <p>
+        Every part of a reference is matched exactly, including case: the node id, the output name, and
+        each member name. A reference is read until the first delimiter, and whitespace is a delimiter
+        — so <code>{{ $variables.lookup["my key"] }}</code> is cut short at the space and resolves to
+        nothing. So is a hyphen appearing <em>inside the path</em>, though a hyphen in the node id
+        itself is safe because the id is located by the surrounding <code>.output.</code>.
+      </p>
+
+      <h2>Whole value or interpolated text</h2>
+      <p>
+        This distinction decides whether a field receives a real object or a piece of text, and it
+        catches people out.
+      </p>
+      <p>
+        When a field's value is <strong>nothing but one expression</strong>, the result keeps its type:
+        an object stays an object, an array stays an array, a number stays a number. When the
+        expression is embedded in surrounding text, everything is converted to string and concatenated.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field value</th><th>Node receives</th></tr></thead>
+          <tbody>
+            <tr><td><code>{{ $node.a.output.payload }}</code></td><td>The object itself.</td></tr>
+            <tr><td><code>Order {{ $node.a.output.id }} received</code></td><td>A string.</td></tr>
+            <tr><td><code>&nbsp;{{ $node.a.output.payload }}</code></td><td>A <strong>string</strong> — the leading space makes it interpolation.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">One stray space changes the type</span>
+        <p>
+          A single space before or after the braces is enough to demote a whole-value expression to
+          string interpolation. If a downstream node complains that it received text where it expected
+          an object or a number, check the field for surrounding whitespace before looking anywhere
+          else.
+        </p>
+      </div>
+      <p>
+        One further typing note: every JSON number arrives as a floating-point value, so
+        <code>30</code> in a payload becomes <code>30.0</code>. That is invisible most of the time but
+        matters when a value is concatenated into text or compared against a string.
+      </p>
+
+      <h2>When a reference does not resolve</h2>
+      <p>
+        A syntactically valid reference that points at nothing — an unknown node, an output that node
+        never produced, a member that is not there, an array index past the end — does not raise an
+        error. It resolves to nothing, and how that lands depends on the shape of the field:
+      </p>
+      <ul>
+        <li>As a <strong>whole value</strong>, the parameter is null.</li>
+        <li><strong>Embedded in text</strong>, it contributes an empty string, so
+            <code>Order {{ … }} received</code> becomes <code>Order&nbsp; received</code>.</li>
+      </ul>
+      <p>
+        This is a deliberate design — a run should not die because one optional field was absent — but
+        it means a typo in a reference is <strong>silent</strong>. A node that suddenly logs a blank
+        where a value should be, or an HTTP request whose body has an empty field, is usually a
+        misspelled node id or output name, not a data problem.
+      </p>
+      <div class="kg-note">
+        <span class="kg-note-label">References are never checked before a run</span>
+        <p>
+          Publishing validates the graph's structure, not its expressions. In fact a value wrapped in
+          <code>{{ … }}</code> is <em>exempted</em> from the parameter type check, because the compiler
+          cannot know what the expression will produce. A reference to a node that does not exist
+          publishes cleanly and fails quietly at run time. The Node I/O inspector and a manual run are
+          the tools that catch it.
+        </p>
+      </div>
+
+      <h2>More than references</h2>
+      <p>
+        The space between the braces is a small expression language, not just a reference slot. It
+        supports string literals in single or double quotes, numbers, <code>true</code>,
+        <code>false</code> and <code>null</code>, parentheses, the arithmetic operators
+        <code>+</code> <code>-</code> <code>*</code> <code>/</code>, the comparisons <code>==</code>
+        and <code>!=</code>, and the logical <code>&amp;&amp;</code> and <code>||</code>. The
+        <code>+</code> operator concatenates when either side is a string and adds otherwise. Division
+        by zero yields zero rather than failing.
+      </p>
+      <p>
+        Four functions are available, and only these four — anything else is rejected outright:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Function</th><th>Returns</th></tr></thead>
+          <tbody>
+            <tr><td><code>now()</code></td><td>The current UTC time as a round-trip formatted string.</td></tr>
+            <tr><td><code>uuid()</code></td><td>A fresh identifier.</td></tr>
+            <tr><td><code>coalesce(a, b, …)</code></td><td>The first argument that is neither null nor an empty string.</td></tr>
+            <tr><td><code>length(x)</code></td><td>The length of the argument.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">There is no escape sequence</span>
+        <p>
+          <code>{{</code> always opens a placeholder; it cannot be escaped, doubled or quoted out. A
+          string literal inside a placeholder has no escapes either, so a quote character cannot appear
+          inside a quoted literal. If you genuinely need the characters <code>{{</code> in a value, the
+          only reliable way is to make sure the value never contains a matching <code>}}</code> — a
+          value with an opening brace pair and no closing pair is passed through untouched.
+        </p>
+      </div>
+
+      <h2>Discovering references in the editor</h2>
+      <p>
+        You rarely need to type any of the above by hand. Four affordances produce correct references
+        for you.
+      </p>
+
+      <h3>Autocomplete inside a field</h3>
+      <p>
+        Typing <code>{{</code> in an expression-capable field opens a list of the workflow's known
+        references — promoted node outputs and variables — filtered by whatever you type after the
+        braces. Arrow keys move, <kbd>Enter</kbd> or <kbd>Tab</kbd> inserts the complete
+        <code>{{ … }}</code> expression, and <kbd>Esc</kbd> closes the list.
+      </p>
+
+      <h3>The Insert data reference chips</h3>
+      <p>
+        Near the top of the property inspector, a panel titled <strong>Insert data reference</strong>
+        lists every <em>upstream</em> node — every ancestor, not just the immediate predecessor —
+        grouped by node, with one chip per data field it exposes. Clicking a chip copies the full
+        expression to the clipboard, ready to paste into any field. Control and branch ports such as
+        <code>true</code> and <code>false</code> carry no payload and are left out.
+      </p>
+      <p>
+        On graphs started by an external device or an event or action trigger, a second panel offers
+        the fields that signal carries. Those are scoped to the run rather than shared, which is why
+        they appear per node rather than in the workflow-wide variable store.
+      </p>
+
+      <h3>Dragging an output chip</h3>
+      <p>
+        Each node card shows its outputs as small draggable pills. Dragging one has two useful
+        destinations:
+      </p>
+      <ul>
+        <li><strong>Onto another node</strong> — binds that output to the target node's primary input
+            field, as a stored reference rather than as typed text.</li>
+        <li><strong>Onto the Workflow variables panel</strong> — promotes the output to a named entry
+            in the variable store, described in <a href="variables.html">Variables</a>. While you drag,
+            a hint reading <em>Drop output into the global store</em> appears at the bottom of the
+            canvas.</li>
+      </ul>
+      <p>
+        A promoted output is proposed with the name <code>&lt;nodeId&gt;_&lt;outputName&gt;</code>,
+        which you can rename afterwards. Promoting the same output twice returns the existing entry
+        rather than creating a duplicate.
+      </p>
+
+      <h2>The Node I/O inspector</h2>
+      <p>
+        At the bottom of the property inspector, the <strong>Input / Output</strong> section answers
+        "what does this node actually produce?" without leaving the canvas. It loads the workflow's
+        most recent run and shows the selected node's recorded inputs, the variables as they stood, and
+        its outputs. A Refresh button re-reads the latest run.
+      </p>
+      <p>
+        Before a node has ever run there is nothing recorded, and the section says so. It then falls
+        back to the <strong>declared outputs</strong> from the node package's manifest — each output's
+        name, its type, and the field names it declares — so you can still see the shape of what the
+        node will emit and write a reference against it.
+      </p>
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Read the last run, then write the reference</span>
+        <p>
+          The most reliable way to get a deep path right is to run the workflow once, select the
+          producing node, and read the real recorded output. Guessing at the shape of somebody's JSON
+          and relying on a silent miss to tell you when you are wrong is how an afternoon disappears.
+        </p>
+      </div>
+
+      <h2>Pinned outputs</h2>
+      <p>
+        Building the third node of a chain usually means running the first two over and over. A
+        <strong>pinned output</strong> short-circuits that: the node stops executing and returns a
+        sample you supply, so everything downstream can be built and re-run immediately.
+      </p>
+      <p>
+        The <strong>Pinned output</strong> control sits at the very bottom of the property inspector.
+        Clicking <em>Pin output</em> opens a JSON editor and a port field; the port defaults to
+        <code>result</code>. The payload must be valid JSON — invalid text is reported inline and is
+        not stored. <em>Clear pin</em> removes the pin entirely.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 210" role="img" aria-labelledby="pin-title">
+          <title id="pin-title">A pinned node returns its sample on manual runs and executes normally on automated runs</title>
+          <defs>
+            <marker id="pin-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6b7280"/>
+            </marker>
+          </defs>
+
+          <rect x="10" y="14" width="180" height="52" rx="10" fill="rgba(245,158,11,0.10)" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="26" y="36" fill="#f59e0b" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">MANUAL RUN</text>
+          <text x="26" y="55" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12">The Run button</text>
+
+          <rect x="10" y="144" width="180" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="26" y="166" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">EVERY OTHER RUN</text>
+          <text x="26" y="185" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">schedule · webhook · poll · device · replay</text>
+
+          <path d="M196 40 L246 40" stroke="#6b7280" stroke-width="1.6" marker-end="url(#pin-arw)"/>
+          <path d="M196 170 L246 170" stroke="#6b7280" stroke-width="1.6" marker-end="url(#pin-arw)"/>
+
+          <rect x="252" y="70" width="180" height="70" rx="10" fill="#0e1420" stroke="#6366f1" stroke-width="1.6"/>
+          <text x="268" y="94" fill="#6366f1" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">NODE WITH A PIN</text>
+          <text x="268" y="114" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="11.5">__pinnedOutput</text>
+          <text x="268" y="131" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">enabled · payload · port</text>
+
+          <path d="M340 66 L340 42 L438 42" stroke="#f59e0b" stroke-width="1.6" fill="none" marker-end="url(#pin-arw)"/>
+          <path d="M340 144 L340 170 L438 170" stroke="#6b7280" stroke-width="1.6" fill="none" marker-end="url(#pin-arw)"/>
+
+          <rect x="444" y="16" width="246" height="52" rx="10" fill="rgba(245,158,11,0.10)" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="460" y="38" fill="#f59e0b" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">RETURNS THE SAMPLE</text>
+          <text x="460" y="57" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">The node never executes</text>
+
+          <rect x="444" y="144" width="246" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="460" y="166" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">PIN IGNORED</text>
+          <text x="460" y="185" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">The node executes for real</text>
+        </svg>
+        <figcaption>A pin only affects manual runs. Everything automatic behaves as if the pin were not there.</figcaption>
+      </figure>
+
+      <p>
+        A pin is honoured on <strong>manual runs only</strong> — the Run button in the editor and a
+        manually started run elsewhere. Scheduled runs, inbound webhooks, pollers, device events, error
+        workflows, agent tool calls and replays all ignore it and execute the node normally. The run
+        journal records that the node was pinned and returned its pinned output instead of executing.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">A pin is saved into the published version</span>
+        <p>
+          Pins live on the node like any other property, so they are saved with the draft
+          <strong>and published into the runtime version</strong>. They are not stripped. Since manual
+          runs execute the active version, anyone pressing Run on that workflow — including on a
+          production instance — gets your sample instead of the real step, indefinitely, until the pin
+          is cleared.
+        </p>
+        <p>
+          Publishing a workflow that has pins returns a warning naming the pinned nodes:
+          <em>"…node(s) have pinned test output. A manual run returns the pinned sample instead of
+          executing; automated (webhook/schedule) runs ignore pins. Clear the pins when done
+          testing."</em> It does not block publishing.
+        </p>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">That warning is not currently shown in the editor</span>
+        <p>
+          The warning is returned in the publish response, but the canvas does not display it — the
+          status bar only reports the version number that was published. In practice that means
+          <strong>nothing on screen tells you a pin is still active</strong> except the amber
+          <em>Pinned output (active)</em> label on the node's own property panel. Clear pins
+          deliberately when you are finished testing; do not expect to be reminded.
+        </p>
+      </div>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="variables.html">
+          <div class="kg-card-title">Variables</div>
+          <div class="kg-card-desc">The variable store, the Set Variable nodes, and writing into nested paths.</div>
+        </a>
+        <a class="kg-card" href="conditions.html">
+          <div class="kg-card-title">Conditions and branching</div>
+          <div class="kg-card-desc">Using references as operands, and previewing a condition against the last real run.</div>
+        </a>
+        <a class="kg-card" href="canvas.html">
+          <div class="kg-card-title">The canvas editor</div>
+          <div class="kg-card-desc">Where the property inspector, the output chips and the variables panel live.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

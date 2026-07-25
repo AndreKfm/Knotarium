@@ -1,0 +1,574 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Configuration reference. Values here are taken from the code, not from the README — where the two
+  disagree the code wins, and the discrepancy is called out in the prose.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration reference · Knotarium Help</title>
+<meta name="description" content="Every configuration setting and environment variable Knotarium reads, with its type, default and effect.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="configuration.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Configuration reference</h1>
+      <p class="kg-lead">
+        Every setting Knotarium reads at startup, what it defaults to, and what changing it actually
+        does. Most instances need none of this — the defaults are chosen so a fresh install works
+        with no configuration at all. Reach for this page when you are running as a service, sharing
+        data between installs, hardening an instance, or tracking down where your data went.
+      </p>
+
+      <h2>How settings are loaded</h2>
+      <p>
+        Settings come from several sources, each overriding the one before it:
+      </p>
+      <ol>
+        <li><code>appsettings.json</code>, next to the executable.</li>
+        <li><code>appsettings.{Environment}.json</code> — for example <code>appsettings.Development.json</code>.</li>
+        <li>User secrets, in development builds only.</li>
+        <li><strong>Environment variables.</strong></li>
+        <li>Command-line arguments, which win over everything.</li>
+      </ol>
+      <p>
+        Environment variables use a <strong>double underscore</strong> to express nesting. A setting
+        written as <code>Storage:DataDirectory</code> in a JSON file becomes
+        <code>Storage__DataDirectory</code> as an environment variable, because a colon is not a legal
+        variable-name character on most systems. Both forms are listed for every setting below.
+      </p>
+
+      <pre><code><span class="tok-comment"># The same setting, three ways</span>
+
+<span class="tok-comment"># appsettings.json</span>
+{ <span class="tok-str">"Storage"</span>: { <span class="tok-str">"DataDirectory"</span>: <span class="tok-str">"D:\\KnotariumData"</span> } }
+
+<span class="tok-comment"># environment variable (PowerShell)</span>
+<span class="tok-key">$env:Storage__DataDirectory</span> = <span class="tok-str">'D:\KnotariumData'</span>
+
+<span class="tok-comment"># command line</span>
+<span class="tok-cmd">Knotarium.Api.exe</span> --Storage:DataDirectory <span class="tok-str">"D:\KnotariumData"</span></code></pre>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Running as a Windows service</span>
+        <p>
+          Under the service manager the application pins its content root to the executable's own
+          folder, so <code>appsettings.json</code> is always found regardless of the working directory
+          the service was started with. Environment variables must be set for the <em>service
+          account</em>, not for your interactive session — this is the most common reason a setting
+          appears to be ignored.
+        </p>
+      </div>
+
+      <h2>Where your data lives</h2>
+      <p>
+        This is the setting worth understanding before any other. <strong>One machine-wide directory
+        holds everything that must survive an upgrade</strong>: the SQLite database, the encryption key
+        that protects stored credentials, your workflow drafts, and the export folder.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 280" role="img" aria-labelledby="datadir-title">
+          <title id="datadir-title">Layout of the Knotarium data directory</title>
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+          </defs>
+
+          <rect x="10" y="14" width="256" height="60" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="26" y="38" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">SETTING</text>
+          <text x="26" y="59" fill="#c7d2fe" font-family="'JetBrains Mono',monospace" font-size="12.5">Storage__DataDirectory</text>
+
+          <path d="M138 78 L138 104" stroke="#6366f1" stroke-width="1.6" marker-end="url(#arw)"/>
+
+          <rect x="10" y="110" width="256" height="56" rx="10" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.5"/>
+          <text x="26" y="133" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">DEFAULT ON WINDOWS</text>
+          <text x="26" y="153" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12">%ProgramData%\Knotarium</text>
+
+          <rect x="10" y="180" width="256" height="88" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="26" y="203" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">OTHER PLATFORMS</text>
+          <text x="26" y="223" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="11.5">CommonApplicationData/</text>
+          <text x="26" y="240" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="11.5">Knotarium</text>
+          <text x="26" y="258" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Docker images set it to /data</text>
+
+          <path d="M272 138 L316 138" stroke="#6366f1" stroke-width="1.6" marker-end="url(#arw)"/>
+
+          <rect x="322" y="14" width="366" height="254" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="342" y="40" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">CONTENTS</text>
+
+          <text x="342" y="70" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12.5">Knotarium.db</text>
+          <text x="342" y="87" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Workflows, runs, settings, credentials</text>
+
+          <text x="342" y="118" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12.5">.credential-key</text>
+          <text x="342" y="135" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Decrypts every stored secret — back this up</text>
+
+          <text x="342" y="166" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12.5">workflows\</text>
+          <text x="342" y="183" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Drafts you have not published yet</text>
+
+          <text x="342" y="214" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12.5">groups.json</text>
+          <text x="342" y="231" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Dashboard workflow grouping</text>
+
+          <text x="342" y="256" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12.5">export\</text>
+        </svg>
+        <figcaption>Everything that must survive an upgrade lives under one directory.</figcaption>
+      </figure>
+
+      <p>
+        Because the location is machine-wide rather than per-user, an interactive run and a Windows
+        service running under a different account share the same database — which is what you want,
+        and is the reason the default is <code>%ProgramData%</code> rather than a profile folder.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Back up the credential key with the database</span>
+        <p>
+          <code>.credential-key</code> is what decrypts every stored password, token and API key. A
+          backup of <code>Knotarium.db</code> without it leaves you with credentials that can never be
+          read again. The two belong together.
+        </p>
+      </div>
+
+      <h3>Migration from older versions</h3>
+      <p>
+        Earlier builds kept workflow drafts in the per-user <code>%APPDATA%\Knotarium</code> folder. On
+        every non-development startup Knotarium checks that old location and moves what it finds into
+        the current data directory:
+      </p>
+      <ul>
+        <li>Draft files from <code>%APPDATA%\Knotarium\workflows\</code> move into
+            <code>&lt;data directory&gt;\workflows\</code>.</li>
+        <li><code>groups.json</code> moves alongside them.</li>
+        <li>A file whose name already exists in the destination is <strong>left where it is</strong> and
+            logged as a warning. Nothing is ever overwritten.</li>
+        <li>The old <code>workflows</code> folder is removed once it is empty. The
+            <code>%APPDATA%\Knotarium</code> folder itself is left alone.</li>
+        <li>If the move fails — a permissions problem, a file in use — startup logs a warning and
+            continues rather than refusing to start.</li>
+      </ul>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Only drafts are migrated</span>
+        <p>
+          The migration moves workflow drafts and the group file. It does <strong>not</strong> move a
+          database. If you are upgrading from a build that kept <code>Knotarium.db</code> next to the
+          executable, that file stays where it is and the new version starts with an empty database in
+          the data directory. Copy the old <code>Knotarium.db</code> — and its
+          <code>.credential-key</code>, if one exists — into the data directory yourself before first
+          launch, or point <code>Database__ConnectionString</code> at the old file.
+        </p>
+      </div>
+
+      <h3>Storage settings</h3>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Storage__DataDirectory</code></td>
+              <td>path</td>
+              <td><code>%ProgramData%\Knotarium</code></td>
+              <td>Machine-wide home for the database, credential key, drafts and exports. Docker images set it to <code>/data</code>. The folder is created on startup if missing.</td>
+            </tr>
+            <tr>
+              <td><code>Storage__MinFreeSpaceMb</code></td>
+              <td>integer</td>
+              <td><code>256</code></td>
+              <td>Free-space floor. When the drive drops below it the runtime <strong>disarms itself</strong> and stops firing automatic triggers. It does not re-arm on its own once space is freed — you re-arm it deliberately.</td>
+            </tr>
+            <tr>
+              <td><code>Storage__FreeSpaceCheckSeconds</code></td>
+              <td>integer</td>
+              <td><code>60</code></td>
+              <td>How often free space is sampled.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Database</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Database__Provider</code></td>
+              <td>string</td>
+              <td><code>SQLite</code></td>
+              <td>Which storage provider to use. SQLite is the only implemented option; a Postgres provider exists as a scaffold behind the same interface but is not usable yet.</td>
+            </tr>
+            <tr>
+              <td><code>Database__ConnectionString</code></td>
+              <td>string</td>
+              <td><code>Data&nbsp;Source=&lt;data&nbsp;directory&gt;/Knotarium.db</code></td>
+              <td>Overrides the database location. Setting this moves only the database — the credential key still lives in the data directory, so the two can be separated by accident. Prefer changing <code>Storage__DataDirectory</code> unless you specifically need them apart.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Authentication</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Auth__Enabled</code></td>
+              <td>boolean</td>
+              <td><code>true</code></td>
+              <td>Cookie sign-in. On first start with no accounts the browser is asked to create an administrator. Turning it off makes <strong>every</strong> endpoint anonymous.</td>
+            </tr>
+            <tr>
+              <td><code>Auth__InitialAdmin__Username</code></td>
+              <td>string</td>
+              <td>unset</td>
+              <td>Seeds the first administrator without a browser, for unattended installs. Applied only when no accounts exist.</td>
+            </tr>
+            <tr>
+              <td><code>Auth__InitialAdmin__Password</code></td>
+              <td>string</td>
+              <td>unset</td>
+              <td>Password for that seeded account. Supply it through a secret store rather than a checked-in file.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Disabling sign-in is restricted to loopback</span>
+        <p>
+          If <code>Auth__Enabled</code> is <code>false</code> while the instance is bound to anything
+          other than localhost, startup <strong>fails on purpose</strong>. An unauthenticated Knotarium
+          reachable from the network is a remote code-execution service for anyone who finds it. The
+          override that lifts this check,
+          <code>Security__AllowUnauthenticatedNonLoopback</code>, exists for isolated test harnesses —
+          it is not a deployment option.
+        </p>
+      </div>
+
+      <p>
+        The session cookie itself is not configurable: it is named <code>kg_auth</code>, marked
+        HttpOnly with SameSite <code>Lax</code>, restricted to HTTPS outside development, and slides
+        forward on a seven-day expiry.
+      </p>
+
+      <h2>Credentials and package signing</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Security__Credentials__EncryptionKeyBase64</code></td>
+              <td>base64, 32 bytes</td>
+              <td>auto-generated</td>
+              <td>The key encrypting stored credentials at rest. Left unset, one is generated into <code>&lt;data directory&gt;/.credential-key</code> on first use and reused forever after. Set it only to bring your own — and then never change it, or every saved credential becomes unreadable.</td>
+            </tr>
+            <tr>
+              <td><code>Security__PackageSigning__HostPrivateKeyBase64</code></td>
+              <td>base64</td>
+              <td>unset</td>
+              <td>Private key used to sign bundles and node packages you export. Only needed if you publish packages for others.</td>
+            </tr>
+            <tr>
+              <td><code>Security__PackageSigning__TrustedPublicKeys</code></td>
+              <td>string array</td>
+              <td>empty</td>
+              <td>Public keys whose signatures are accepted when importing a bundle or package.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">A second name for the same key</span>
+        <p>
+          The credential key is also read from a standalone environment variable,
+          <code>Knotarium_CREDENTIAL_ENCRYPTION_KEY_BASE64</code>, which does not follow the
+          <code>Section__Key</code> convention. Either name works and they mean the same thing; if both
+          are set, the standard configuration key takes precedence.
+        </p>
+      </div>
+
+      <h2>Network egress and request policy</h2>
+      <p>
+        These settings govern what the instance is allowed to talk to, and who is allowed to talk to
+        it. They apply to the HTTP Request node, AI provider calls, and every other outbound request
+        the engine makes.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Security__HttpEgress__DenyPrivateNetworks</code></td>
+              <td>boolean</td>
+              <td><code>true</code></td>
+              <td>Blocks outbound requests that resolve to private, loopback or link-local addresses, and re-checks after DNS resolution so a hostname cannot be rebound to an internal address mid-request. Turn this off only on a network where reaching internal hosts is the point.</td>
+            </tr>
+            <tr>
+              <td><code>Security__HttpEgress__AllowDomains</code></td>
+              <td>string array</td>
+              <td>empty</td>
+              <td>When non-empty, outbound requests may only go to these domains. Empty means no allow-list is applied.</td>
+            </tr>
+            <tr>
+              <td><code>Security__HttpEgress__BlockDomains</code></td>
+              <td>string array</td>
+              <td>empty</td>
+              <td>Domains that are always refused, checked after the allow-list.</td>
+            </tr>
+            <tr>
+              <td><code>Security__EnforceSameOrigin</code></td>
+              <td>boolean</td>
+              <td><code>false</code></td>
+              <td>Rejects authenticated state-changing requests whose <code>Origin</code> header does not match this host. Off by default because a reverse proxy that rewrites <code>Host</code> produces false rejections; safe to enable when the instance is bound directly.</td>
+            </tr>
+            <tr>
+              <td><code>Security__AllowUnauthenticatedNonLoopback</code></td>
+              <td>boolean</td>
+              <td><code>false</code></td>
+              <td>Lifts the startup check that forbids running without sign-in on a non-loopback address. See the warning above.</td>
+            </tr>
+            <tr>
+              <td><code>Security__RateLimit__LoginPerMinute</code></td>
+              <td>integer</td>
+              <td><code>10</code></td>
+              <td>Sign-in attempts allowed per minute, throttling password guessing.</td>
+            </tr>
+            <tr>
+              <td><code>Security__RateLimit__AnonymousMachinePerMinute</code></td>
+              <td>integer</td>
+              <td><code>60</code></td>
+              <td>Anonymous machine-to-machine requests per minute — inbound webhook triggers and run resumption. Raise it if legitimate webhook traffic is being rejected.</td>
+            </tr>
+            <tr>
+              <td><code>Cors__AllowedOrigins</code></td>
+              <td>string array</td>
+              <td>empty</td>
+              <td>Empty allows any origin but refuses credentialed cross-origin requests. Listing origins switches to an allow-list that <em>does</em> permit credentials — needed only when a separate front-end origin calls the API.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Sandbox</h2>
+      <p>
+        User-authored C# — the Inline Code node and compiled custom node packages — runs either
+        inside the main process or in pooled worker processes with operating-system limits. The
+        <span class="kg-path">Settings &rsaquo; Sandbox</span> screen writes these same values to the
+        database, and <strong>the stored values override the configuration below</strong>. Treat these
+        keys as the starting point for a fresh instance.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Range</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>Security__Sandbox__Mode</code></td><td><code>InProcess</code></td><td><code>InProcess</code> or <code>Process</code></td><td><code>Process</code> runs user code in separate worker processes so a runaway script cannot take the engine down with it.</td></tr>
+            <tr><td><code>Security__Sandbox__AnalyzeAtRuntime</code></td><td><code>true</code></td><td>boolean</td><td>Rejects user code that calls banned APIs before it is allowed to compile.</td></tr>
+            <tr><td><code>Security__Sandbox__WorkerCount</code></td><td><code>4</code></td><td>1–32</td><td>Size of the worker pool in process mode.</td></tr>
+            <tr><td><code>Security__Sandbox__MemoryLimitMb</code></td><td><code>512</code></td><td>64–16384</td><td>Memory ceiling per worker.</td></tr>
+            <tr><td><code>Security__Sandbox__CpuPercent</code></td><td><code>100</code></td><td>5–100</td><td>CPU share per worker.</td></tr>
+            <tr><td><code>Security__Sandbox__MaxRunSeconds</code></td><td><code>300</code></td><td>1–3600</td><td>Hard limit on a single sandboxed execution.</td></tr>
+            <tr><td><code>Security__Sandbox__KillGraceSeconds</code></td><td><code>5</code></td><td>1–60</td><td>Grace period between asking a worker to stop and killing it.</td></tr>
+            <tr><td><code>Security__Sandbox__RecycleAfterRuns</code></td><td><code>100</code></td><td>1–10000</td><td>Retires a worker after this many executions, bounding slow leaks.</td></tr>
+            <tr><td><code>Security__Sandbox__RestrictedToken</code></td><td><code>true</code></td><td>boolean</td><td>On Windows, runs workers with a restricted token at low integrity.</td></tr>
+            <tr><td><code>Security__Sandbox__ProxyCredentials</code></td><td><code>true</code></td><td>boolean</td><td>Keeps decrypted secrets out of the worker process — the worker asks the host to use a credential rather than receiving it.</td></tr>
+            <tr><td><code>Security__Sandbox__MaxHttpResponseMb</code></td><td><code>32</code></td><td>1–100</td><td>Largest HTTP response sandboxed code may receive.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Execution and runtime</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Range</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>Execution__MaxConcurrentRuns</code></td><td><code>4</code></td><td>1–64</td><td>Workflow runs executing at once. Additional runs queue.</td></tr>
+            <tr><td><code>Execution__MaxQueueDepth</code></td><td><code>1000</code></td><td>1–100000</td><td>Queue ceiling; manual and webhook starts are refused past it.</td></tr>
+            <tr><td><code>Execution__ShutdownDrainTimeoutSeconds</code></td><td><code>10</code></td><td>0–300</td><td>How long shutdown waits for in-flight runs to finish.</td></tr>
+            <tr><td><code>Execution__JournalBatchingEnabled</code></td><td><code>true</code></td><td>boolean</td><td>Batches run-journal writes. Disabling it makes every step durable immediately at a throughput cost.</td></tr>
+            <tr><td><code>Execution__JournalBatchMaxSize</code></td><td><code>32</code></td><td>1–256</td><td>Journal entries per batch.</td></tr>
+            <tr><td><code>Execution__JournalBatchMaxDelayMilliseconds</code></td><td><code>25</code></td><td>1–1000</td><td>Longest a journal entry waits before being flushed.</td></tr>
+            <tr><td><code>Runtime__Armed</code></td><td><code>false</code></td><td>boolean</td><td>Initial state of the arming switch that gates automatic triggers. Once an instance has run, the stored state wins and this is ignored.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Retention</h2>
+      <p>
+        As with the sandbox, <span class="kg-path">Settings &rsaquo; Retention</span> overrides these
+        once set.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>Retention__RunHistoryDays</code></td><td><code>30</code></td><td>Age at which finished runs and their journals are pruned. Zero or negative keeps everything forever, which grows the database without bound.</td></tr>
+            <tr><td><code>Retention__SweepIntervalMinutes</code></td><td><code>60</code></td><td>How often the pruning sweep runs.</td></tr>
+            <tr><td><code>Retention__MaxWorkflowVersionsPerWorkflow</code></td><td><code>0</code></td><td>Cap on retained published versions per workflow. Zero disables the cap.</td></tr>
+            <tr><td><code>Retention__MaxOpenApiSpecVersionsPerSpec</code></td><td><code>0</code></td><td>Cap on retained OpenAPI specification versions. Zero disables the cap.</td></tr>
+            <tr><td><code>Retention__AuditEntryDays</code></td><td><code>0</code></td><td>Age at which audit entries are dropped. Zero keeps them all. Enabling this rewrites the tamper-evident hash chain, so older entries can no longer be verified against the original chain.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>AI</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>Ai__MaxTokens</code></td><td><code>8000</code></td><td>Token ceiling for generating a workflow from a natural-language description.</td></tr>
+            <tr><td><code>Ai__MaxRepairAttempts</code></td><td><code>3</code></td><td>How many times a malformed generated workflow is sent back for repair.</td></tr>
+            <tr><td><code>Ai__MaxIntentLength</code></td><td><code>4000</code></td><td>Longest description accepted by the generator.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The provider itself is not configured here</span>
+        <p>
+          Which vendor, which model and which API key the AI nodes use are stored in the database and
+          managed from <span class="kg-path">Settings &rsaquo; AI Provider</span>, so the key can be
+          held as an encrypted credential rather than sitting in a configuration file. The keys above
+          only bound the workflow generator.
+        </p>
+      </div>
+
+      <h2>Node packages and plugins</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>NodeRuntime__PluginsPath</code></td><td><code>&lt;app folder&gt;/plugins</code></td><td>Folder scanned for host plugin assemblies at startup.</td></tr>
+            <tr><td><code>NodeRuntime__WatchPath</code></td><td><code>&lt;app folder&gt;/nodes</code></td><td>Folder watched for compiled node packages.</td></tr>
+            <tr><td><code>NodeRuntime__DevMode</code></td><td>on in development</td><td>Hot-reloads node packages when the watched folder changes. Leave it off in production: reloading swaps executing code.</td></tr>
+            <tr><td><code>Export__Folder</code></td><td><code>&lt;data directory&gt;/export</code></td><td>Where exported templates, bundles and backups are written.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Hosting and addresses</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>ASPNETCORE_URLS</code></td><td><code>http://localhost:43120</code></td><td>Address and port to bind. Docker images use <code>http://+:43120</code> to accept traffic from outside the container. Binding beyond localhost is what triggers the authentication check described above.</td></tr>
+            <tr><td><code>ASPNETCORE_ENVIRONMENT</code></td><td><code>Production</code></td><td>Load-bearing well beyond logging: <code>Development</code> changes where data is stored, relaxes the HTTPS-only cookie, refuses to auto-generate a credential key, and enables node hot-reload. Never set it to <code>Development</code> on a real instance.</td></tr>
+            <tr><td><code>AllowedHosts</code></td><td><code>*</code></td><td>Host header filter.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The port <code>43120</code> is Knotarium's default throughout — the installer, the Docker
+        image and the desktop shortcuts all assume it. Change it with <code>ASPNETCORE_URLS</code>, or,
+        for containers, by remapping the host side of the port publish instead:
+      </p>
+
+      <pre><code><span class="tok-comment"># Serve the UI on 8080 without touching the app's own configuration</span>
+<span class="tok-cmd">docker</span> run -d --name knotarium -p <span class="tok-num">8080</span>:43120 -v knotarium-data:/data \
+  ghcr.io/andrekfm/knotarium:latest</code></pre>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The Logging section has no effect</span>
+        <p>
+          <code>appsettings.json</code> contains a <code>Logging</code> section, but application logging
+          is configured in code and does not read it. Editing
+          <code>Logging__LogLevel__Default</code> changes nothing. Application logs are emitted at
+          information level, with database logging held down to warnings.
+        </p>
+      </div>
+
+      <h2>The KG_ variables work only with Docker Compose</h2>
+      <p>
+        Three shorthand variables appear in the project's documentation and Compose file:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Shorthand</th><th>Sets</th></tr></thead>
+          <tbody>
+            <tr><td><code>KG_AUTH_ENABLED</code></td><td><code>Auth__Enabled</code></td></tr>
+            <tr><td><code>KG_ENCRYPTION_KEY</code></td><td><code>Security__Credentials__EncryptionKeyBase64</code></td></tr>
+            <tr><td><code>KG_SIGNING_KEY</code></td><td><code>Security__PackageSigning__HostPrivateKeyBase64</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">These are not application settings</span>
+        <p>
+          The translation happens inside <code>docker-compose.yml</code>, not inside Knotarium. Setting
+          <code>KG_AUTH_ENABLED=false</code> on a zip install, a Windows service, a systemd unit, or a
+          plain <code>docker run</code> does <strong>nothing at all</strong> — and it fails silently,
+          leaving you convinced sign-in is off when it is not. Outside Compose, always use the full
+          setting name.
+        </p>
+      </div>
+
+      <h2>Settings the interface overrides</h2>
+      <p>
+        Four groups of settings can be changed at runtime and are then stored in the database. The
+        stored value wins from that point on, and editing the configuration file will appear to have
+        no effect:
+      </p>
+      <ul>
+        <li><strong>Sandbox</strong> — <span class="kg-path">Settings &rsaquo; Sandbox</span></li>
+        <li><strong>Retention and disk space</strong> — <span class="kg-path">Settings &rsaquo; Retention</span></li>
+        <li><strong>Runtime arming</strong> — the switch in the header</li>
+        <li><strong>AI provider</strong> — <span class="kg-path">Settings &rsaquo; AI Provider</span></li>
+      </ul>
+      <p>
+        Everything else on this page is read once at startup, so changing it means restarting the
+        application.
+      </p>
+
+      <h2>A minimal production configuration</h2>
+      <p>
+        For a Windows service sharing one database with interactive runs, on a machine where nothing
+        else needs changing:
+      </p>
+      <pre><code>{
+  <span class="tok-str">"Storage"</span>: {
+    <span class="tok-str">"DataDirectory"</span>: <span class="tok-str">"D:\\KnotariumData"</span>,
+    <span class="tok-str">"MinFreeSpaceMb"</span>: <span class="tok-num">1024</span>
+  },
+  <span class="tok-str">"Auth"</span>: { <span class="tok-str">"Enabled"</span>: <span class="tok-num">true</span> },
+  <span class="tok-str">"Security"</span>: {
+    <span class="tok-str">"EnforceSameOrigin"</span>: <span class="tok-num">true</span>,
+    <span class="tok-str">"HttpEgress"</span>: { <span class="tok-str">"DenyPrivateNetworks"</span>: <span class="tok-num">true</span> },
+    <span class="tok-str">"Sandbox"</span>: { <span class="tok-str">"Mode"</span>: <span class="tok-str">"Process"</span> }
+  },
+  <span class="tok-str">"Retention"</span>: { <span class="tok-str">"RunHistoryDays"</span>: <span class="tok-num">90</span> }
+}</code></pre>
+      <p>
+        Leave the credential key unset so it is generated and stored beside the database, and back up
+        the whole data directory as a unit.
+      </p>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

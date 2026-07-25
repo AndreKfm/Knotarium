@@ -1,0 +1,709 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The conceptual spine of the manual. Verified against Backend/Knotarium.Core/Domain,
+  Backend/Knotarium.Features/Execution, Backend/Knotarium.NodeRuntime/ExpressionEvaluator.cs,
+  Backend/Knotarium.Features.Compiler/{WorkflowCompiler,SubflowScope,InMemoryNodePackageManifestProvider}.cs
+  and Frontend/src/node-editor. Several claims in the retired docs/ VitePress site were contradicted
+  by the code — notably that sub-flows run as child workflows and that a manual run executes the
+  draft. The code won in every case, and the difference is stated in the prose.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Core concepts · Knotarium Help</title>
+<meta name="description" content="The mental model behind Knotarium: workflows, nodes, ports, expressions, variables, triggers, runs, the draft-publish-activate lifecycle, capabilities, sub-flows and templates.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="concepts.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Core concepts</h1>
+      <p class="kg-lead">
+        This page names the moving parts and explains how they relate. It is the page the rest of the
+        manual leans on: once you know what a version is, what arms a trigger, and how one node reads
+        another's output, most of the interface stops needing explanation. Read it after you have run
+        something once — the vocabulary lands better with a run behind you.
+      </p>
+
+      <h2>Workflows, nodes and edges</h2>
+      <p>
+        A <strong>workflow</strong> is a directed graph. In code it is a
+        <code>WorkflowDefinition</code>: an identifier, a name, a list of nodes, a list of edges, and a
+        little metadata. Two booleans ride along — whether it is enabled, and whether it has been
+        archived — and both are covered below.
+      </p>
+      <p>
+        A <strong>node</strong> is one step. Structurally it is almost nothing: an identifier, a type
+        string naming which node package it is, and an untyped bag of properties. Everything you
+        configure in the property inspector lands in that bag.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Position is a property, not a field</span>
+        <p>
+          A node's place on the canvas is not part of the graph model. Coordinates, size and group
+          membership live inside the same property bag under a reserved <code>_metadata</code> key.
+          This is why moving nodes around counts as an edit to the workflow, and why a graph exported
+          and re-imported keeps its layout.
+        </p>
+      </div>
+
+      <p>
+        An <strong>edge</strong> connects a specific output of one node to a specific input of another.
+        It carries four pieces of information: the node it leaves, the <em>output port</em> it leaves
+        from, the node it arrives at, and the <em>input port</em> it arrives at. When the editor does
+        not name them explicitly, the output defaults to <code>result</code> and the input defaults to
+        <code>in</code>.
+      </p>
+
+      <h3>Ports</h3>
+      <p>
+        Ports are where the model earns its keep. A node package declares its outputs, optionally with
+        a type, and the editor draws one handle per declared output. Most nodes declare a single output
+        called <code>result</code> and behave like a straight line. The interesting ones do not.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Node</th><th>Output ports</th></tr></thead>
+          <tbody>
+            <tr><td>Condition</td><td><code>true</code>, <code>false</code></td></tr>
+            <tr><td>HTTP Request</td><td><code>success</code> (object), <code>error</code> (string)</td></tr>
+            <tr><td>Inline Code</td><td><code>result</code>, <code>error</code></td></tr>
+            <tr><td>For Loop</td><td><code>start</code>, <code>success</code></td></tr>
+            <tr><td>Parallel For Each</td><td><code>start</code>, <code>success</code>, <code>error</code></td></tr>
+            <tr><td>Join</td><td><code>result</code>, <code>results</code></td></tr>
+            <tr><td>AI Verify</td><td><code>verified</code>, <code>unsupported</code>, <code>contradicted</code>, <code>uncertain</code></td></tr>
+            <tr><td>Switch</td><td><code>default</code>, plus one port per configured case</td></tr>
+            <tr><td>AI Router</td><td>One per category you configure, plus <code>otherwise</code></td></tr>
+            <tr><td>Cron Scheduler</td><td><code>triggeredAt</code> (string)</td></tr>
+            <tr><td>End</td><td>None</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Switch and AI Router are the two whose ports are not fixed: they are derived from
+        configuration, which is why adding a category to the router immediately grows a new handle on
+        the node.
+      </p>
+      <p>
+        Fan-in is restricted on purpose. Most input ports accept exactly one incoming edge — wiring a
+        second one replaces the first rather than merging. The exceptions are the End node and the Join
+        node, which are the two places where several branches are meant to converge.
+      </p>
+
+      <h2>Expressions</h2>
+      <p>
+        Nodes pass data to each other through expressions written in double braces. There is no general
+        scripting language here — the evaluator is a small hand-written parser with a fixed grammar,
+        which is deliberate: expressions are configuration, and configuration that can do anything is a
+        security problem.
+      </p>
+
+      <h3>The two reference forms</h3>
+      <p>
+        There are exactly two rooted references. Everything else is a literal, an operator or one of
+        four functions.
+      </p>
+
+      <pre><code><span class="tok-comment"># Read an earlier node's output</span>
+{{ <span class="tok-key">$node</span>.&lt;node-id&gt;.output.&lt;field&gt; }}
+
+<span class="tok-comment"># Read a variable</span>
+{{ <span class="tok-key">$variables</span>.&lt;name&gt; }}</code></pre>
+
+      <p>
+        The field part is a path, not just a name. It walks into nested objects with dots, indexes
+        arrays with brackets, and accepts quoted keys when a key contains something awkward:
+      </p>
+
+      <pre><code>{{ $node.fetch-user.output.success }}
+{{ $node.fetch-user.output.payload.user.name }}
+{{ $node.fetch-user.output.payload.user.roles[<span class="tok-num">0</span>] }}
+{{ $node.n1.output.result[<span class="tok-str">"a key with spaces"</span>] }}</code></pre>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Why node identifiers may contain hyphens</span>
+        <p>
+          The tokenizer treats a hyphen as a delimiter almost everywhere, which would normally break an
+          identifier like <code>fetch-user</code>. The <code>$node.</code> form is scanned specially:
+          everything between <code>$node.</code> and the literal <code>.output.</code> is taken as the
+          identifier, whatever it contains. That is also why the <code>.output.</code> segment is not
+          optional — an expression without it resolves to nothing.
+        </p>
+      </div>
+
+      <p>
+        A bare name with no prefix is treated as a variable lookup, so <code>{{ myValue }}</code> and
+        <code>{{ $variables.myValue }}</code> reach the same place. The prefixed form is clearer and
+        worth preferring.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">There is no $json, $run, $env or $trigger</span>
+        <p>
+          Only <code>$node</code> and <code>$variables</code> exist. Names borrowed from other
+          automation tools do not resolve — and because a miss returns nothing rather than raising an
+          error, a mistyped root produces an empty value quietly instead of a failed node. When a field
+          is unexpectedly blank, check the root name first.
+        </p>
+      </div>
+
+      <h3>What the grammar supports</h3>
+      <p>
+        Comparison with <code>==</code> and <code>!=</code>, arithmetic with <code>+</code>,
+        <code>-</code>, <code>*</code> and <code>/</code>, boolean <code>&amp;&amp;</code> and
+        <code>||</code>, parentheses, and string, number, boolean and null literals. The
+        <code>+</code> operator concatenates when either side is a string. Division by zero yields zero
+        rather than failing.
+      </p>
+      <p>
+        Four functions are allowed, and the names are matched case-insensitively:
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Function</th><th>Returns</th></tr></thead>
+          <tbody>
+            <tr><td><code>now()</code></td><td>The current UTC time in round-trip format.</td></tr>
+            <tr><td><code>uuid()</code></td><td>A fresh identifier.</td></tr>
+            <tr><td><code>coalesce(a, b, …)</code></td><td>The first argument that is neither null nor an empty string.</td></tr>
+            <tr><td><code>length(x)</code></td><td>String length, array length, or a collection count; zero otherwise.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Anything else is refused outright with a message saying the function is not in the allowed set.
+        This is a real error that fails the node, unlike a missing reference. Note also that while
+        <code>!</code> is recognised as a character, there is no negation operator in the grammar —
+        write <code>x == false</code> rather than <code>!x</code>.
+      </p>
+
+      <h3>Typed values versus interpolation</h3>
+      <p>
+        This distinction matters more than it looks. When a field contains <em>nothing but</em> a
+        single expression, the result keeps its type — a number stays a number, an object stays an
+        object. When the expression is mixed with any surrounding text, every value is converted to a
+        string and concatenated.
+      </p>
+
+      <pre><code><span class="tok-comment"># Passes a real number through</span>
+{{ $node.calc.output.result }}
+
+<span class="tok-comment"># Passes the string "Total: 42"</span>
+Total: {{ $node.calc.output.result }}</code></pre>
+
+      <p>
+        A downstream node expecting a number and receiving <code>"42"</code> is a common and confusing
+        failure. If a value must stay typed, the field must contain only the expression.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Some fields never evaluate expressions</span>
+        <p>
+          A node package can declare a parameter as non-expression, and the engine then hands that
+          value to the node untouched. The Inline Code node's <code>code</code> field and the Condition
+          node's logic are the important cases: rewriting <code>{{ }}</code> inside a C# source file
+          would corrupt it, so the node resolves its own references instead.
+        </p>
+      </div>
+
+      <h2>Variables</h2>
+      <p>
+        A variable is a named value living in a bag attached to <strong>one run</strong>. The Set
+        Variable node writes to it; expressions and nodes read from it.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Variables do not survive the run that created them</span>
+        <p>
+          There is no workflow-level or instance-level variable store. The bag is created when a run
+          starts and is discarded with it. A workflow that needs to remember something between runs
+          must write it somewhere real — a file, a database, an external service. This surprises people
+          coming from tools with persistent workflow state.
+        </p>
+      </div>
+
+      <p>
+        Reads resolve in three steps: a direct key in the bag, then a dotted path into a structured
+        value already in the bag, then the promoted-output convention, where a name of the form
+        <code>nodeId_outputName</code> resolves to that node's recorded output. The third step is what
+        makes the editor's "promote this output to a variable" gesture work without copying data.
+      </p>
+      <p>
+        Writes accept paths as well as flat names, so a node can set <code>user.address.city</code> or
+        <code>items[0]</code> and the engine builds the intermediate structure, leaving neighbouring
+        keys intact. A write whose path conflicts with the existing shape fails the node with a message
+        naming the variable.
+      </p>
+      <p>
+        The engine also snapshots the whole variable bag immediately before each node runs, and stores
+        that snapshot on the node's recorded state. That snapshot is what the time-travel inspector
+        shows you under <span class="kg-path">Variables at this step</span>, and it is why inspecting an
+        old run does not require replaying it.
+      </p>
+
+      <h3>Secrets are not variables</h3>
+      <p>
+        Passwords, tokens and API keys live in a separate credential store, encrypted at rest. A node
+        does not receive a secret through a variable; it holds a <em>reference</em>, and the engine
+        resolves the reference at the moment of use. This is what makes a workflow safe to export: the
+        exported file names the credential slot it needs, never the secret itself.
+      </p>
+
+      <h2>Triggers</h2>
+      <p>
+        A trigger is the entry point of a run. Six node types are marked trigger-only, meaning they can
+        start a graph but cannot sit in the middle of one.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Node</th><th>Starts a run when</th></tr></thead>
+          <tbody>
+            <tr><td>Start</td><td>Someone runs the workflow manually.</td></tr>
+            <tr><td>Manual Trigger</td><td>The same thing. It duplicates Start and is hidden from the palette.</td></tr>
+            <tr><td>Cron Scheduler</td><td>A cron expression matches in the configured time zone.</td></tr>
+            <tr><td>Webhook Trigger</td><td>An inbound HTTP call arrives.</td></tr>
+            <tr><td>Polling Trigger</td><td>A watched source reports a change.</td></tr>
+            <tr><td>Error Trigger</td><td>Any other workflow fails. This is the entry point of a global error handler.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Every run records where it came from as a trigger origin — <code>manual</code>,
+        <code>schedule</code>, <code>webhook</code>, <code>poll</code>, <code>error</code> and a few
+        more for replays and agent invocations. The origin is not merely a label: when a run starts, the
+        engine picks the trigger node matching that origin as the entry point. A graph with both a
+        Start node and a Cron Scheduler therefore begins in different places depending on how it was
+        started.
+      </p>
+      <p>
+        Inbound device and external-system signals are a seventh surface, but they work differently:
+        they are dynamic pins on an External Device node rather than a trigger-only node of their own.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">End is not a trigger, despite the category</span>
+        <p>
+          The End node is filed under the same category as the triggers in the node catalog, which is
+          confusing. It is an ordinary node with no outputs at all. It matters most inside a sub-flow,
+          where the compiler requires both a Start and an End node to know where the boundary is.
+        </p>
+      </div>
+
+      <h2>Runs and journaling</h2>
+      <p>
+        One execution of a workflow is a <strong>run</strong>. It records which workflow and which
+        version it used, when it started, what started it, its variable bag, and a status.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>Pending</code></td><td>Queued, not started.</td></tr>
+            <tr><td><code>Running</code></td><td>In progress.</td></tr>
+            <tr><td><code>Suspended</code></td><td>Paused awaiting something external.</td></tr>
+            <tr><td><code>WaitingForRetry</code></td><td>A node failed and will be retried.</td></tr>
+            <tr><td><code>Completed</code></td><td>Finished successfully. The timeline labels this <strong>Success</strong>.</td></tr>
+            <tr><td><code>Failed</code></td><td>Finished unsuccessfully.</td></tr>
+            <tr><td><code>Cancelled</code></td><td>Stopped deliberately, including by disabling the workflow.</td></tr>
+            <tr><td><code>Discarded</code></td><td>A failed run triaged away in the dead-letter view and no longer treated as actionable.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Each node in the run gets its own recorded state: a status, the inputs it received, the outputs
+        it produced, an error message if it failed, how many times it executed, and the variable
+        snapshot described above.
+      </p>
+      <p>
+        Alongside that, the engine writes a <strong>journal</strong> — an ordered stream of events with
+        types such as <code>WorkflowStarted</code>, <code>NodeExecutionStarted</code>,
+        <code>NodeExecutionCompleted</code>, <code>NodeExecutionFailed</code>,
+        <code>VariableUpdated</code> and <code>WorkflowCompleted</code>. The journal is the timeline;
+        the per-node state is the detail.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Where the inspector gets its data</span>
+        <p>
+          Stepping through a finished run is not a re-execution. The inspector reads the persisted node
+          states and journal groups and scrubs across them. That is why it works on a run from weeks
+          ago, why it costs nothing to open, and why it cannot show you anything the engine did not
+          record at the time.
+        </p>
+      </div>
+
+      <h3>Replay is a new run</h3>
+      <p>
+        Replaying picks a node as a cut point. The engine creates a <strong>brand-new run</strong> that
+        inherits the recorded state of everything upstream of that node and re-executes the cut point
+        and everything downstream of it. The original run is never modified — it stays as evidence, and
+        the two are linked so you can navigate between them.
+      </p>
+      <p>
+        Because downstream nodes really do run again, replay warns you about any of them that perform a
+        non-idempotent side effect. Sending an email twice is a decision, not an accident, so the
+        engine makes you take it knowingly.
+      </p>
+
+      <h2>Drafts, versions and activation</h2>
+      <p>
+        This is the concept people most often get wrong, and it has three states, not two.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 330" role="img" aria-labelledby="lifecycle-title">
+          <title id="lifecycle-title">The workflow lifecycle: an editable draft is published into an immutable numbered version, which is activated to become the version every run executes</title>
+          <defs>
+            <marker id="lc-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+            <marker id="lc-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6b7280"/>
+            </marker>
+          </defs>
+
+          <rect x="14" y="46" width="196" height="118" rx="12" fill="#17212f" stroke="#2e3f56" stroke-width="1.6"/>
+          <text x="34" y="72" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10.5" font-weight="800" letter-spacing="0.09em">DRAFT</text>
+          <text x="34" y="95" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13" font-weight="600">What you edit</text>
+          <text x="34" y="116" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">A JSON file on disk.</text>
+          <text x="34" y="133" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Mutable. One per</text>
+          <text x="34" y="150" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">workflow.</text>
+
+          <path d="M210 105 L262 105" stroke="#6366f1" stroke-width="1.8" marker-end="url(#lc-arw)"/>
+          <text x="212" y="96" fill="#c7d2fe" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5" font-weight="600">publish</text>
+
+          <rect x="266" y="46" width="196" height="118" rx="12" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.6"/>
+          <text x="286" y="72" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10.5" font-weight="800" letter-spacing="0.09em">VERSION</text>
+          <text x="286" y="95" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13" font-weight="600">A frozen copy</text>
+          <text x="286" y="116" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">A numbered row in the</text>
+          <text x="286" y="133" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">database. Immutable.</text>
+          <text x="286" y="150" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Many per workflow.</text>
+
+          <path d="M462 105 L514 105" stroke="#6366f1" stroke-width="1.8" marker-end="url(#lc-arw)"/>
+          <text x="462" y="96" fill="#c7d2fe" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5" font-weight="600">activate</text>
+
+          <rect x="518" y="46" width="168" height="118" rx="12" fill="rgba(16,185,129,0.10)" stroke="#10b981" stroke-width="1.6"/>
+          <text x="538" y="72" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10.5" font-weight="800" letter-spacing="0.09em">ACTIVE</text>
+          <text x="538" y="95" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13" font-weight="600">What triggers run</text>
+          <text x="538" y="116" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">A pointer to exactly</text>
+          <text x="538" y="133" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">one version. Exactly</text>
+          <text x="538" y="150" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">one per workflow.</text>
+
+          <path d="M364 164 C 364 200, 364 200, 364 216" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#lc-mut)"/>
+          <text x="376" y="196" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">publishing auto-activates</text>
+
+          <rect x="14" y="216" width="672" height="98" rx="12" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="34" y="242" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10.5" font-weight="800" letter-spacing="0.09em">WHAT RUNS WHAT</text>
+          <text x="34" y="266" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12">EVERY run — manual click included — executes the ACTIVE version.</text>
+          <text x="34" y="288" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12">Pressing Run activates the version selected in the toolbar, then starts it.</text>
+          <text x="34" y="306" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">The draft on your canvas is never executed directly. Editing changes nothing until you publish.</text>
+        </svg>
+        <figcaption>Three states, two transitions. Publishing normally performs both.</figcaption>
+      </figure>
+
+      <p>
+        The <strong>draft</strong> is what the canvas edits. It is stored as an indented JSON file on
+        disk rather than in the database — deliberately, so that drafts are readable and can be kept
+        under version control alongside other configuration.
+      </p>
+      <p>
+        <strong>Publishing</strong> compiles the draft and, if it compiles cleanly, freezes it as a
+        numbered, immutable version in the database. If compilation fails, nothing is written at all
+        and you get the diagnostics instead.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Publishing an unchanged graph does not create a version</span>
+        <p>
+          Before creating a version the engine compares the serialised nodes and edges against the
+          latest existing version. If they are identical it reuses that version. Version numbers are
+          therefore a count of <em>meaningful changes</em>, not a count of times you pressed the
+          button, and the history stays readable.
+        </p>
+      </div>
+
+      <p>
+        <strong>Activating</strong> points the workflow at one particular version. There is no
+        active-version column on the workflow; the pointer is a separate record carrying a concurrency
+        token that rotates on every activation, so two people activating different versions at the same
+        moment produce a conflict rather than a silently lost update. Every activation is also appended
+        to a permanent log, which is what lets the system answer which version was live at a given
+        moment.
+      </p>
+      <p>
+        In practice publishing and activating are one act: publishing auto-activates the version it
+        just created. Activation becomes a separate operation when you roll back — you activate an
+        older version without touching your draft.
+      </p>
+
+      <h3>The draft never executes</h3>
+      <p>
+        This is the part that trips people up, and it is worth stating flatly: <strong>every run
+        executes the active version — a manual click included.</strong> There is no execution path that
+        reads the graph you are currently editing. The endpoint that starts a run rebuilds the workflow
+        from the active version's nodes and edges, and refuses outright when no version is active.
+      </p>
+      <p>
+        Pressing <span class="kg-path">Run</span> in the editor therefore does two things in order: it
+        <em>activates</em> the version chosen in the toolbar's runtime-version picker, and only then
+        starts a run. The button's tooltip says so — <span class="kg-path">Activate the selected version
+        and run it.</span> On a workflow that has never been published there is nothing to activate, so
+        the button is disabled and its tooltip reads <span class="kg-path">Publish a version (Save
+        &amp; Publish) before running.</span> instead.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Pressing Run changes what your schedules execute</span>
+        <p>
+          Because Run activates first, a manual test is not a private act. If the picker is on version 7
+          while version 5 was active, pressing <span class="kg-path">Run</span> makes version 7 active
+          for <em>everything</em> — the next scheduled fire, the next webhook, every trigger on that
+          workflow. Testing a newly published version and rolling production forward are the same
+          gesture. Check the picker before you press it.
+        </p>
+      </div>
+
+      <p>
+        What genuinely differs between a manual run and an automatic one is much narrower than the
+        version. A node can carry a <strong>pinned output</strong> — a design-time stub that makes the
+        node emit a fixed payload instead of executing, so you can build downstream steps without
+        re-running expensive upstream ones. Pins are honoured <strong>only when the trigger origin is
+        manual</strong>. A scheduled, webhook or polled run ignores them completely, which is what stops
+        a forgotten pin from shipping to production.
+      </p>
+
+      <h3>Where versions come from</h3>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Origin</th><th>Created by</th></tr></thead>
+          <tbody>
+            <tr><td><code>Published</code></td><td>Publishing the current draft.</td></tr>
+            <tr><td><code>Restored</code></td><td>Restoring an earlier version, which copies it forward as a new version rather than reviving the old one.</td></tr>
+            <tr><td><code>Imported</code></td><td>Importing an external definition. Imported versions arrive inactive.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Restoring never mutates history. Version 3 restored from version 1 becomes version 4, and
+        versions 1 through 3 remain exactly as they were. Deleting a workflow is likewise a soft
+        delete: archiving removes the editable draft but keeps the version history and the activation
+        log intact, because the ability to explain a past run outlives the workflow itself.
+      </p>
+
+      <h2>Enabled, and armed</h2>
+      <p>
+        Two independent switches decide whether anything happens on its own. Both must be on, and they
+        fail in the same silent way when they are not.
+      </p>
+
+      <h3>Enabled — per workflow</h3>
+      <p>
+        The enabled flag gates automatic and external starts for one workflow: schedules, polling
+        triggers, inbound webhook and external calls, and an AI Agent's ability to invoke it as a tool.
+        <strong>Manual runs are not gated by it.</strong> That exemption is about being <em>allowed to
+        start</em>, not about what gets executed — a manual run on a disabled workflow still runs the
+        active published version, exactly like every other run.
+      </p>
+      <p>
+        Disabling is more forceful than it sounds. As well as stopping new runs, it cancels runs already
+        in flight — every pending, running, suspended or retry-waiting execution is set to cancelled and
+        their queued work is dropped. The currently executing node finishes; nothing further is
+        scheduled.
+      </p>
+
+      <h3>Armed — per instance</h3>
+      <p>
+        Arming is a single global switch separating design time from run time. While disarmed, schedule
+        evaluation and polling are skipped entirely, inbound device signals are dropped, and externally
+        triggered runs are refused. Manual runs always execute.
+      </p>
+      <p>
+        A fresh install starts <strong>disarmed</strong>. Once an instance has run, the stored state
+        wins over configuration.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The disk guard disarms and never re-arms</span>
+        <p>
+          A background check samples free disk space. When it drops below the configured floor and the
+          runtime is armed, the runtime <strong>disarms itself</strong> and logs a critical message.
+          Freeing space does not bring it back — re-arming is a deliberate operator action, on purpose,
+          so that a machine that filled up once does not silently resume half-finished work. Backup
+          restore has the mirror-image rule: it refuses to run <em>while</em> armed.
+        </p>
+      </div>
+
+      <h2>Capabilities and the security posture</h2>
+      <p>
+        A node package declares the privileged things it touches as capability tags — reading files,
+        writing files, executing code, querying a database, making network calls, resolving
+        credentials, running an agent loop. Declaring a tag is metadata. Only some of them are
+        <em>enforced</em>, and the distinction matters.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Capability</th><th>Enforced how</th><th>Default</th></tr></thead>
+          <tbody>
+            <tr><td><code>code.execute</code></td><td>Instance-wide toggle</td><td><span class="kg-pill is-off">Off</span></td></tr>
+            <tr><td><code>database</code></td><td>Instance-wide toggle</td><td><span class="kg-pill is-off">Off</span></td></tr>
+            <tr><td><code>aiAgent</code></td><td>Instance-wide toggle</td><td><span class="kg-pill is-off">Off</span></td></tr>
+            <tr><td><code>filesystem.read</code></td><td>Per-directory file access policy</td><td><span class="kg-pill is-off">Denied</span></td></tr>
+            <tr><td><code>filesystem.write</code></td><td>Per-directory file access policy</td><td><span class="kg-pill is-off">Denied</span></td></tr>
+            <tr><td><code>network</code></td><td>Not gated by this system — see below</td><td>—</td></tr>
+            <tr><td><code>credentials</code></td><td>Not gated by this system</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Exactly three capabilities are switchable, from <span class="kg-path">Settings &rsaquo;
+        Capabilities</span>. The stored policy is a list of what is <em>enabled</em>, so an absent,
+        empty or unparseable policy means everything is off. That is a deliberate fail-closed design:
+        corruption of the setting cannot accidentally grant code execution.
+      </p>
+      <p>
+        Filesystem access is excluded from those toggles because it has something better — a policy of
+        specific directory grants, each marked readable, writable or both, with an optional free-space
+        reserve on writes. The default policy grants nothing at all.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Declaring a capability is not the same as being gated by one</span>
+        <p>
+          The <code>network</code> and <code>credentials</code> tags are descriptive: no capability
+          check consults them. Outbound requests are policed by a separate egress layer instead, which
+          validates the address, re-checks after DNS resolution, and pins the connection so a hostname
+          cannot be rebound to an internal address mid-request. That is a stronger control than a
+          toggle, but it is a different mechanism — do not expect the capabilities screen to govern it.
+        </p>
+      </div>
+
+      <p>
+        Five tags are classed as privileged: both filesystem tags, code execution, database and the
+        agent loop. When you import a template or a bundle containing a node that declares any of them,
+        the importer surfaces the fact and asks you to acknowledge it before installing. The reasoning
+        is that an imported graph is somebody else's code, and code execution is the shortest path from
+        "I installed a template" to "someone else runs commands on my machine".
+      </p>
+
+      <h2>Sub-flows</h2>
+      <p>
+        A sub-flow lets one workflow be used as a step inside another. The calling graph contains a
+        Subflow node naming the workflow to include.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Sub-flows are inlined, not called</span>
+        <p>
+          Despite the vocabulary, there is no runtime call and no child run. At compile time the
+          referenced graph is spliced into the parent, producing one flat execution plan. There is one
+          run, one timeline, and one set of node states covering both graphs. Recursion is not a stack
+          overflow at runtime — it is a compile error.
+        </p>
+      </div>
+
+      <p>
+        Inlining renames the child's nodes with a prefix so that including the same sub-flow twice
+        produces two independent copies rather than a collision. Edges into the Subflow node are
+        rewired to the child's Start node, and edges out of it are re-sourced from the child's End
+        node — which is why a sub-flow must contain both.
+      </p>
+      <p>
+        Data crosses the boundary through two explicit maps configured on the Subflow node. Inputs pair
+        a child variable name with an expression evaluated in the caller's scope. Outputs pair a child
+        variable name with a caller variable name to write it back to. Those maps are the only bridge:
+        the child's variables are namespaced to its instance, so nothing leaks in either direction by
+        accident.
+      </p>
+      <p>
+        The maps are name-and-expression pairs rather than a typed signature. Nothing checks that the
+        value you pass matches what the child expects, so a rename inside the sub-flow silently breaks
+        its callers. Treat the input and output names as an interface and change them deliberately.
+      </p>
+
+      <h2>Templates and bundles</h2>
+      <p>
+        Both are ways of moving work between instances, and they differ in scope.
+      </p>
+      <p>
+        A <strong>template</strong> is a single workflow with metadata, packaged as a zip with a
+        <code>.kgtpl</code> extension containing exactly two entries: a manifest and the workflow
+        document. It is a secret-free projection — credentials it needs are declared as named
+        <strong>slots</strong> that the installer asks you to bind to real credentials on your
+        instance. A template can also declare parameters, substituted into the graph at install time.
+      </p>
+      <p>
+        A <strong>bundle</strong> is bigger: several workflows plus the node packages they depend on,
+        with a <code>.kgbundle</code> extension. It carries two files that mirror the split familiar
+        from package managers — a manifest describing intent, and a lock file generated at export
+        recording exactly which package versions were resolved and their hashes. The installer verifies
+        against the lock.
+      </p>
+
+      <h3>Trust</h3>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Trust level</th><th>Means</th><th>Installable</th></tr></thead>
+          <tbody>
+            <tr><td><code>Verified</code></td><td>Signature checked against a trusted key.</td><td>Yes.</td></tr>
+            <tr><td><code>Provisional</code></td><td>No verified signature, but the package came from this machine.</td><td>Only with an explicit opt-in.</td></tr>
+            <tr><td><code>Untrusted</code></td><td>Anything else, including an unrecognised trust token.</td><td>Never.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The rule the trust model exists to enforce is that a package claiming a remote or official
+        origin without a signature that verifies against a trusted key must not be trusted. Unknown
+        values fail closed to untrusted rather than being treated optimistically. Templates carry no
+        signature at all, which is part of why they are limited to a single workflow and no code.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="first-workflow.html">
+          <div class="kg-card-title">Your first workflow</div>
+          <div class="kg-card-desc">These concepts applied end to end, from a fresh instance to a scheduled HTTP call.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The settings behind the arming switch, the sandbox, retention and the egress policy.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,392 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Sub-flows. Inlining + the start/end constraint come from Features.Compiler/WorkflowCompiler.cs
+  (InlineSubflows) and SubflowScope.cs; the extraction rules from node-editor/extractSubflow.ts.
+  NOTE: the "must begin with a plain Start node" rule belongs to AI Agent tool workflows
+  (AgentToolRunner.cs), NOT to the Sub-flow node — the two are deliberately kept apart here.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sub-flows and grouping · Knotarium Help</title>
+<meta name="description" content="Calling a workflow as a reusable step: typed inputs and outputs, drilling in, extracting a selection into a sub-flow, and how grouping differs.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="subflows.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Sub-flows and grouping</h1>
+      <p class="kg-lead">
+        A sub-flow is an ordinary workflow called as a single step from another one. It is how a chain
+        of nodes that appears in four places becomes one node in four places. This page covers the
+        Sub-flow node, the typed interface a child declares, how data crosses the boundary, the
+        "Extract selection" command and the fairly strict rules it enforces, and why grouping is a
+        different thing entirely.
+      </p>
+
+      <h2>What a sub-flow actually is</h2>
+      <p>
+        This is worth understanding before anything else, because it explains most of the behaviour
+        that follows. <strong>A sub-flow is not a separate run.</strong> When the workflow is compiled,
+        the child's nodes are copied into the parent's execution plan, the Sub-flow node itself
+        disappears, and the wires that led into it are redirected to the child's Start node while the
+        wires that led out of it come from the child's End node.
+      </p>
+      <p>
+        The consequences are concrete. There is no child execution to inspect separately — the child's
+        steps appear in the parent's run, with ids like <code>my-subflow-node/step-2</code>. There is
+        no "run asynchronously" or "wait for completion" option, because there is nothing to wait for.
+        A failing step inside a sub-flow is simply a failing step in the parent's run, handled by that
+        node's own retry and recovery settings; there is no "continue on child error" switch.
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The child is read fresh, not pinned</span>
+        <p>
+          The compiler resolves a Sub-flow node against the child workflow's <strong>current saved
+          definition</strong>. There is no version pinning, and a published parent version stores its
+          own nodes and edges rather than a frozen copy of the child. Because the plan is compiled when
+          a run starts, editing a child changes the behaviour of every workflow that calls it,
+          immediately, without republishing any of them. That is often what you want from a shared
+          building block — but it means a change to a shared sub-flow is a change to every caller.
+        </p>
+      </div>
+
+      <h2>Adding a Sub-flow node</h2>
+      <p>
+        Drop a <strong>Subflow</strong> node (category Control) onto the canvas. It has one input and a
+        single <code>result</code> output. Its property panel offers a searchable list of every other
+        workflow — the workflow you are editing is excluded, since a node cannot call its own graph —
+        and a <strong>Create new subflow</strong> button.
+      </p>
+      <p>
+        Creating one mints a workflow named <em>Subflow</em> followed by a short identifier, containing
+        a Start node wired to an End node, saves it, publishes it and links it to the node in one step.
+        That is the quickest way to start, because a child that has never been saved cannot be resolved
+        and produces a not-found error.
+      </p>
+      <p>
+        If a node references a workflow that no longer exists, the panel says so and asks you to pick an
+        existing one. Publishing in that state fails with a compilation error naming the missing
+        workflow.
+      </p>
+
+      <h2>Declaring the interface</h2>
+      <p>
+        A sub-flow's inputs and outputs are declared inside the child, on its Start and End nodes:
+      </p>
+      <ul>
+        <li>Select the child's <strong>Start</strong> node to edit <em>Subflow inputs (from caller)</em>
+            — the local variables this sub-flow expects to be given.</li>
+        <li>Select its <strong>End</strong> node to edit <em>Subflow outputs (to caller)</em> — the
+            local variables it produces and hands back.</li>
+      </ul>
+      <p>
+        Each row is a name and a type, chosen from string, number, boolean and object. While you edit
+        the child, its declared locals appear in the Workflow variables panel so they can be referenced
+        and dragged like any other variable.
+      </p>
+      <p>
+        Until a child declares something, its caller has nothing to bind. The Sub-flow node's property
+        panel says exactly that: <em>This subflow has no declared inputs or outputs yet. Double-click
+        the node to open it, then declare them on its Start (inputs) and End (outputs) nodes.</em>
+      </p>
+
+      <h2>Binding on the caller</h2>
+      <p>
+        The Sub-flow node card shows two folders, <strong>Inputs</strong> (global → local) and
+        <strong>Outputs</strong> (local → global), with one slot per declared local of the child. Each
+        slot can be filled in two ways: drag a variable pill from the Workflow variables panel onto it,
+        or type directly into the inline field.
+      </p>
+      <p>
+        An input slot accepts either a bound variable or a literal value or expression. An output slot
+        takes the name of a caller variable to write the result into; when that name is not one the
+        caller already knows, the slot is tagged <span class="kg-pill is-warning">NEW</span> so it is
+        obvious you are creating a variable rather than filling an existing one.
+      </p>
+      <p>
+        The property inspector mirrors the same bindings as a read-only summary, one line per row, so
+        the mapping is legible without zooming into the node. Bindings that no longer correspond to a
+        declared local are pruned automatically once the child declares an interface, which keeps a
+        node from carrying stale rows after the child's contract changes.
+      </p>
+
+      <h2>How data crosses the boundary</h2>
+      <p>
+        Data does not travel through the ports. It travels through variables, and the two maps you fill
+        in are the only bridge.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 260" role="img" aria-labelledby="subflow-boundary-title">
+          <title id="subflow-boundary-title">Caller variables map into namespaced sub-flow locals and back out again</title>
+          <defs>
+            <marker id="sf-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+          </defs>
+
+          <rect x="8" y="8" width="684" height="244" rx="12" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="24" y="30" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.09em">PARENT RUN — ONE EXECUTION</text>
+
+          <rect x="24" y="92" width="150" height="76" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="40" y="116" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">CALLER VARIABLES</text>
+          <text x="40" y="138" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12">orderId</text>
+          <text x="40" y="157" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12">total</text>
+
+          <path d="M180 118 L226 118" stroke="#6366f1" stroke-width="1.6" marker-end="url(#sf-arw)"/>
+          <text x="186" y="110" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="10">inputs</text>
+
+          <rect x="232" y="52" width="236" height="156" rx="10" fill="rgba(99,102,241,0.10)" stroke="#6366f1" stroke-width="1.6"/>
+          <text x="250" y="76" fill="#6366f1" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">SUB-FLOW LOCAL SCOPE</text>
+          <text x="250" y="100" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="11.5">sf_&lt;call&gt;__id</text>
+          <text x="250" y="120" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="11.5">sf_&lt;call&gt;__amount</text>
+          <text x="250" y="140" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="11.5">sf_&lt;call&gt;__verdict</text>
+          <text x="250" y="170" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Every call gets its own prefix,</text>
+          <text x="250" y="187" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">so two calls never collide.</text>
+
+          <path d="M474 118 L520 118" stroke="#6366f1" stroke-width="1.6" marker-end="url(#sf-arw)"/>
+          <text x="480" y="110" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="10">outputs</text>
+
+          <rect x="526" y="92" width="150" height="76" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="542" y="116" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">CALLER VARIABLES</text>
+          <text x="542" y="138" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12">verdict</text>
+          <text x="542" y="157" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">written on the way out</text>
+
+          <text x="24" y="228" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Anything written inside the sub-flow that is not in the outputs map stays inside it.</text>
+        </svg>
+        <figcaption>Only the declared maps cross. Everything else in the child is namespaced away.</figcaption>
+      </figure>
+
+      <p>
+        Every call site gets its own prefix, so calling the same sub-flow twice in one workflow — or
+        nesting it — cannot make the two invocations trample each other's variables. Any Set Variable
+        or Set Variables node inside the child has its target name rewritten with that prefix at
+        compile time.
+      </p>
+      <p>
+        The two sides of the map are not symmetric, and it catches people out:
+      </p>
+      <ul>
+        <li>An <strong>input</strong>'s value is an <em>expression evaluated in the caller's scope</em>,
+            so <code>{{ $variables.orderId }}</code>, a literal, or anything else valid works.</li>
+        <li>An <strong>output</strong>'s target is a <em>plain caller variable name</em>, not an
+            expression. Typing <code>{{ $variables.verdict }}</code> there creates a caller variable
+            whose name is that whole string.</li>
+      </ul>
+      <p>
+        Rows with an empty name on either side are skipped silently rather than reported, so a
+        half-filled slot simply does nothing.
+      </p>
+
+      <h2>Drilling into a sub-flow</h2>
+      <p>
+        Double-clicking a Sub-flow node — or clicking the open icon on its card — opens the child on
+        its own canvas. Before navigating, the parent draft is saved, so unsaved edits including the
+        Sub-flow node's own binding are not lost. If the node has no target chosen yet, the status bar
+        says <em>Pick a workflow for this subflow before opening it.</em>
+      </p>
+      <p>
+        While you are inside a child, a breadcrumb pill floats at the top of the canvas reading
+        <strong>Back to parent</strong> and <em>· inside subflow (depth N)</em>. Nesting is allowed, and
+        the depth counts how many levels down you are.
+      </p>
+      <div class="kg-note">
+        <span class="kg-note-label">Leaving a sub-flow saves and publishes it</span>
+        <p>
+          Both the breadcrumb and the editor's own Back button run the same action while a sub-flow is
+          open: <strong>Save &amp; Publish the child, then return to the parent</strong>. You do not
+          get the usual unsaved-changes dialog, because leaving a child without persisting it would
+          leave the caller bound to an interface that does not exist. If publishing the child fails —
+          an incomplete condition, a compilation error — the failure surfaces the same way as any other
+          publish failure.
+        </p>
+      </div>
+      <p>
+        The breadcrumb trail is kept in memory only. Reloading the browser lands you on the child
+        workflow with no trail back to the parent, so use the dashboard to return.
+      </p>
+
+      <h2>The constraints on a sub-flow target</h2>
+      <p>
+        Two structural rules are enforced at compile time, and both block publishing:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Code</th><th>Cause</th></tr></thead>
+          <tbody>
+            <tr><td><code>ERR_MISSING_SUBFLOW_ID</code></td><td>The node has no target workflow chosen.</td></tr>
+            <tr><td><code>ERR_SUBFLOW_NOT_FOUND</code></td><td>The referenced workflow does not exist.</td></tr>
+            <tr><td><code>ERR_SUBFLOW_MISSING_START</code></td><td>The child contains no node of type <code>start</code>.</td></tr>
+            <tr><td><code>ERR_SUBFLOW_MISSING_END</code></td><td>The child contains no node of type <code>end</code>.</td></tr>
+            <tr><td><code>ERR_RECURSIVE_SUBFLOW</code></td><td>The call chain returns to a workflow already on the path. The message prints the whole path.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The rule is <strong>contains</strong> a Start node and <strong>contains</strong> an End node —
+        not "begins with one". Node type matching is case-insensitive, and if the child happens to have
+        more than one Start node, the compiler picks the first it finds and attaches the input map to
+        that one, which is a good reason to keep exactly one.
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A child containing a trigger is not rejected</span>
+        <p>
+          Nothing stops you pointing a Sub-flow node at a workflow that also has a webhook, schedule or
+          poller on it. Those trigger nodes are inlined along with everything else and exempted from
+          the usual "a trigger cannot have incoming connections" check. The result compiles, but what
+          it does at run time is rarely what anyone intended. Keep a workflow that is used as a
+          sub-flow to a plain Start-to-End shape.
+        </p>
+        <p>
+          The stricter rule you may have seen — that a workflow <em>must begin with a plain Start
+          node, and webhook, schedule, poll or error-triggered workflows cannot be used</em> — applies
+          to <strong>AI Agent tool workflows</strong>, not to sub-flows. The two features look similar
+          and are validated in completely different places.
+        </p>
+      </div>
+      <p>
+        Nesting has no depth limit. The only structural guard is the recursion check, and it uses the
+        call path rather than a counter, so two different branches calling the same shared sub-flow are
+        fine — only a genuine cycle is an error.
+      </p>
+
+      <h2>Extract selection to a sub-flow</h2>
+      <p>
+        <strong>Extract</strong> appears in the canvas layout toolbar as soon as at least one node is
+        selected. It lifts the selection into a brand-new sub-flow, creates and publishes that
+        workflow, and replaces the selection with a single call node wired so the parent behaves
+        exactly as before. You are prompted for a name; the default is <em>Extracted subflow</em>.
+      </p>
+      <p>
+        It refuses far more often than it succeeds, and the refusals are the useful part. The
+        selection must be a region with <strong>one way in and one way out</strong>, because that is
+        all a single call node can represent. The exact messages are:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Refusal</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>A trigger node can't move into a subflow</td>
+              <td>Leave the trigger where it is and select the nodes after it. A sub-flow is invoked, not triggered.</td>
+            </tr>
+            <tr>
+              <td>The selection has more than one entry point</td>
+              <td>External steps must enter the region at a single node.</td>
+            </tr>
+            <tr>
+              <td>The selection has more than one exit point</td>
+              <td>The region must leave to external steps from a single node.</td>
+            </tr>
+            <tr>
+              <td>The selected nodes aren't all connected</td>
+              <td>Each region must be one connected chunk.</td>
+            </tr>
+            <tr>
+              <td>A selected node reads another step's output from outside the selection</td>
+              <td>Include that step, or replace the <code>$node</code> reference with a variable.</td>
+            </tr>
+            <tr>
+              <td>A kept node reads a selected step's output</td>
+              <td>Same problem in reverse. Sub-flow outputs travel by variable, not by node output.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Those last two exist because <code>$node</code> references are tied to node identity, and
+        moving a node into a child changes its identity. Rather than silently breaking the reference,
+        the extraction refuses.
+      </p>
+      <p>
+        When it succeeds, the variable interface is worked out for you. Any variable read inside the
+        region but not written inside it becomes a declared input — this is also how the ambient
+        <code>signal</code> context survives the move. Any variable written inside and read by a node
+        left behind becomes a declared output. Variables written inside and used nowhere outside are
+        simply left inside.
+      </p>
+
+      <h3>Extracting several identical chains at once</h3>
+      <p>
+        Selecting more than one region at a time does something more interesting. If the regions are
+        structurally identical — the same sequence of node types, each a simple chain with no internal
+        branching — their properties are compared leaf by leaf, and every value that <em>differs</em>
+        between them is promoted to a sub-flow parameter. One parametrised sub-flow is created, and
+        each region is replaced by its own call node binding that region's own values.
+      </p>
+      <p>
+        Parameter names are inferred from the property they came from, falling back to
+        <code>param1</code>, <code>param2</code> and so on for generic keys. The status bar reports
+        what happened, for example <em>Extracted into subflow "Notify contact" with 2 parameters and
+        replaced 3 chains.</em> The refusals for this mode are that each region must be a simple chain,
+        and that the chains must share the same node type sequence.
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The child is published; the parent is not</span>
+        <p>
+          Extraction saves and publishes the new child workflow immediately, but the parent is only
+          changed on your canvas. The status message ends with <em>Save &amp; Publish to keep the
+          change.</em> Leaving without saving discards the parent's rewrite and leaves the new child
+          workflow behind as an orphan.
+        </p>
+      </div>
+
+      <h2>Grouping is not a sub-flow</h2>
+      <p>
+        The <strong>Group</strong> button next to Extract does something entirely different. A group is
+        a coloured frame drawn around two or more selected nodes: an editor-only annotation that can be
+        labelled, tinted, collapsed to a chip and moved as a unit. It changes nothing about execution —
+        the nodes inside it run exactly as they did before, keep their own wires, and are compiled
+        individually.
+      </p>
+      <p>
+        Use a group when a stretch of a large graph needs a name so it can be read. Use a sub-flow when
+        the same steps are needed in more than one place, or when the graph is genuinely too big for one
+        canvas. Group membership and the group's own label, colour and collapsed state are saved with
+        the workflow, so a collapsed group stays collapsed for the next person who opens it. Full
+        behaviour is in <a href="canvas.html">The canvas editor</a>.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="variables.html">
+          <div class="kg-card-title">Variables</div>
+          <div class="kg-card-desc">The store that sub-flow inputs and outputs read from and write into.</div>
+        </a>
+        <a class="kg-card" href="diagnostics.html">
+          <div class="kg-card-title">Diagnostics</div>
+          <div class="kg-card-desc">Where the sub-flow compilation errors appear and how to locate the offending node.</div>
+        </a>
+        <a class="kg-card" href="canvas.html">
+          <div class="kg-card-title">The canvas editor</div>
+          <div class="kg-card-desc">The layout toolbar, grouping, and the unsaved-changes rules.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

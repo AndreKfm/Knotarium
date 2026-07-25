@@ -1,0 +1,389 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The execution visualizer. Verified against Frontend/src/components/ExecutionDetail/* and the
+  execution/replay/manual-decision endpoints in Backend/Knotarium.Api/Endpoints/ExecutionEndpoints.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runs and the inspector · Knotarium Help</title>
+<meta name="description" content="Reading a workflow run in the execution visualizer: the live graph, the timeline, time travel, replay from a node, manual decisions and remediation cards.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="runs.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Runs and the inspector</h1>
+      <p class="kg-lead">
+        The Execution Visualizer is where a run stops being an abstraction. It shows the same graph you
+        drew, coloured by what actually happened, beside a timeline of every journal entry the run
+        produced — and it lets you step backwards through the run, re-run it from any node, and act on
+        nodes that stopped and asked for a decision. It is the debugger, not just a log viewer.
+      </p>
+
+      <h2>Opening a run</h2>
+      <p>
+        The visualizer opens from several places: the <span class="kg-path">Execution Visualizer</span>
+        entry in the header once a run is selected, a run in the dashboard history, the
+        <span class="kg-path">Dead Letter</span> list, or automatically when you fire a device signal from
+        the editor. The screen is split: the graph fills the left, and a resizable sidebar on the right
+        carries the run's state and timeline. Drag the divider to widen the sidebar; the width is
+        remembered.
+      </p>
+      <p>
+        The header above the graph shows the workflow name, a shortened run identifier, the run's status,
+        and — when this run is a replay — a pill naming the source run and the node it resumed from, which
+        navigates back to that run when clicked.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The graph shown is the version that ran</span>
+        <p>
+          The visualizer loads the exact published version the run executed, not the current draft. A run
+          from three versions ago renders with the nodes and wiring it actually had. This is why the
+          graph in a run sometimes does not match what you see in the editor — and why that difference is
+          information rather than a bug.
+        </p>
+      </div>
+
+      <h2>The live graph</h2>
+      <p>
+        Each node carries the status it reached: pending, running, completed, failed, waiting or skipped.
+        A running node pulses. The canvas is pan-and-zoom with the usual controls in the bottom-right, and
+        it frames the whole graph once the nodes have been measured, so a run opens showing everything
+        rather than a corner of it.
+      </p>
+      <p>
+        Nodes can be dragged out of the way for legibility, but nothing here edits the workflow: wiring is
+        disabled, and position changes are not saved. Status only ever moves forwards — a late-arriving
+        event cannot pull a node that already completed back to running — so the picture does not flicker
+        while updates stream in.
+      </p>
+      <p>
+        On a device-event run, the block that produced the signal is painted as <strong>Triggered</strong>
+        rather than executed, and once the run is finished the branches this particular signal did not
+        fire are painted <strong>Skipped</strong> instead of leaving a misleading trail of pending nodes.
+      </p>
+
+      <h3>Live updates</h3>
+      <p>
+        The run streams over server-sent events. The visualizer subscribes to the run's event stream and
+        reacts to workflow start, node start, node completion, node failure, node resumption, suspension,
+        and workflow completion or failure. Each event appends its journal entry to the timeline and
+        advances the corresponding node's colour; the full run state is then refetched so the variables
+        panel and per-node inputs and outputs stay in step.
+      </p>
+      <p>
+        The stream is not a poll. Catch-up entries are read from the stored journal when you connect —
+        including resuming from a last-seen event — and the live tail is pushed as it is written, with
+        duplicates removed across the join. Opening a run that finished last week therefore shows the
+        complete history immediately, and opening one that is still going shows it filling in.
+      </p>
+      <p>
+        There is a global cap on live subscribers. When it is reached the stream is refused with HTTP 503
+        rather than accepting an unbounded connection; retrying shortly afterwards is the correct
+        response. The <strong>Replay Logs</strong> button in the header re-reads the journal and the run
+        state on demand, which is the manual fallback when a stream was interrupted.
+      </p>
+      <p>
+        The visualizer also follows automatic runs. While you have a run open, it watches for a newer
+        <em>scheduled</em> or <em>device-event</em> run of the same workflow and moves you to it when one
+        appears. Manual and webhook runs are deliberately not followed — you started those, so you decide
+        where to look.
+      </p>
+
+      <h2>The sidebar</h2>
+      <h3>Evaluated Globals</h3>
+      <p>
+        The top panel lists the run's global variables and their current values, or reports that no state
+        variables have been mutated yet. Values that look like secrets are masked before the run is
+        handed to the browser; the full value stays in the database for replay and debugging, but a
+        runtime-fetched token is never rendered here.
+      </p>
+
+      <h3>Schedule Controls</h3>
+      <p>
+        Below that, every scheduler node in the workflow appears as a card with its identifier, an
+        Active or Inactive badge, the next fire time in local format, and its cron expression and time
+        zone. Each card has a <strong>Fire now</strong> button that starts a run immediately without
+        disturbing the schedule's own next occurrence. A workflow with no scheduler nodes says so.
+      </p>
+
+      <h3>Manual Actions</h3>
+      <p>
+        When a node is stopped awaiting a decision, a red-tinted panel appears above the timeline listing
+        each such node with the reason. See <a href="#manual-decisions">Manual decisions</a> below.
+      </p>
+
+      <h3>Execution Timeline</h3>
+      <p>
+        The timeline is the heart of the sidebar. Its header counts the nodes and the total elapsed time
+        and carries the run's overall status. Directly beneath it, a coloured banner names the trigger:
+        cyan <strong>AUTO</strong> for a schedule, with the cron expression and next fire time; emerald
+        <strong>EVENT</strong> or <strong>ACTION</strong> for a device signal; violet
+        <strong>MANUAL</strong> otherwise.
+      </p>
+      <p>
+        Each executed node is one group in the timeline, connected by a vertical rail whose colour follows
+        the status of the steps on either side. A collapsed group shows its title, its status chip, the
+        wall-clock time it started, the offset from the start of the run, and a one-line summary of its
+        result. Nodes inlined from a sub-flow are tagged <strong>SUBFLOW</strong>, and a scheduler node
+        carries the same trigger pill as the banner.
+      </p>
+      <p>
+        Clicking a group expands it. Inside are the individual journal entries with their own timestamps
+        and a short event tag — <code>STARTED</code>, <code>DONE</code>, <code>FAILED</code>,
+        <code>WAITING</code>, <code>RETRY</code> or <code>MANUAL</code> — followed by the message. Long
+        failure messages are clamped to two lines in the entry list, because a compiler dump otherwise
+        turns the row into a wall of text; the complete text is always available in the box below.
+      </p>
+      <p>
+        That box is the node's payload. A simple result is titled <strong>Output</strong> and rendered
+        field by field. A failure whose payload is nothing but an error is titled <strong>Error</strong>
+        and tinted red instead, so the eye lands on the cause rather than hunting for it among labels.
+        Entries carrying a larger payload get their own collapsible <em>View payload</em> disclosure.
+      </p>
+      <p>
+        Failed groups are expanded automatically. Collapsing one is remembered for as long as you stay on
+        that run, and opening a different run starts from a clean slate.
+      </p>
+
+      <h3>Child runs</h3>
+      <p>
+        Some nodes start runs of their own, and the timeline links to them rather than inlining them. An
+        AI Agent group renders its per-iteration tool-call trail — each turn, each call, whether it
+        succeeded, and the short identifier of the child run it produced. A failed run that was caught by
+        the global error workflow gains a link to the handler run, both inside the failed group and as a
+        button under the timeline.
+      </p>
+
+      <h3>Hiding skipped branches</h3>
+      <p>
+        A device-event run fans out across every wired pin, but only one of them fires; the rest appear as
+        skipped noise. On those runs the timeline hides skipped groups by default and offers a
+        <strong>Show N skipped branches</strong> toggle at the bottom of the list. The filter is scoped to
+        device-event runs on purpose — a meaningful skip elsewhere, such as an operator's Skip decision or
+        a condition's untaken branch, always stays visible.
+      </p>
+
+      <h2>The Time Travel inspector</h2>
+      <p>
+        <strong>Step Through</strong> in the header opens a panel across the bottom of the graph that
+        walks the run one node at a time, in execution order. A run that is <em>already finished</em> when
+        you open it starts in step mode automatically, positioned on the first failed step when there is
+        one; a run that is still in progress stays in the live view, and once you toggle the mode by hand
+        your choice sticks for that run.
+      </p>
+      <p>
+        The panel header carries previous and next buttons with a <em>Step n / total</em> counter, the
+        node's title and status, the time it started, how long it ran, and its offset from the start of
+        the run. Below that is a scrubber with one dot per node, coloured by status and dimmed for steps
+        you have not reached yet — click any dot to jump straight there. The arrow keys step backwards and
+        forwards and <kbd>Esc</kbd> closes the panel.
+      </p>
+      <p>
+        Three columns fill the body of the panel for the selected step:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Column</th><th>Shows</th><th>When empty</th></tr></thead>
+          <tbody>
+            <tr><td>Inputs</td><td>The values this node received.</td><td>"No inputs"</td></tr>
+            <tr><td>Variables at this step</td><td>The global-variable snapshot taken immediately <em>before</em> this node ran.</td><td>"No variables set", or "Not captured" for a run whose snapshot predates this feature.</td></tr>
+            <tr><td>Outputs</td><td>The values this node produced.</td><td>"No outputs"</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        If the step failed, its error message runs along the bottom of the panel.
+      </p>
+      <p>
+        Stepping drives all three surfaces at once. The current node gets a light-blue ring on the canvas,
+        every node reached only <em>after</em> it fades back to roughly a third opacity so the graph shows
+        where you are in time rather than merely that everything ran, and the matching timeline row is
+        highlighted. Clicking a timeline row moves the step, and clicking a scrubber dot moves the
+        highlight — the three views never disagree.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The variables column is what makes this a debugger</span>
+        <p>
+          "Variables at this step" is not the run's final state; it is the snapshot captured the instant
+          the node started. Stepping backwards through it answers the question a log cannot: not
+          <em>what</em> the value was at the end, but <em>which node</em> changed it and what it had been
+          before.
+        </p>
+      </div>
+
+      <h2>Replaying from a node</h2>
+      <p>
+        <strong>Right-click any node on the graph</strong> to open the <em>Re-run from here</em> dialog. A
+        replay creates a brand-new run that inherits the source run's upstream node states — their
+        historical inputs and outputs are reused as-is — and re-executes the node you picked together with
+        everything downstream of it. The variables it starts from are the exact snapshot taken when that
+        node originally began. The source run is never modified.
+      </p>
+      <p>
+        The dialog offers two choices:
+      </p>
+      <ul>
+        <li><strong>Target version.</strong> Defaults to <em>This run's version (original)</em>, so a
+            replay reproduces the original conditions. Any published version can be selected instead,
+            which is how you check whether a fix actually fixes the failure — replay the failed run
+            against the new version and see if it gets past the same node.</li>
+        <li><strong>Mock side effects.</strong> When ticked, non-idempotent nodes replay their original
+            recorded output instead of firing for real. Leave it off to genuinely re-execute; tick it when
+            the downstream path sends mail, posts payments or otherwise cannot be repeated safely.</li>
+      </ul>
+      <p>
+        If the replay would re-execute non-idempotent nodes for real, the dialog does not jump straight to
+        the new run: it stops on a confirmation listing exactly which nodes will fire again, with
+        <strong>Open replay run</strong> and <strong>Close</strong>. When there is nothing to warn about,
+        it navigates to the new run immediately.
+      </p>
+      <p>
+        A replay is refused with an explanatory error when the chosen node does not exist in the target
+        version, when the target version fails to compile, or when the source run has no version recorded
+        to replay against. The new run is stamped with the origin <code>replay</code> and keeps a link
+        back to the source run and the node it started from — that is the pill in the run header.
+      </p>
+
+      <h2>Manual decisions</h2>
+      <p>
+        A node can end up in a state where the engine refuses to guess. The usual cause is a crash or
+        restart in the middle of a <em>non-idempotent</em> side effect: the journal records that the effect
+        was attempted but never records its completion, so on recovery the engine cannot know whether the
+        payment went out. Rather than risk a duplicate, it parks the node with the message
+        <em>"Execution interrupted during a non-idempotent side effect. Manual decision required."</em>
+        and suspends the run.
+      </p>
+      <p>
+        Those nodes appear in the <strong>Manual Actions</strong> panel with three buttons:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Decision</th><th>Effect</th><th>Choose it when</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Retry Node</strong></td>
+              <td>Clears the node's error and outputs, closes the interrupted attempt in the journal, and executes the node again. The run continues from there.</td>
+              <td>You have confirmed the effect did <em>not</em> happen, or repeating it is harmless.</td>
+            </tr>
+            <tr>
+              <td><strong>Skip Node</strong></td>
+              <td>Marks the node completed with a <code>manualDecision</code> of <code>Skip</code>, and schedules everything downstream of it.</td>
+              <td>You have confirmed the effect <em>did</em> happen and the run should carry on as though the node succeeded.</td>
+            </tr>
+            <tr>
+              <td><strong>Fail Run</strong></td>
+              <td>Marks the node failed, recording your reason as the error message.</td>
+              <td>The run should not continue and you want the failure recorded, alerted on and routed to the error workflow.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Each decision is journaled with the reason and the identifier of the attempt it resolves. That
+        attempt identifier is also sent with the request, so a decision made against a stale view of the
+        run is ignored rather than applied to a different attempt. A node that has already completed or
+        failed accepts no decision at all, and a node that is not actually awaiting one is refused.
+      </p>
+
+      <h2>The file-access remediation card</h2>
+      <p>
+        File nodes run against a path allow-list, so the most common first failure of a file-touching
+        workflow is a policy denial rather than a missing file. When the visualizer recognises one — the
+        error says the file access was denied and names the attempted path — it renders an amber
+        <strong>How to fix</strong> card immediately after the failure, so the reading order is cause then
+        cure.
+      </p>
+      <p>
+        The card's title names the specific problem rather than repeating the generic message:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Title</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Path is outside permitted directories</td><td>Nothing in the policy covers this location.</td></tr>
+            <tr><td>Path is granted read-only</td><td>The location is granted, but not for writing.</td></tr>
+            <tr><td>Path is not granted for reading</td><td>The location is granted, but not for reading.</td></tr>
+            <tr><td>No paths are permitted yet</td><td>The policy is empty, so everything is denied by default.</td></tr>
+            <tr><td>Path is not permitted</td><td>The fallback when the denial does not match any of the above.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Below the title the card shows the exact directory that needs granting — the parent of the
+        attempted path, with drive roots handled correctly — and adapts its wording to the node that
+        failed, saying "read it here" for a file read, "write here" for a file write and "reach it here"
+        otherwise. Two actions follow. <strong>Grant access in File Access settings →</strong> stores the
+        path and navigates to <span class="kg-path">Settings &rsaquo; File Access</span> with it already
+        filled in, so you do not retype it. <strong>Copy path</strong> puts it on the clipboard and
+        confirms with "Copied" — useful when the grant belongs on a different machine, or when you would
+        rather adjust the workflow than widen the policy.
+      </p>
+
+      <h2>What the footer line means</h2>
+      <p>
+        Under the last timeline group is a status line summarising the whole run. It is generated from the
+        run's status, not written by hand, so it is a reliable one-glance answer:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Line</th><th>State</th></tr></thead>
+          <tbody>
+            <tr><td>Workflow run completed successfully.</td><td>Finished, no failures.</td></tr>
+            <tr><td>Workflow run failed. Review the highlighted node entries above.</td><td>A node failed with no error path to catch it.</td></tr>
+            <tr><td>Workflow is waiting for the next retry attempt.</td><td>An automatic retry is scheduled.</td></tr>
+            <tr><td>Workflow is paused and waiting for an external resume signal.</td><td>Suspended pending a correlation token.</td></tr>
+            <tr><td>Workflow is still running. New node updates will stream into this timeline.</td><td>In progress.</td></tr>
+            <tr><td>Workflow run was cancelled before reaching the end node.</td><td>Cancelled, usually by deactivating the workflow.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="error-handling.html">
+          <div class="kg-card-title">Error handling and alerts</div>
+          <div class="kg-card-desc">What happens after a run fails, and how the handler run links back to it.</div>
+        </a>
+        <a class="kg-card" href="dead-letter.html">
+          <div class="kg-card-title">Dead letter queue</div>
+          <div class="kg-card-desc">The queue of failed runs waiting for exactly this kind of triage.</div>
+        </a>
+        <a class="kg-card" href="triggers.html">
+          <div class="kg-card-title">Triggers</div>
+          <div class="kg-card-desc">Where the run you are reading came from.</div>
+        </a>
+        <a class="kg-card" href="file-access.html">
+          <div class="kg-card-title">File access</div>
+          <div class="kg-card-desc">The path policy behind the remediation card, and how to grant a directory.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

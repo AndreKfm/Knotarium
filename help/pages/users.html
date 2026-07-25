@@ -1,0 +1,335 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Sign-in, accounts, and the honest account of credential management. Screen behaviour from
+  components/auth/*; cookie properties and the seed from Api/Program.cs; endpoint gating and rules
+  from AuthEndpoints.cs and Services/Auth/UserService.cs. The inline credential affordance is in
+  HttpRequestPropertyForm.tsx; the selection-by-reference field is in shared/ManifestForm.tsx.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Users and sign-in · Knotarium Help</title>
+<meta name="description" content="First-run administrator creation, the unattended seed, the user-management panel, the session cookie's fixed properties, and where credentials are actually managed.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="users.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Users and sign-in</h1>
+      <p class="kg-lead">
+        Cookie sign-in is on by default and the first person to open a new instance is asked to create an
+        administrator. This page covers that first run, the unattended alternative for automated installs,
+        the small user-management panel, the fixed properties of the session cookie, and what actually
+        changes if you turn authentication off. It ends with an honest account of a gap: there is no
+        central place to manage credentials.
+      </p>
+
+      <h2>First run</h2>
+      <p>
+        With authentication enabled and no accounts in the database, the sign-in screen becomes a setup
+        screen. It is headed <em>Create the first administrator</em> and explains that the instance has no
+        users yet. You supply a username, a password and a confirmation; the two must match or the form
+        refuses with <em>Passwords do not match</em>. Pressing <strong>Create admin &amp; continue</strong>
+        creates the account, signs you straight in, and drops you into the application.
+      </p>
+      <p>
+        The account created this way holds the <code>admin</code> role. Setup is only permitted while zero
+        accounts exist — once one exists the endpoint answers with a conflict, so the screen cannot be used
+        to add a second administrator later.
+      </p>
+      <p>
+        Usernames are normalised to lower case, which makes sign-in case-insensitive and means
+        <code>Admin</code> and <code>admin</code> are the same account rather than two. Passwords must be at
+        least eight characters and are only ever stored as a salted hash. When the framework signals that a
+        stored hash uses outdated parameters, a successful sign-in transparently rehashes it.
+      </p>
+
+      <h2>The unattended seed</h2>
+      <p>
+        An automated install has no browser to complete the setup screen with, so the first administrator
+        can be seeded from configuration instead. Set both of:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Auth__InitialAdmin__Username</code></td>
+              <td>The username of the seeded administrator.</td>
+            </tr>
+            <tr>
+              <td><code>Auth__InitialAdmin__Password</code></td>
+              <td>Its password. Subject to the same eight-character minimum.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The seed runs during startup, and only when authentication is enabled, both values are non-blank,
+        and <strong>no accounts exist at all</strong>. When it fires, the log records that an initial admin
+        was seeded from configuration. It is not a way to reset a forgotten password or to add an account
+        to a running instance — on an instance that already has users it does nothing, silently.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A failed seed does not stop startup</span>
+        <p>
+          If creating the seeded account throws — a name that is somehow taken, a password below the
+          minimum — the failure is logged as a warning and startup continues. The instance comes up with no
+          accounts and therefore shows the first-run setup screen instead. If an unattended install ends up
+          asking a human to create an administrator, that warning in the log is the reason.
+        </p>
+      </div>
+      <p>
+        Supply the password through a secret store or an environment variable set for the service account
+        rather than a checked-in configuration file. Both keys are listed alongside everything else read at
+        startup in the <a href="configuration.html">configuration reference</a>.
+      </p>
+
+      <h2>The user menu</h2>
+      <p>
+        Once signed in, the application header shows your username, a <strong>Users</strong> button and a
+        <strong>Sign out</strong> button. There is no user section under
+        <span class="kg-path">Settings</span> — accounts are reached from the header, which is a small
+        thing worth knowing before you go looking in the wrong place.
+      </p>
+
+      <h2>The user-management panel</h2>
+      <p>
+        <strong>Users</strong> opens a modal with three sections.
+      </p>
+      <ul>
+        <li>
+          <strong>Accounts</strong> — every account with its role, the current one marked <em>· you</em>,
+          and a delete button on each row. Your own row's delete button is disabled with the explanation
+          <em>You cannot delete your own account</em>.
+        </li>
+        <li>
+          <strong>Add user</strong> — a username and password pair with an <strong>Add</strong> button that
+          stays disabled until the name is non-blank and the password is at least eight characters. Accounts
+          created here are given the <code>user</code> role.
+        </li>
+        <li>
+          <strong>Change my password</strong> — a single field and a <strong>Change</strong> button, again
+          gated on eight characters, confirming with <em>Your password was changed</em>.
+        </li>
+      </ul>
+      <p>
+        Listing, creating and deleting accounts all require the <code>admin</code> role on the server, and
+        the reason is direct: without that gate an ordinary user could create an administrator account for
+        themselves and escalate to full control of the host. Changing a password is self-service because it
+        only ever targets the caller's own account — there is no way for an administrator to set someone
+        else's password from this panel.
+      </p>
+      <p>
+        Two deletions are refused outright. You cannot delete your own account while signed in, which
+        guards against locking yourself out mid-session, and you cannot delete the last remaining account,
+        which guards against locking everyone out permanently.
+      </p>
+      <p>
+        The panel offers no way to change an existing account's role. Roles are fixed at creation: the
+        first-run administrator and the configuration seed create an <code>admin</code>, and the Add user
+        form creates a <code>user</code>. Those are the only two roles the system recognises, and an
+        attempt to persist any other value is rejected.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The role distinction buys less than it looks like it does</span>
+        <p>
+          A per-role permission system is not implemented. Only user management and the backup and restore
+          endpoints check for <code>admin</code>. Every other endpoint an authenticated session can reach
+          is unrestricted — including the capability toggle and the Inline Code test endpoint. A
+          <code>user</code> account can therefore enable code execution and run arbitrary code on the host.
+          Treat every account as an administrator until the role model exists.
+        </p>
+      </div>
+
+      <h2>The session cookie</h2>
+      <p>
+        The cookie's properties are set in code and are <strong>not configurable</strong>. Knowing them
+        explains several behaviours that otherwise look like faults:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Property</th><th>Value</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Name</td>
+              <td><code>kg_auth</code></td>
+              <td>What to look for in browser developer tools when diagnosing a session.</td>
+            </tr>
+            <tr>
+              <td>HttpOnly</td>
+              <td>Yes</td>
+              <td>Script on the page cannot read the session, limiting what a cross-site scripting flaw could steal.</td>
+            </tr>
+            <tr>
+              <td>SameSite</td>
+              <td><code>Lax</code></td>
+              <td>The cookie is not sent on cross-site sub-requests, which is the baseline request-forgery defence.</td>
+            </tr>
+            <tr>
+              <td>Expiry</td>
+              <td>7 days, sliding</td>
+              <td>Continued use keeps a session alive indefinitely; a week of inactivity ends it.</td>
+            </tr>
+            <tr>
+              <td>Secure</td>
+              <td>Always, outside development</td>
+              <td>The cookie is never sent over cleartext HTTP in a real deployment.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Plain HTTP outside localhost will look like sign-in failing</span>
+        <p>
+          Because the cookie is HTTPS-only outside development, a self-hosted instance reached over plain
+          HTTP on a LAN address never keeps a session: the sign-in succeeds, the cookie is discarded by the
+          browser, and the next request is unauthenticated. The symptom is being bounced back to the login
+          screen immediately after signing in. The fix is TLS — normally a reverse proxy terminating it —
+          not a setting.
+        </p>
+      </div>
+      <p>
+        Because this is an API rather than a server-rendered application, an unauthenticated request gets a
+        plain <code>401</code> and a forbidden one a <code>403</code> instead of a redirect to a login page.
+        Signing out clears the cookie server-side.
+      </p>
+
+      <h3>The sign-in rate limit</h3>
+      <p>
+        The sign-in endpoint is rate-limited to <strong>ten attempts per minute</strong> by default, in a
+        fixed window partitioned by remote IP address, with nothing queued — an eleventh attempt in the
+        same minute is refused with <code>429</code> rather than delayed. That throttles online password
+        guessing without being tight enough to bother a person who mistyped twice.
+      </p>
+      <p>
+        Two caveats. The partition is the remote IP, so behind a proxy that does not preserve the client
+        address every caller shares one bucket and a single noisy client can lock out the rest. And the
+        limit is per minute, not cumulative — it slows guessing rather than locking an account, because
+        there is no account lockout at all. Raise or lower it with
+        <code>Security__RateLimit__LoginPerMinute</code>.
+      </p>
+
+      <h2>Turning authentication off</h2>
+      <p>
+        <code>Auth__Enabled=false</code> removes the authentication middleware entirely. Every endpoint
+        becomes anonymous — not merely the ones a signed-in user could reach, but all of them, including the
+        capability toggle, the backup and restore endpoints and the Inline Code test endpoint. There is no
+        sign-in and no first-run setup, and the interface does not gate itself behind a login screen.
+      </p>
+      <p>
+        The admin-only gates become no-ops in that mode, which is consistent rather than a bug: there is no
+        caller identity to check a role against, and every other endpoint is already open.
+      </p>
+      <p>
+        Because that posture is only defensible on a machine-local instance, startup refuses it on a
+        non-loopback binding. The check, its wildcard handling and the override that lifts it are described
+        on <a href="security.html">Security model</a>. The short version: if disabling authentication makes
+        the application fail to start, the guard is working and the answer is not to override it.
+      </p>
+
+      <h2>Credentials: the honest gap</h2>
+      <p>
+        Credentials — the encrypted secrets that nodes reference for API keys, connection strings and
+        passwords — have no management screen. There is no list of them, no way to browse or rename or
+        delete one from the interface, and nothing under <span class="kg-path">Settings</span> that
+        corresponds to them. This is a real gap, not something hidden in a submenu, and it is worth
+        describing exactly so you do not spend time looking.
+      </p>
+
+      <h3>Where a credential gets created</h3>
+      <p>
+        Inline, from the property form of a node that needs one. The clearest example is the <strong>HTTP
+        Request</strong> node: choose an authentication type other than <em>none</em> and a field appears
+        labelled <em>Credential (secret)</em> containing a dropdown of existing credentials and a
+        <strong>New</strong> button whose tooltip reads <em>Create a new credential</em>.
+      </p>
+      <p>
+        Pressing it swaps the dropdown for a small inline form with two fields — a name, prompted with an
+        example such as a service's API key, and the secret value in a masked field — plus <strong>Save
+        credential</strong> and <strong>Cancel</strong>. Both fields are required. Saving stores the secret
+        encrypted, derives an identifier from the name, refreshes the list and selects the new credential in
+        the node you were editing, all without leaving the form.
+      </p>
+      <p>
+        A hint under the field states the important property: the secret is stored encrypted and referenced
+        by identifier, so it never lives in the workflow definition. That is why exporting or sharing a
+        workflow does not leak its secrets — the definition carries a reference, not a value.
+      </p>
+      <p>
+        The AI provider screen has the same inline affordance for the same reason: the API key it needs is
+        an ordinary credential, and there is nowhere else to create one.
+      </p>
+
+      <h3>Where a credential gets used</h3>
+      <p>
+        Everywhere else, by selection only. Any node parameter declared as a credential reference renders as
+        a dropdown labelled with the parameter name and the word <em>Secret</em>, offering
+        <em>Select credential…</em> and the list of what exists. There is no create button on that generic
+        form — if the credential you need does not exist yet, you have to go and create it somewhere that
+        does have one, then come back.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">What this means in practice</span>
+        <p>
+          A secret created by mistake, or one belonging to a service you no longer use, stays in the list
+          and stays in the database. There is no interface for removing it, no view of which workflows
+          reference which credential, and no way to see when one was last used. Saving a credential under a
+          name that derives to an existing identifier overwrites the stored value. Name credentials
+          carefully the first time, because renaming and tidying up are not offered.
+        </p>
+      </div>
+      <p>
+        Two things do reach the whole set, and both are all-or-nothing. Credentials are carried in an
+        instance backup — decrypted inside the encrypted envelope and re-encrypted on restore — so a restore
+        replaces the entire credential store with the archive's. And every stored secret depends on the
+        <code>.credential-key</code> file: lose it and none of them can be read again. Both are covered on
+        <a href="backup-restore.html">Backup and restore</a>.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="security.html">
+          <div class="kg-card-title">Security model</div>
+          <div class="kg-card-desc">Why an authenticated user is effectively an administrator, and what the layers do protect.</div>
+        </a>
+        <a class="kg-card" href="backup-restore.html">
+          <div class="kg-card-title">Backup and restore</div>
+          <div class="kg-card-desc">Accounts are not in a backup; credentials are. What that means for recovery.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The authentication keys, the initial-admin seed, and the credential encryption key.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

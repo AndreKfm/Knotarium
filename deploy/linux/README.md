@@ -2,7 +2,8 @@
 
 This runs the **copy-and-run folder build** (the release zip) as a hardened background service on any
 systemd-based distribution. It's the no-Docker path — for Docker, use `docker compose up` from the repo
-root instead (see [`docs/install.md`](../../docs/install.md)).
+root instead (see the bundled help at `/help/pages/install.html`, or
+[`help/pages/install.html`](../../help/pages/install.html) in this repository).
 
 The service and its data survive reboots, run as a dedicated non-root user, and share the same state
 directory as any interactive run of the **same version** — exactly like the Windows service install.

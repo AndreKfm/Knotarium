@@ -449,6 +449,15 @@ if (serveSpa)
     spaFileProvider = new PhysicalFileProvider(spaRoot);
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = spaFileProvider });
     app.UseStaticFiles(new StaticFileOptions { FileProvider = spaFileProvider, OnPrepareResponse = setSpaCacheHeaders });
+
+    // Offline help — hand-written static HTML copied into wwwroot/help by publish.ps1 and the
+    // Dockerfile. Its files are served by the registration above; only the directory entry point
+    // needs a route. See HelpEndpoints for why.
+    var helpIndex = Path.Combine(spaRoot, "help", "index.html");
+    if (File.Exists(helpIndex))
+    {
+        app.MapHelpEndpoints(helpIndex);
+    }
 }
 
 // Auth runs after static files (so the SPA shell + assets load without a session) and before the API

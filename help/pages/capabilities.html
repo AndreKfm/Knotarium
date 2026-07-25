@@ -1,0 +1,326 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The Capabilities screen. Capability names and the switchable set are read from
+  Core/Domain/NodeCapabilities.cs and Features.Settings/CapabilityPolicyStore.cs; the node mapping
+  comes from InMemoryNodePackageManifestProvider.cs. The aiAgent gap is real and documented.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capabilities · Knotarium Help</title>
+<meta name="description" content="The master switches for privileged node capabilities — which exist, which nodes each unlocks, and what an administrator is really deciding.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="capabilities.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Capabilities</h1>
+      <p class="kg-lead">
+        <span class="kg-path">Settings &rsaquo; Capabilities</span> holds the master switches for the
+        privileged things a node can do. They are off on a fresh instance, and a node that needs one fails
+        with a clear message until an administrator turns it on. Each switch is instance-wide: enabling it
+        grants the capability to every workflow on the instance, not to the one you were looking at.
+      </p>
+
+      <h2>What a capability is</h2>
+      <p>
+        Every node package declares a list of capability tags in its manifest — short strings naming the
+        privileged resources it touches. The tags are an open vocabulary shared with binary and custom
+        node packages, so a package you write declares its own. The host uses them for two purposes: to
+        warn you before installing an imported bundle that reaches beyond ordinary data flow, and to gate
+        execution.
+      </p>
+      <p>
+        Not every tag is a switch. The full vocabulary is wider than what this screen controls:
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Tag</th><th>Meaning</th><th>How it is treated</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>code.execute</code></td>
+              <td>Executes arbitrary code on the host. The highest privilege there is.</td>
+              <td><span class="kg-pill is-danger">Switchable</span></td>
+            </tr>
+            <tr>
+              <td><code>database</code></td>
+              <td>Runs arbitrary database queries.</td>
+              <td><span class="kg-pill is-danger">Switchable</span></td>
+            </tr>
+            <tr>
+              <td><code>aiAgent</code></td>
+              <td>Runs a language-model tool-use loop that can invoke other workflows as tools.</td>
+              <td><span class="kg-pill is-danger">Switchable</span></td>
+            </tr>
+            <tr>
+              <td><code>filesystem.read</code></td>
+              <td>Reads local files.</td>
+              <td><span class="kg-pill is-warning">Own policy</span></td>
+            </tr>
+            <tr>
+              <td><code>filesystem.write</code></td>
+              <td>Writes local files.</td>
+              <td><span class="kg-pill is-warning">Own policy</span></td>
+            </tr>
+            <tr>
+              <td><code>network</code></td>
+              <td>Makes outbound network calls.</td>
+              <td><span class="kg-pill is-info">Descriptive</span></td>
+            </tr>
+            <tr>
+              <td><code>credentials</code></td>
+              <td>Resolves stored credentials and secrets.</td>
+              <td><span class="kg-pill is-info">Descriptive</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The two filesystem tags are deliberately excluded from this screen because they have something
+        better: a per-directory policy on <a href="file-access.html">File access</a>. A single on/off
+        switch would be a worse control than granting one folder at a time, so the coarse switch was left
+        out rather than duplicated.
+      </p>
+      <p>
+        The <code>network</code> and <code>credentials</code> tags are older, informal markers. They are
+        descriptive metadata that a future permission model will build on — nothing enforces them today.
+        Outbound network access is instead constrained by the egress policy described on
+        <a href="security.html">Security model</a>.
+      </p>
+
+      <h2>The screen</h2>
+      <p>
+        The card is headed <em>Privileged capabilities</em> and lists each switchable capability as a row
+        with a name, a one-line description and an on/off checkbox. There is no save button — a toggle
+        writes immediately, showing an ellipsis in place of the On/Off label while the write is in flight.
+      </p>
+      <p>
+        As soon as any capability is on, an amber banner appears at the bottom of the card reminding you
+        that every workflow on the instance can now use it and suggesting you turn it back off when you no
+        longer need it. That banner is not a warning about something going wrong; it is a standing reminder
+        that the instance is in a more permissive state than its default.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The screen shows two switches; the engine enforces three</span>
+        <p>
+          The interface lists <strong>Inline code execution</strong> and <strong>Database access</strong>.
+          The backend's switchable set also contains <code>aiAgent</code>, and the AI Agent node genuinely
+          refuses to run without it — but there is no row for it on this screen. On a build where this is
+          still true the AI Agent node cannot be enabled from the interface at all, and the capability must
+          be written through the capability-policy API directly. This is a gap between the two halves of
+          the product, not a security decision, and it is stated here so you are not left hunting for a
+          switch that is not drawn.
+        </p>
+      </div>
+
+      <h2>What each capability unlocks</h2>
+
+      <h3>Inline code execution</h3>
+      <p>
+        Tag <code>code.execute</code>. <span class="kg-pill is-off">Off by default</span>
+      </p>
+      <p>
+        This one switch governs everything that compiles and runs user-authored C#:
+      </p>
+      <ul>
+        <li>
+          The <strong>Inline Code</strong> node, which declares <code>code.execute</code> as its only
+          capability.
+        </li>
+        <li>
+          The Inline Code node's design-time <strong>Test run</strong> in the editor. Turning the
+          capability off does not leave you a safe way to experiment — the test path is gated by the same
+          check as the real execution, which is the correct behaviour but sometimes surprises people
+          debugging a workflow.
+        </li>
+        <li>
+          <strong>Compiled custom node packages.</strong> A custom node in the compiled tier runs arbitrary
+          C# in the host process and is gated by exactly the same capability. The install-time signature
+          check governs <em>what</em> may be installed; this switch governs whether the operator has opted
+          in to running compiled code at all. Custom nodes in the declarative tier are unaffected.
+        </li>
+      </ul>
+      <p>
+        This is the highest-privilege switch on the screen. C# compiled at runtime in the host process can
+        do anything the host account can do, and no capability check constrains it once it is running. The
+        <a href="sandbox.html">Sandbox</a> screen is what limits the damage afterwards.
+      </p>
+
+      <h3>Database access</h3>
+      <p>
+        Tag <code>database</code>. <span class="kg-pill is-off">Off by default</span>
+      </p>
+      <p>
+        Unlocks the <strong>Database Query</strong> node, which opens a connection to Postgres or SQLite
+        and runs the SQL you give it. The node's manifest declares both <code>network</code> and
+        <code>database</code>; only the latter is gated.
+      </p>
+      <p>
+        The connection string is not typed into the node — it is held as an encrypted credential and
+        referenced, then resolved at run time. That means enabling this capability does not by itself tell
+        a workflow which database to reach; it still needs a credential that someone created. It does mean
+        that any workflow can use any credential that exists, so the two together are the grant.
+      </p>
+
+      <h3>AI agent loop</h3>
+      <p>
+        Tag <code>aiAgent</code>. <span class="kg-pill is-off">Off by default</span>
+      </p>
+      <p>
+        Unlocks the <strong>AI Agent</strong> node, which runs a language-model tool-use loop and — this
+        is the part that makes it privileged — can invoke other workflows as tools. A model deciding which
+        of your workflows to run, with arguments it chose, is a materially different risk from a model
+        producing text, which is why it is gated like code execution rather than treated as an ordinary AI
+        node. The node also declares <code>network</code>.
+      </p>
+      <p>
+        See the warning above about this capability having no switch on the screen.
+      </p>
+
+      <h2>What happens to a workflow that needs a disabled capability</h2>
+      <p>
+        It fails loudly, at the node, at run time, with a message that names both the capability and where
+        to enable it. It does not fail at design time, at publish, or at the start of the run — the check
+        happens when that node executes.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Node</th><th>Failure message</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Inline Code</td>
+              <td>Inline Code is disabled: the 'code execution' capability is off. An administrator can enable it under Settings &rsaquo; Capabilities.</td>
+            </tr>
+            <tr>
+              <td>Database Query</td>
+              <td>Database Query is disabled: the 'database' capability is off. An administrator can enable it under Settings &rsaquo; Capabilities.</td>
+            </tr>
+            <tr>
+              <td>AI Agent</td>
+              <td>AI Agent is disabled: the 'aiAgent' capability is off. An administrator can enable it under Settings &rsaquo; Capabilities.</td>
+            </tr>
+            <tr>
+              <td>Compiled custom node</td>
+              <td>Custom node '&lt;type&gt;' runs compiled code, which is disabled: the 'code execution' capability is off. An administrator can enable it under Settings &rsaquo; Capabilities.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The practical consequences are worth spelling out. The run reaches the node, fails there, and the
+        rest of the workflow follows whatever error handling you configured — so a capability that was
+        switched off after a workflow was published shows up as an ordinary node failure in the run
+        inspector, not as a configuration error at the top of the screen. Anything the workflow did before
+        that node is already done and is not rolled back.
+      </p>
+      <p>
+        Because the check reads the policy at execution time, turning a capability off takes effect on the
+        very next node execution. There is no cache to wait out and nothing to restart. The same is true
+        turning it on: a run that failed a minute ago will succeed if you re-run it after flipping the
+        switch.
+      </p>
+
+      <h2>Failing closed</h2>
+      <p>
+        Every path through the policy defaults to denial rather than permission, which is worth knowing
+        because it means a corrupted or missing setting is safe rather than dangerous:
+      </p>
+      <ul>
+        <li>No stored policy at all means the empty set — everything off.</li>
+        <li>A stored value that will not parse as JSON is treated as the empty set, not as an error that halts anything.</li>
+        <li>
+          Only recognised switchable capabilities are persisted. An unknown tag, or one of the filesystem
+          tags, is silently dropped on save, so stale entries cannot accumulate and cannot be smuggled in.
+        </li>
+        <li>
+          A host wired without the settings-backed policy store falls back to an implementation that
+          reports every capability as disabled.
+        </li>
+      </ul>
+      <p>
+        The policy is stored in the database as a single application setting. It has no
+        <code>appsettings.json</code> counterpart, so there is no way to pre-seed it for an unattended
+        install and no configuration key to check when you are wondering why a node is refused. This
+        screen is the only source of truth.
+      </p>
+
+      <h2>The decision you are actually making</h2>
+      <p>
+        Enabling a capability is not "letting this workflow do this thing". It is "letting every workflow
+        on this instance do this thing, now and in the future". That includes:
+      </p>
+      <ul>
+        <li>Workflows other account holders create, since there is no role model that would stop them.</li>
+        <li>Workflows imported from a template or bundle, including ones imported after you flipped the switch.</li>
+        <li>Workflows generated from a natural-language description by a language model.</li>
+      </ul>
+      <p>
+        Enabling code execution in particular is functionally equivalent to granting everyone who can edit
+        a workflow the ability to run arbitrary code as the host account. That is a legitimate thing to do
+        on a single-operator instance you run yourself; it is a poor thing to do on a shared instance whose
+        users you would not hand a shell to.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Turn it on, do the work, turn it off</span>
+        <p>
+          Because the policy is consulted per execution and changes need no restart, treating these
+          switches as temporary is genuinely practical. If a scheduled workflow needs inline code once a
+          week, there is nothing forcing you to leave the capability on for the other six days — and the
+          standing amber banner is there precisely to remind you it is still on.
+        </p>
+      </div>
+
+      <p>
+        Enabling a capability also changes what a hostile import can achieve. The bundle installer will
+        still make you acknowledge privileged nodes before installing, but the acknowledgement and the
+        capability are independent: acknowledging an import never enables anything, and an enabled
+        capability means an acknowledged import runs the moment it is triggered. See
+        <a href="security.html">Security model</a> for the import gate.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="sandbox.html">
+          <div class="kg-card-title">Sandbox</div>
+          <div class="kg-card-desc">Having decided that code may run, decide how hard the operating system confines it.</div>
+        </a>
+        <a class="kg-card" href="file-access.html">
+          <div class="kg-card-title">File access</div>
+          <div class="kg-card-desc">The finer-grained policy that stands in for a filesystem capability switch.</div>
+        </a>
+        <a class="kg-card" href="security.html">
+          <div class="kg-card-title">Security model</div>
+          <div class="kg-card-desc">Where capability gating sits among the other layers, and what none of them protect against.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

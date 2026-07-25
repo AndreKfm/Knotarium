@@ -1,0 +1,496 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Trigger node reference. Parameters, ports and capabilities come from
+  Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs; runtime behaviour from
+  the trigger synchronizers, TriggerEntryResolver and the execution endpoints.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trigger nodes · Knotarium Help</title>
+<meta name="description" content="Every node that starts a run — Start, Cron Scheduler, Webhook Trigger, Polling Trigger, Error Trigger — plus End, with all parameters and ports.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="nodes-triggers.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Trigger nodes</h1>
+      <p class="kg-lead">
+        A trigger is where a run begins. Which trigger fires is decided by the run's
+        <em>origin</em> — manual, schedule, webhook, poll or error — matched against the trigger nodes
+        the workflow actually contains. This page documents all seven nodes in the
+        <code>Triggers</code> category, including <strong>End</strong>, which is filed here despite
+        being a terminator rather than a starter.
+      </p>
+
+      <h2>How a trigger is chosen</h2>
+      <p>
+        Trigger nodes are marked <strong>trigger-only</strong> in the catalog, and most of them have
+        no executor at all. When the run reaches one of those, the engine marks it complete
+        immediately and fills its output port with a payload synthesised from the run itself — the
+        schedule's fire time, the polled document, the failure context. Cron Scheduler, Webhook
+        Trigger, Polling Trigger, Error Trigger and Manual Trigger all work this way, which is why
+        their timeout is <code>0</code> and why none of them can fail.
+      </p>
+      <p>
+        <strong>Start</strong> is the exception: it is trigger-only but does have an executor, because
+        it has real work to do at a subflow boundary. It runs like any other node, and its outputs are
+        what that executor produced rather than a synthesised payload.
+      </p>
+      <p>
+        At the start of a run the engine walks the compiled plan's entry nodes and keeps the
+        trigger-only ones whose type matches the origin: <code>schedule</code> selects Cron
+        Scheduler, <code>webhook</code> selects Webhook Trigger, <code>poll</code> selects Polling
+        Trigger, <code>error</code> selects Error Trigger, and everything else selects Start or
+        Manual Trigger. If nothing matches, the run falls back to <em>all</em> of the plan's entry
+        nodes rather than starting nothing — so a workflow with only a Cron Scheduler still runs when
+        you press Run manually.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Automatic triggers need an armed runtime</span>
+        <p>
+          Schedules, webhooks and polls only fire while the runtime is armed. While it is disarmed,
+          the webhook endpoint refuses the call outright, and the manual Run button is the only thing
+          that starts a workflow. A workflow also needs an <strong>active published version</strong>;
+          without one the trigger has nothing to execute and the attempt is refused rather than
+          queued.
+        </p>
+      </div>
+
+      <h2>Start</h2>
+      <p>
+        <code>start</code> · Triggers · trigger-only · timeout <code>0</code>
+      </p>
+      <p>
+        The default entry point, and the node every new workflow is created with. Reach for it
+        whenever a workflow is run by hand, tested from the editor, called as a subflow, or invoked by
+        an AI Agent as a tool. It is also the fallback entry point for any origin the engine does not
+        recognise, which makes it the safest thing to leave on a graph.
+      </p>
+      <p>
+        Start has no parameters of its own, yet it is not inert. When a workflow is used as a
+        <strong>subflow</strong>, its Start node is where the caller's input bindings land: each
+        declared input is written into a workflow variable before anything downstream runs. Every
+        other input Start receives is passed straight through to its outputs, so a run started with
+        input variables can read them immediately after the Start node. You declare a subflow's
+        inputs on its Start node — the properties panel offers that interface editor rather than a
+        generic form.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th></tr></thead>
+          <tbody>
+            <tr><td colspan="4"><em>None.</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>any</td><td>Whatever the run was started with, minus the internal subflow-binding keys.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Cron Scheduler</h2>
+      <p>
+        <code>scheduler</code> · Triggers · trigger-only · timeout <code>0</code>
+      </p>
+      <p>
+        Runs the workflow on a recurring clock. Use it for anything time-driven: a nightly export, a
+        five-minute health probe, a Monday-morning digest. The properties panel gives you a builder
+        with the common shapes — every N minutes, hourly, daily, weekdays, weekly, monthly — and drops
+        to a raw expression field when the cron you have cannot be represented by the builder, so it
+        never silently rewrites an expression you typed yourself.
+      </p>
+      <p>
+        Both parameters are required, and both are validated when the workflow is saved rather than
+        when it fires. The expression must have <strong>five fields</strong>
+        (<code>minute hour day-of-month month day-of-week</code>) or <strong>six</strong> when you want
+        second precision. The time zone must be one the host recognises. Get either wrong and the save
+        is rejected with an explicit message; a valid expression that has no future occurrence at all
+        is rejected the same way.
+      </p>
+      <p>
+        Saving the workflow reconciles a persisted schedule row per scheduler node. Removing the node
+        removes the schedule; changing the expression recomputes the next fire time. The next fire
+        time is shown in the properties panel, which is the quickest way to confirm that a time zone
+        is doing what you expect across a daylight-saving boundary.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>cronExpression</code></td><td>string</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td>Five fields, or six to include seconds. Anything else is refused at save time.</td>
+            </tr>
+            <tr>
+              <td><code>timezoneId</code></td><td>string</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td>A system time-zone identifier. The schedule is evaluated in this zone and stored in UTC.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>triggeredAt</code></td><td>string</td><td>The moment the run was created. Note the port is <strong>not</strong> called <code>result</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Webhook Trigger</h2>
+      <p>
+        <code>webhookTrigger</code> · Triggers · trigger-only · timeout <code>0</code>
+      </p>
+      <p>
+        Starts a run when an external system posts to the instance. Reach for it when something else
+        owns the timing — a source-control hook, an alerting system, a form back end. The caller posts
+        the workflow id and an optional bag of input variables; those variables become the run's
+        globals and are readable downstream.
+      </p>
+      <p>
+        The endpoint is deliberately machine-facing and does not require a user session, so it is
+        gated by three other things instead. The runtime must be armed. The workflow must be enabled
+        and have an active version. And, if you have configured one, the caller must present the
+        workflow's <strong>webhook secret</strong> in a request header — checked first, and in
+        constant time, so an unauthorised caller learns nothing about the instance's state. Workflows
+        with no secret configured stay open.
+      </p>
+      <p>
+        Two rejections are worth recognising. A full execution queue answers with "too many requests"
+        rather than dropping the call silently, which means the sender can back off and retry. A
+        workflow that fails compilation answers with the diagnostics, so a broken graph reports itself
+        instead of failing invisibly at run time.
+      </p>
+      <p>
+        The <code>payload</code> parameter is a design-time convenience for describing the body you
+        expect; it is not populated from the request. The actual inbound data arrives as the run's
+        input variables.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>payload</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>A sample or description of the expected body. Not filled in from the incoming request.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td>Present for wiring; the inbound values are reachable as run variables.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Polling Trigger</h2>
+      <p>
+        <code>pollingTrigger</code> · Triggers · trigger-only · timeout <code>0</code>
+      </p>
+      <p>
+        Watches a source you cannot get a webhook out of, and starts a run when it changes. This is
+        the node with the most configuration in the catalog, because it has to cover two kinds of
+        source and five ways of deciding that something is new.
+      </p>
+      <p>
+        Saving the workflow creates one persisted polling trigger per node, carrying the interval, the
+        source configuration and an opaque <strong>cursor</strong> holding what was last seen. The
+        cursor survives ordinary edits — retitling the node, adjusting headers — but is
+        <strong>reset</strong> whenever the source's identity changes, meaning any of
+        <code>sourceKind</code>, <code>url</code>, <code>serverConfigId</code>,
+        <code>operationId</code> or <code>specVersion</code>. That reset is deliberate: a cursor from
+        a different endpoint would either suppress real changes or replay old ones. Expect one
+        "everything looks new" poll after repointing the trigger.
+      </p>
+      <p>
+        The polling worker owns the cadence once the first poll has happened, so re-saving a workflow
+        does not restart the clock. Deleting the node deletes its trigger row and its cursor with it.
+      </p>
+
+      <h3>Choosing a change-detection mode</h3>
+      <ul>
+        <li><code>etag</code> and <code>last-modified</code> lean on the server's own validators. They
+            are the cheapest and most accurate options when the source sets those headers correctly —
+            and they detect nothing at all when it does not.</li>
+        <li><code>hash</code> compares a digest of the response body. It works against any source, at
+            the cost of transferring the whole body every time, and it reports a change whenever any
+            byte moves — including a timestamp the server stamps into every reply.</li>
+        <li><code>json-cursor</code> tracks a single value inside the response, named by
+            <code>jsonCursorPath</code>. This is the right choice for a feed with a monotonic
+            <code>id</code> or <code>updatedAt</code>, and the only one that ignores incidental churn
+            elsewhere in the document.</li>
+        <li><code>always</code> starts a run on every poll. Useful while building, and a good way to
+            fill the run history by accident if left on.</li>
+      </ul>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>intervalSeconds</code></td><td>number</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td>Seconds between polls. Must be a positive whole number; missing or zero makes the save fail with a message naming the node. The form offers 60 but stores nothing until you touch it.</td>
+            </tr>
+            <tr>
+              <td><code>sourceKind</code></td><td>enum</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td><code>http</code> — a URL you supply. <code>openapi</code> — an operation from an imported specification. Changing this resets the cursor.</td>
+            </tr>
+            <tr>
+              <td><code>changeDetection</code></td><td>enum</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td><code>etag</code>, <code>last-modified</code>, <code>hash</code>, <code>json-cursor</code>, <code>always</code>. See above.</td>
+            </tr>
+            <tr>
+              <td><code>jsonCursorPath</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Path to the value to track. Only meaningful with <code>json-cursor</code>; ignored otherwise.</td>
+            </tr>
+            <tr>
+              <td><code>url</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The endpoint to poll, for <code>http</code> sources. Part of the source identity — editing it resets the cursor.</td>
+            </tr>
+            <tr>
+              <td><code>method</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>HTTP method. The form shows <code>GET</code>; nothing is stored until you change it.</td>
+            </tr>
+            <tr>
+              <td><code>headersJson</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Extra request headers as a JSON object. Not part of the source identity, so editing it preserves the cursor.</td>
+            </tr>
+            <tr>
+              <td><code>apiKeySecretRef</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Id of a stored credential to authenticate with. The form renders a credential drop-down even though the manifest types it as a plain string.</td>
+            </tr>
+            <tr>
+              <td><code>serverConfigId</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Which configured server to call, for <code>openapi</code> sources. Part of the source identity.</td>
+            </tr>
+            <tr>
+              <td><code>operationId</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>The operation to poll, from the imported specification. Part of the source identity.</td>
+            </tr>
+            <tr>
+              <td><code>specVersion</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Which stored version of that specification to use. Part of the source identity, so re-importing and re-pointing resets the cursor.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>any</td><td>The polled payload that was judged new. Absent if the run was started some other way.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The two source kinds share one parameter list</span>
+        <p>
+          Only four of the eleven parameters are required, because the HTTP fields and the OpenAPI
+          fields are alternatives rather than companions. The properties panel shows one set or the
+          other according to <code>sourceKind</code>; the values you filled in for the other kind stay
+          in the workflow and are simply ignored, so switching back restores them.
+        </p>
+      </div>
+
+      <h2>Error Trigger</h2>
+      <p>
+        <code>errorTrigger</code> · Triggers · trigger-only · timeout <code>0</code>
+      </p>
+      <p>
+        The entry point of the global error-handler workflow. Reach for it once, in one workflow, and
+        nominate that workflow as the instance's error handler; from then on any other workflow that
+        fails starts a run of it with the failure context attached. It is the right place to put
+        alerting, ticket creation or a dead-letter write, because it keeps that logic out of every
+        individual workflow.
+      </p>
+      <p>
+        It has no parameters at all. There is nothing to configure because the routing is a global
+        setting rather than a property of the node, and the payload shape is fixed by the engine. An
+        error run is also linked back to the run it is handling, so the inspector can navigate from
+        the handler to the failure that caused it.
+      </p>
+      <p>
+        Besides the whole failure context on <code>result</code>, the engine publishes eight
+        individual fields as separate outputs so each can be promoted to a draggable variable in the
+        editor and referenced directly from a Log or Send Notification node without unpacking the
+        bundle first:
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>errorWorkflowId</code></td><td>Id of the workflow that failed.</td></tr>
+            <tr><td><code>errorWorkflowName</code></td><td>Its name, for a human-readable alert.</td></tr>
+            <tr><td><code>errorExecutionId</code></td><td>The failed run, for linking back to the inspector.</td></tr>
+            <tr><td><code>errorFailedNodeId</code></td><td>Which node failed.</td></tr>
+            <tr><td><code>errorFailedNodeType</code></td><td>That node's internal type id.</td></tr>
+            <tr><td><code>errorMessage</code></td><td>The failure message.</td></tr>
+            <tr><td><code>errorTriggerOrigin</code></td><td>How the failed run had been started.</td></tr>
+            <tr><td><code>errorTimestampUtc</code></td><td>When it failed.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th></tr></thead>
+          <tbody>
+            <tr><td colspan="4"><em>None.</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>any</td><td>The full failure context. The eight fields above are emitted alongside it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The error handler needs an active version of its own</span>
+        <p>
+          If the nominated error workflow has no active published version, the failure is
+          <strong>not</strong> handled and nothing is queued — the failing run reports its own error
+          and that is the end of it. Publishing and activating the handler is not optional, and it is
+          the single most common reason error handling appears to do nothing.
+        </p>
+      </div>
+
+      <h2>End</h2>
+      <p>
+        <code>end</code> · Triggers · timeout <code>0</code> <em>(5 seconds applied at run time)</em>
+      </p>
+      <p>
+        A terminator, filed in the Triggers category alongside Start because the two form the
+        workflow's interface. On an ordinary workflow it is optional — a path that runs out of wired
+        successors simply ends. Reach for it when you want an explicit, readable finish, and reach
+        for it <strong>always</strong> in a workflow used as a subflow.
+      </p>
+      <p>
+        That is because End is where a subflow's outputs are declared and copied back to the caller.
+        Each declared output names a local variable and the caller-side name to write it to; without
+        an End node a subflow computes results that never leave it. The properties panel shows that
+        interface editor on the End node of a subflow.
+      </p>
+      <p>
+        End is the one node in this category that is not trigger-only, so it really executes — and
+        because its manifest timeout is <code>0</code>, the engine applies its 5-second fallback. That
+        is ample for copying variables, and worth knowing only if you ever see an End node time out.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>payload</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>A final value to record. Accepts <code>{{ }}</code> expressions.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td colspan="3"><em>None. End declares no outputs, so nothing can be wired downstream of it.</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Manual Trigger</h2>
+      <p>
+        <code>manualTrigger</code> · Triggers · trigger-only · timeout <code>0</code> ·
+        <span class="kg-pill is-warning">Hidden from the palette</span>
+      </p>
+      <p>
+        A manual entry point: no parameters, a single <code>result</code> port, and the same origin
+        matching as Start. It is documented here only so that an older workflow containing one is not
+        mysterious. It remains registered and executable, and such a workflow renders and runs exactly
+        as before — but you cannot add a new one, because Start does the same job and having two
+        manual entry points to choose between helped nobody.
+      </p>
+      <p>
+        The one behavioural difference is that Manual Trigger has no executor, so it emits nothing:
+        where Start passes a run's input variables through to its outputs, Manual Trigger's
+        <code>result</code> port is simply empty. It also cannot carry a subflow's declared inputs. If
+        a workflow of yours reads values off its entry node, or is used as a subflow, replace the
+        Manual Trigger with a Start node and re-wire its single output.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="nodes-overview.html">
+          <div class="kg-card-title">How to read this reference</div>
+          <div class="kg-card-desc">What the parameter tables, port tables and capability tags mean.</div>
+        </a>
+        <a class="kg-card" href="nodes-logic.html">
+          <div class="kg-card-title">Logic nodes</div>
+          <div class="kg-card-desc">What happens after the trigger: branching, waiting, looping and subflows.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

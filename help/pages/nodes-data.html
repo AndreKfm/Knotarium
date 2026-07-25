@@ -1,0 +1,375 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Data node reference. Parameters and ports from InMemoryNodePackageManifestProvider.cs; path grammar
+  from ExpressionEvaluator.NavigateJson; Resource Picker behaviour from ResourcePickerNodeTask.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data nodes · Knotarium Help</title>
+<meta name="description" content="Transform, Merge and Resource Picker: extracting a value from JSON, combining arrays, and pinning a live resource to a workflow.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="nodes-data.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Data nodes</h1>
+      <p class="kg-lead">
+        Three nodes sit in the <code>Data</code> category, and the palette shows them under
+        <strong>Data</strong> unchanged. Transform pulls one value out of a JSON payload, Merge
+        concatenates two arrays, and Resource Picker turns a design-time choice from a remote system
+        into a value the workflow can rely on. Only Resource Picker touches the network, and only it
+        can fail for reasons outside your graph.
+      </p>
+
+      <h2>Reshaping data without a node</h2>
+      <p>
+        Before reaching for a node, remember that most extraction can be done inline. Any parameter
+        whose <strong>Expr</strong> flag is set accepts <code>{{ }}</code>, and expressions already
+        walk into objects and arrays:
+      </p>
+      <pre><code>{{ $node.httpRequest-1.output.body }}
+{{ $variables.customer.email }}
+{{ $variables.rows[0].id }}</code></pre>
+      <p>
+        A Transform node earns its place when the extracted value is used by several downstream nodes,
+        when you want the extraction to appear in the run inspector as its own step, or when a missing
+        value should stop the run rather than quietly resolve to nothing.
+      </p>
+
+      <h2>Transform</h2>
+      <p>
+        <code>transform</code> · Data · timeout <code>10</code>
+      </p>
+      <p>
+        Takes a JSON document and a path, and emits whatever the path selects. Reach for it to lift a
+        record out of an API response before branching on it, to pull the array out of a paged
+        envelope so a loop can iterate it, or to reduce a large payload to the one field a later node
+        needs.
+      </p>
+      <p>
+        <code>inputJson</code> is expression-enabled, which is how the document gets in — normally a
+        reference to an upstream node's output. If the value arrives as a JSON string it is parsed
+        first; if it is already a structured value it is queried directly. A string that is not valid
+        JSON is treated as a plain string literal, and any path into it then finds nothing.
+      </p>
+      <p>
+        <code>jsonPath</code> is <strong>not</strong> expression-enabled. It is a literal path,
+        written once and fixed for the life of the node.
+      </p>
+
+      <h3>The path grammar</h3>
+      <p>
+        Despite the parameter name, this is not full JSONPath. It is a deliberately small dotted-path
+        navigator, and knowing its exact shape saves a lot of guessing:
+      </p>
+      <ul>
+        <li>Segments are separated by <code>.</code> — <code>data.customer.email</code>.</li>
+        <li>A segment may be followed by <code>[n]</code> to index into an array —
+            <code>items[0]</code>, <code>rows[12]</code>.</li>
+        <li>Indices are whole numbers only. There are <strong>no</strong> wildcards, filters, slices,
+            recursive descent or string-key brackets.</li>
+        <li>There is <strong>no leading <code>$</code></strong>. Writing <code>$.data.items</code>
+            makes the navigator look for a property literally named <code>$</code> and find nothing.</li>
+        <li>Every segment must resolve through an <strong>object</strong>. A path cannot begin by
+            indexing a document whose root is an array: <code>[0].name</code> finds nothing, because
+            the first step has no property name to follow.</li>
+      </ul>
+
+      <h3>Worked examples</h3>
+      <p>
+        A paged HTTP response, and the two extractions you almost always want from one — the array to
+        loop over, and a cursor to decide whether to poll again:
+      </p>
+      <pre><code><span class="tok-comment">// inputJson — {{ $node.httpRequest-1.output.body }}</span>
+{
+  <span class="tok-str">"data"</span>: {
+    <span class="tok-str">"items"</span>: [
+      { <span class="tok-str">"id"</span>: <span class="tok-num">4711</span>, <span class="tok-str">"email"</span>: <span class="tok-str">"ada@example.com"</span>, <span class="tok-str">"state"</span>: <span class="tok-str">"open"</span> },
+      { <span class="tok-str">"id"</span>: <span class="tok-num">4712</span>, <span class="tok-str">"email"</span>: <span class="tok-str">"grace@example.com"</span>, <span class="tok-str">"state"</span>: <span class="tok-str">"closed"</span> }
+    ],
+    <span class="tok-str">"nextCursor"</span>: <span class="tok-str">"eyJwYWdlIjoyfQ"</span>
+  }
+}
+
+<span class="tok-comment">// jsonPath: data.items         -> the whole array, ready for a For Loop</span>
+<span class="tok-comment">// jsonPath: data.nextCursor    -> "eyJwYWdlIjoyfQ"</span>
+<span class="tok-comment">// jsonPath: data.items[0].email-> "ada@example.com"</span>
+<span class="tok-comment">// jsonPath: data.items[9].id   -> nothing: index out of range, the node fails</span>
+<span class="tok-comment">// jsonPath: $.data.items       -> nothing: no property named "$"</span></code></pre>
+
+      <p>
+        A Database Query result, where the useful value is one field of one row — a shape worth
+        recognising because the rows array is nested inside the node's result object:
+      </p>
+      <pre><code><span class="tok-comment">// inputJson — {{ $node.dbQuery-1.output.result }}</span>
+{ <span class="tok-str">"rows"</span>: [ { <span class="tok-str">"id"</span>: <span class="tok-num">88</span>, <span class="tok-str">"owner"</span>: <span class="tok-str">"team-a"</span> } ], <span class="tok-str">"rowCount"</span>: <span class="tok-num">1</span> }
+
+<span class="tok-comment">// jsonPath: rowCount        -> 1</span>
+<span class="tok-comment">// jsonPath: rows[0].owner   -> "team-a"</span></code></pre>
+
+      <p>
+        And a mailbox poll, where the whole point is to reach into the first message:
+      </p>
+      <pre><code><span class="tok-comment">// inputJson — {{ $node.imapFetch-1.output.result }}</span>
+{ <span class="tok-str">"messages"</span>: [ { <span class="tok-str">"subject"</span>: <span class="tok-str">"Invoice 2026-114"</span>, <span class="tok-str">"from"</span>: <span class="tok-str">"billing@example.com"</span> } ], <span class="tok-str">"count"</span>: <span class="tok-num">1</span> }
+
+<span class="tok-comment">// jsonPath: messages[0].subject -> "Invoice 2026-114"</span>
+<span class="tok-comment">// jsonPath: count               -> 1</span></code></pre>
+
+      <p>
+        A path that selects nothing is an error, not an empty result. That is usually what you want —
+        a renamed field in an upstream API stops the run at the node that noticed, instead of letting
+        a null travel three nodes further and fail somewhere confusing.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>inputJson</code></td><td>string</td>
+              <td><span class="kg-pill is-danger">Yes</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The document to query. A JSON string is parsed; a structured value is used as-is; anything else becomes a string literal.</td>
+            </tr>
+            <tr>
+              <td><code>jsonPath</code></td><td>string</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td>A literal dotted path with optional <code>[n]</code> indices. No <code>$</code> prefix, no wildcards.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><code>success</code></td><td>object</td><td>The path resolved. Carries the selected value.</td></tr>
+            <tr><td><code>error</code></td><td>string</td><td>The input or the path was missing, or the path selected nothing.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Transform has no executor in this build</span>
+        <p>
+          No task implementation is registered for the <code>transform</code> type, so a run that
+          reaches one <strong>fails the node</strong> with <code>No task implementation registered for
+          type 'transform'.</code> The failure is loud and journalled, but it happens at run time —
+          the workflow publishes and validates cleanly. Until that changes, do the extraction inline
+          with a <code>{{ }}</code> expression on the consuming node's parameter, or in an
+          <strong>Inline Code</strong> node when the reshaping is more than a single lookup.
+        </p>
+      </div>
+
+      <h2>Merge</h2>
+      <p>
+        <code>merge</code> · Data · timeout <code>10</code>
+      </p>
+      <p>
+        Combines two arrays into one. Reach for it after a fan-out where two branches each produced a
+        list and the continuation wants a single collection to iterate — results from two pages, two
+        regions, two systems.
+      </p>
+      <p>
+        Both inputs are expression-enabled strings, which in practice means each holds a reference to
+        an upstream array. Neither is required, so a node with one side wired is accepted rather than
+        rejected. There is no key matching, no de-duplication and no field-level joining: this is
+        concatenation, and two records describing the same entity stay two records.
+      </p>
+      <p>
+        When you need a genuine join — matching on an id, merging fields, de-duplicating — use
+        <strong>Inline Code</strong>, where the rule can be written explicitly. For the common case of
+        collecting the outputs of several branches that all ran, <strong>Join</strong> is the better
+        fit: it waits for the branches and returns them in order, with nothing to configure.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>array1</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The first array, normally a reference to an upstream output.</td>
+            </tr>
+            <tr>
+              <td><code>array2</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The second array. Appended after the first; order is preserved.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><code>success</code></td><td>array</td><td>The combined array.</td></tr>
+            <tr><td><code>error</code></td><td>string</td><td>An input could not be read as an array.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Merge has no executor in this build</span>
+        <p>
+          As with Transform and Switch, no task implementation is registered for the
+          <code>merge</code> type, and a run reaching one fails with <code>No task implementation
+          registered for type 'merge'.</code> Concatenate in an <strong>Inline Code</strong> node, or
+          restructure the graph so a <strong>Join</strong> collects the branches instead.
+        </p>
+      </div>
+
+      <h2>Resource Picker</h2>
+      <p>
+        <code>resourcePicker</code> · Data · timeout <code>30</code> ·
+        capabilities <code>network</code>, <code>credentials</code> · retried automatically
+      </p>
+      <p>
+        Lets you choose a value from a live list on a remote system while you are editing, and then
+        emits that choice at run time. Reach for it when a workflow needs a specific project, queue,
+        folder or mailbox and you would otherwise paste an opaque identifier into three different
+        nodes and hope it stays correct. Pick it once, promote the result to a workflow variable, and
+        reference the variable everywhere.
+      </p>
+      <p>
+        The value it emits is not a stored copy. At run time the node <strong>re-resolves</strong> the
+        saved stable key against the current list, so the value and label that reach the rest of the
+        workflow are fresh. That is the whole design: a resource that has been deleted, renamed or has
+        become ambiguous <strong>fails the node closed</strong>, with a message naming the problem,
+        rather than passing a stale identifier to a system that will do something unexpected with it.
+      </p>
+      <p>
+        It fails closed for configuration too. No server configuration selected, no collection path,
+        or nothing picked each stop the node with an explicit message before any request is made.
+        Because its side effect is idempotent and its recovery mode asks for retry, a transient
+        network failure is retried automatically — up to three attempts, two seconds apart, doubling.
+      </p>
+      <p>
+        <code>labelField</code> and <code>valueField</code> tell the loader which fields of each
+        record to show and to store. They default to <strong><code>name</code></strong> and
+        <strong><code>id</code></strong> respectively when left empty, which fits most REST
+        collections. As everywhere else, the form shows them blank rather than pre-filled.
+      </p>
+      <p>
+        None of its parameters accept expressions. The point of the node is a choice made at design
+        time against a real list; a computed path would defeat the picker and the design-time
+        validation that comes with it.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>serverConfigId</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Which configured server to query. Not flagged required in the manifest, but the node fails without it.</td>
+            </tr>
+            <tr>
+              <td><code>path</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>The collection endpoint to list. Also required in practice.</td>
+            </tr>
+            <tr>
+              <td><code>labelField</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Field shown in the picker. Defaults to <code>name</code>.</td>
+            </tr>
+            <tr>
+              <td><code>valueField</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Field stored as the stable key. Defaults to <code>id</code>.</td>
+            </tr>
+            <tr>
+              <td><code>selection</code></td><td>resourceLocator</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>The chosen resource, held as a stable key plus a display label. Empty means the node fails with "nothing selected".</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td>The declared port, and the one the canvas draws a handle for.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The values themselves are exposed as three named fields, which is what you reference from
+        another node's parameter:
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>value</code></td><td>The stable key — the identifier to send to the remote system.</td></tr>
+            <tr><td><code>label</code></td><td>The display name, for logs and notifications.</td></tr>
+            <tr><td><code>record</code></td><td>Both of the above in one object, for a node that wants the whole pick.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code>{{ $node.resourcePicker-1.output.value }}
+{{ $node.resourcePicker-1.output.label }}</code></pre>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Reference the fields, do not rely on the wire</span>
+        <p>
+          The node's declared port is <code>result</code>, but the values it publishes are named
+          <code>value</code>, <code>label</code> and <code>record</code>. An edge drawn from
+          <code>result</code> into a downstream input therefore carries nothing — the port name and
+          the field names do not meet. Wire the edge for ordering if you like, but read the value with
+          an explicit <code>{{ $node.&lt;id&gt;.output.value }}</code> expression, or promote it to a
+          workflow variable and use that.
+        </p>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="nodes-overview.html">
+          <div class="kg-card-title">How to read this reference</div>
+          <div class="kg-card-desc">Parameter types, expression flags, ports, capabilities and retries.</div>
+        </a>
+        <a class="kg-card" href="nodes-logic.html">
+          <div class="kg-card-title">Logic nodes</div>
+          <div class="kg-card-desc">Branching on the value you just extracted, and looping over the array.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

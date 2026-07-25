@@ -164,6 +164,22 @@ $wwwroot = Join-Path $appOut 'wwwroot'
 New-Item -ItemType Directory -Force -Path $wwwroot | Out-Null
 Copy-Item -Path (Join-Path $dist '*') -Destination $wwwroot -Recurse -Force
 
+# 4a. Drop the offline help in alongside it, at wwwroot/help. The help is hand-written static
+#     HTML with no build step, so this is a straight copy — and because it lands inside wwwroot
+#     the existing static-file middleware serves it at /help with no backend wiring. Its assets
+#     are not content-hashed, so the middleware's default "no-cache" (everything outside /assets)
+#     is the correct policy for them.
+$helpSrc = Join-Path $root 'help'
+if (Test-Path (Join-Path $helpSrc 'index.html')) {
+    Write-Host '-> Copying offline help into wwwroot/help...' -ForegroundColor Yellow
+    $helpOut = Join-Path $wwwroot 'help'
+    New-Item -ItemType Directory -Force -Path $helpOut | Out-Null
+    Copy-Item -Path (Join-Path $helpSrc '*') -Destination $helpOut -Recurse -Force
+}
+else {
+    Write-Host 'WARNING: help/index.html not found — the build will ship without offline help.' -ForegroundColor Yellow
+}
+
 # 4b. Sign the app executables now — before the zip and installer bundle them, so both the zero-install
 #     zip and the installed app carry signed binaries. No-op unless a certificate was supplied.
 Invoke-Sign @(

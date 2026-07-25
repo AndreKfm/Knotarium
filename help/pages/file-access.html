@@ -1,0 +1,333 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The File Access screen. Controls and labels from Frontend/src/components/FileAccessSetting.tsx;
+  enforcement semantics and deny messages from Features/Nodes/FileAccessGuard.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File access · Knotarium Help</title>
+<meta name="description" content="Deny-by-default directory grants for the file nodes, the free-space reserve for writes, the total-access escape hatch, and the one-click grant from a failed run.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="file-access.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>File access</h1>
+      <p class="kg-lead">
+        <span class="kg-path">Settings &rsaquo; File Access</span> decides which directories the File Read
+        and File Write nodes may touch. On a fresh instance the answer is none — every file operation is
+        denied until an administrator grants a path. This page covers granting subtrees, the free-space
+        reserve that stops a workflow filling a drive, the escape hatch you should think twice about, and
+        the one-click remediation offered when a run fails on a denial.
+      </p>
+
+      <h2>Deny by default</h2>
+      <p>
+        The policy is instance-global and consulted before any input or output. With no grants and total
+        access off, the card shows a grey advisory reading <em>No paths granted and total access off —
+        every File Read / File Write will fail until you allow a path</em>, and that is exactly what
+        happens. A run reaching a file node gets a denial naming the path it attempted.
+      </p>
+      <p>
+        This is not the same kind of control as the switches on
+        <a href="capabilities.html">Capabilities</a>. There is no coarse "filesystem on/off" toggle,
+        precisely because granting one directory at a time is a better control than granting all of them
+        at once. The two filesystem capability tags a node declares are enforced here rather than there.
+      </p>
+
+      <h2>Granting a path</h2>
+      <p>
+        Under <em>Permitted paths</em>, press <strong>Add path</strong> to create a row. Each row is an
+        absolute directory path and a mode chosen from a dropdown: <strong>Read</strong>,
+        <strong>Write</strong>, or <strong>Read &amp; write</strong>. A grant covers the directory and
+        everything beneath it, recursively — you do not enumerate subfolders. A trash-can button on the
+        right removes a row.
+      </p>
+      <p>
+        Rows are edited freely and nothing is enforced until you press <strong>Save policy</strong>. The
+        button stays disabled while the form matches what is stored, and the card says <em>No changes</em>
+        beside it; after a successful save it says <em>Saved</em>. Rows whose path is blank are dropped on
+        save rather than stored as empty grants.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Mode</th><th>Satisfies</th></tr></thead>
+          <tbody>
+            <tr><td>Read</td><td>File Read only.</td></tr>
+            <tr><td>Write</td><td>File Write only.</td></tr>
+            <tr><td>Read &amp; write</td><td>Both.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        A request is always exactly one of read or write, and a grant carrying both modes satisfies either.
+        Grants are evaluated as a set: if any rule's root contains the target with the right mode, the
+        operation proceeds. There is no ordering and no deny rule — you cannot carve an exception out of a
+        granted subtree.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Grant the narrowest directory that works</span>
+        <p>
+          Because a grant is recursive and there is no way to exclude a subfolder, the directory you name
+          is the whole of what you have given away. Granting <code>C:\jobs\inbox</code> is a very different
+          decision from granting <code>C:\</code>, and the interface will happily accept either.
+        </p>
+      </div>
+
+      <h2>What the server enforces</h2>
+      <p>
+        The card's own description is accurate: path traversal and symlink escapes are blocked
+        server-side, so a workflow can never reach outside a granted directory by manipulating its path.
+        The specifics are worth knowing because they explain denials that can otherwise look wrong:
+      </p>
+      <ul>
+        <li>
+          <strong>Relative paths are refused outright</strong> in enforced mode, with a message naming the
+          path. They are not resolved against the working directory, because that directory is not
+          something a grant can be reasoned about against.
+        </li>
+        <li>
+          <strong>Textual <code>..</code> is collapsed</strong> before any comparison, so a path that
+          climbs out of a granted root is measured where it actually lands.
+        </li>
+        <li>
+          <strong>Symlinks and junctions are resolved</strong> along the whole existing prefix of the
+          path — not just its last component — so a reparse point buried in the middle with real
+          directories below it is still followed to its true target.
+        </li>
+        <li>
+          <strong>A write target that does not exist yet is still checked</strong>, by walking up to the
+          nearest existing ancestor, resolving that ancestor completely, then re-appending the missing
+          tail.
+        </li>
+        <li>
+          <strong>Resolution is fail-closed.</strong> A path whose real location cannot be determined — an
+          unresolvable reparse point, a link cycle, an I/O error — is denied rather than trusted as
+          written.
+        </li>
+        <li>
+          <strong>The boundary test is exact.</strong> A sibling directory such as <code>C:\data-evil</code>
+          never matches a grant on <code>C:\data</code>, and a path on a different volume is rejected.
+        </li>
+      </ul>
+      <p>
+        A grant whose own path is malformed simply grants nothing, rather than failing the save or
+        widening the policy.
+      </p>
+
+      <h3>The deny messages</h3>
+      <p>
+        Denials are specific about which of the checks refused, which is the fastest way to tell a
+        misconfiguration from a genuine block:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Situation</th><th>What the run reports</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Nothing granted yet</td>
+              <td>The path is not permitted (nothing is granted yet), and an administrator must grant it under Settings &rsaquo; File Access.</td>
+            </tr>
+            <tr>
+              <td>Outside every grant</td>
+              <td>The path is outside every permitted directory.</td>
+            </tr>
+            <tr>
+              <td>Inside a grant, wrong mode</td>
+              <td>The path is within a grant that does not permit reading — or writing.</td>
+            </tr>
+            <tr>
+              <td>Relative path supplied</td>
+              <td>Only absolute paths are allowed, quoting what was given.</td>
+            </tr>
+            <tr>
+              <td>Free-space reserve would be breached</td>
+              <td>The write would leave a stated amount free on the drive, below the required reserve.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The distinction between "outside every permitted directory" and "within a grant that does not
+        permit writing" is the useful one. The second means your path is right and only the mode is wrong,
+        which is usually a one-dropdown fix.
+      </p>
+
+      <h2>The free-space reserve</h2>
+      <p>
+        Under <em>Free-space reserve (writes)</em> there are two fields, <strong>Minimum free
+        (MB)</strong> and <strong>Minimum free (%)</strong>. A write is blocked if it would drop the
+        target drive below the reserve. Leave a field blank for no reserve on that dimension; leave both
+        blank and no capacity check runs at all.
+      </p>
+      <p>
+        When both are set, <strong>both apply and the stricter wins</strong> — the effective reserve is
+        the larger of the absolute figure and the percentage of the drive's total size. This matters when
+        the same policy covers drives of very different sizes: a percentage scales, a fixed figure does
+        not, and taking the larger means neither can be used to sneak past the other.
+      </p>
+      <p>
+        The arithmetic accounts for overwrites. On an append, the full number of bytes is charged against
+        free space. On an overwrite, the existing file's bytes are reclaimed, so only the net growth needs
+        headroom — writing a 10 MB file over an existing 9 MB one needs 1 MB, not 10. If the existing
+        file's size cannot be read, the write is treated as fresh, which is the conservative direction.
+      </p>
+      <p>
+        The percentage field is bounded to 0–100 in the interface and the megabyte field to non-negative
+        values. Both are stored in the same policy record as the grants, so a single save writes them
+        together.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">This is not the disk-space guard</span>
+        <p>
+          The reserve here stops one node's write. It is a different mechanism from the free-space floor on
+          <span class="kg-path">Settings &rsaquo; Retention</span>, which watches the volume holding the
+          database and disarms the whole runtime when it runs low. Both are useful and they protect
+          different things — see <a href="retention.html">Retention and disk space</a>.
+        </p>
+      </div>
+
+      <h2>Total access</h2>
+      <p>
+        At the top of the card is a checkbox labelled <strong>Total access (unrestricted)</strong>,
+        described as letting file nodes read and write anywhere on the host and overriding the path grants
+        below. Switching it on is gated: a modal appears headed <em>Grant total file access?</em>,
+        explaining that every workflow — including imported and generated ones — will be able to read and
+        write any file the host can reach, and offering <strong>Cancel</strong> or <strong>Enable total
+        access</strong>. Switching it off again is immediate and needs no confirmation.
+      </p>
+      <p>
+        While it is on, the path-grant list is hidden entirely, because it no longer has any effect, and an
+        amber banner sits in its place restating what is in force.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Why this is a bad idea</span>
+        <p>
+          Total access removes the only per-path control the product has. Every workflow on the instance
+          can then read anything the host account can read — including the SQLite database itself, the
+          <code>.credential-key</code> file that decrypts every stored secret, and the configuration files
+          — and write anywhere it can write, including over the application's own binaries. Combined with
+          code execution being enabled, it is a complete loss of the file boundary. The confirmation text
+          is honest when it says to only leave this on for a trusted single-operator instance.
+        </p>
+      </div>
+      <p>
+        Two things survive total access, and they are worth knowing so you do not mistake them for the
+        boundary still holding. Relative paths become allowed again, resolved against the working
+        directory. And the free-space reserve is still enforced on writes, so a runaway workflow still
+        cannot fill the disk. Everything else is open.
+      </p>
+      <p>
+        If you turned it on to get past a denial, the better fix is almost always a narrow grant. The
+        remediation flow below exists to make that the path of least resistance.
+      </p>
+
+      <h2>Fixing a denial from the run that hit it</h2>
+      <p>
+        When a run fails on a file-access denial, the run inspector shows a remediation card underneath
+        the failure — placed after it deliberately, so the panel reads cause then fix. The card is headed
+        <strong>How to fix</strong>, explains that file access is sandboxed and that this location must be
+        added to File Access to let the node read or write there, and shows the exact path in a code chip.
+      </p>
+      <p>
+        Two actions sit below it:
+      </p>
+      <ul>
+        <li>
+          <strong>Grant access in File Access settings</strong> queues the path and switches straight to
+          <span class="kg-path">Settings &rsaquo; File Access</span>. The screen opens on that section
+          rather than its usual landing section, and the path is already added as a new row with the mode
+          preset to <strong>Write</strong>. It is appended after the form takes its baseline snapshot, so
+          the form reads as changed and <strong>Save policy</strong> is enabled with the suggestion sitting
+          there for you to review.
+        </li>
+        <li>
+          <strong>Copy path</strong> puts the same path on the clipboard and briefly changes its own label
+          to <em>Copied</em>. Useful when you want to grant a parent directory instead, or check the path
+          against what you expected before granting anything.
+        </li>
+      </ul>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The pre-filled row is a suggestion, not a decision</span>
+        <p>
+          Nothing is granted until you press Save. Read the row before you do. The suggested path is the
+          exact file or directory the node attempted, and the suggested mode is Write regardless of which
+          node failed — so a File Read denial arrives pre-filled with a write grant you almost certainly
+          want to change to Read. Editing the path to a sensible parent directory before saving is normal
+          and expected.
+        </p>
+      </div>
+      <p>
+        The queued path is consumed once. Arriving at the screen clears it, so navigating away and back
+        does not re-add the row, and it will not silently reappear in a later session. If a row with that
+        exact path already exists in the policy, nothing is added.
+      </p>
+
+      <h2>Where the policy lives</h2>
+      <p>
+        The policy is stored in the database as a single application setting containing the total-access
+        flag, the list of rules and the two reserve figures. Like the capability policy, it has no
+        <code>appsettings.json</code> counterpart — you cannot pre-seed it for an unattended install, and
+        there is no configuration key to inspect when diagnosing a denial. An unset or unparseable value is
+        treated as the secure default: nothing permitted, no reserve.
+      </p>
+      <p>
+        The guard fetches the live policy on every check, so a saved change applies to the next file
+        operation with no restart and no cache to wait out. Revoking a grant stops the next write just as
+        promptly as adding one enables it.
+      </p>
+      <p>
+        Because the policy is stored as an application setting, it travels in a backup along with
+        everything else in that table — restoring an instance restores its file grants. See
+        <a href="backup-restore.html">Backup and restore</a>.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="capabilities.html">
+          <div class="kg-card-title">Capabilities</div>
+          <div class="kg-card-desc">The coarse switches for the privileged capabilities that have no per-resource policy.</div>
+        </a>
+        <a class="kg-card" href="retention.html">
+          <div class="kg-card-title">Retention and disk space</div>
+          <div class="kg-card-desc">The other free-space control — the floor that disarms the runtime instead of one write.</div>
+        </a>
+        <a class="kg-card" href="security.html">
+          <div class="kg-card-title">Security model</div>
+          <div class="kg-card-desc">How the file guard resolves paths, and the one race it accepts rather than closes.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,699 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The node package format and lifecycle. Field names come from
+  Backend/Knotarium.Core/Domain/NodePackageManifest.cs; the merge/precedence rules from
+  Backend/Knotarium.Api/DbNodePackageManifestProvider.cs; install/publish from
+  Backend/Knotarium.Api/Endpoints/NodePackageEndpoints.cs; the disk loader from
+  Backend/Knotarium.NodeRuntime/NodePackageWatcher.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom node packages · Knotarium Help</title>
+<meta name="description" content="The node package manifest schema, writing a C# executor, installing and publishing, how the catalog merges built-in, binary and database packages, signing, and the plugin and watch folders.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="custom-packages.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Custom node packages</h1>
+      <p class="kg-lead">
+        A node package is a manifest plus, optionally, an executor. The manifest declares what the node
+        is called, which parameters it exposes, which sockets it has and which capabilities it needs;
+        the executor is the C# that runs. This page is the reference for that format and for the three
+        different routes a package can take into a running instance — the in-app editor, a signed
+        install, and a compiled assembly dropped into a watched folder.
+      </p>
+
+      <h2>The three kinds of package</h2>
+      <p>
+        Everything in the palette comes from one of three sources, and knowing which one you are
+        looking at explains most surprises:
+      </p>
+      <ul>
+        <li><strong>Built-in.</strong> Compiled into the product and served from an in-memory provider.
+            The authoritative list lives in
+            <code>Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs</code> —
+            the manifests under the repository's <code>nodes/</code> folder are a stale second copy and
+            should not be trusted as documentation.</li>
+        <li><strong>Binary.</strong> A <code>.dll</code> plus a companion <code>manifest.json</code>,
+            loaded from disk at startup into an in-memory executor registry.</li>
+        <li><strong>Custom.</strong> A manifest, and for the compiled tier a block of C# source, stored
+            as rows in the database. This is what the node editor and the install endpoint write.</li>
+      </ul>
+
+      <h2>Tiers</h2>
+      <p>
+        The manifest's <code>tier</code> decides how the node executes. Three values exist:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Tier</th><th>What runs</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Declarative</code></td>
+              <td>A shared built-in executor interprets the manifest. No compilation, no privileged capability required. This is the tier the built-in nodes use.</td>
+            </tr>
+            <tr>
+              <td><code>Compiled</code></td>
+              <td>The package's C# source is compiled with Roslyn on first use and cached. Gated on the <strong>code execution</strong> capability, and routed through the process sandbox when one is configured.</td>
+            </tr>
+            <tr>
+              <td><code>Interpreted</code></td>
+              <td>Reserved for the OpenAPI importer's generated <code>openapi.*</code> nodes, which all route to one pre-compiled interpreter. You do not author this tier by hand.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A tier the runtime does not recognise is refused rather than treated as compiled C#, so a
+        typo here fails loudly.
+      </p>
+
+      <h2>The manifest schema</h2>
+      <p>
+        Manifests are deserialized case-insensitively with camel-cased property names and string enum
+        values, so <code>displayName</code> and <code>DisplayName</code> both bind, and
+        <code>tier: Compiled</code> and <code>tier: compiled</code> are both accepted by the backend.
+        The in-app editor is stricter — see the note at the end of this section.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>id</code></td><td>string</td><td>required</td>
+              <td>The node type. Dotted lower-case by convention. This is the identity the palette, the compiler and the catalog merge all key on.</td>
+            </tr>
+            <tr>
+              <td><code>version</code></td><td>string</td><td>required</td>
+              <td>Free-form version string. Ordered semantically when it parses as a .NET version, ordinally otherwise — which means a pre-release suffix such as <code>1.0.0-rc.1</code> sorts as text.</td>
+            </tr>
+            <tr>
+              <td><code>displayName</code></td><td>string</td><td>required</td>
+              <td>The palette and canvas label.</td>
+            </tr>
+            <tr>
+              <td><code>category</code></td><td>string</td><td>required</td>
+              <td>The palette section. The canvas palette has sections for Trigger, Logic, Data, Network, Ai and Utility; a category outside that set still stores fine but has no section of its own.</td>
+            </tr>
+            <tr>
+              <td><code>tier</code></td><td>enum</td><td>required</td>
+              <td><code>Declarative</code>, <code>Compiled</code> or <code>Interpreted</code>.</td>
+            </tr>
+            <tr>
+              <td><code>sideEffectKind</code></td><td>enum</td><td><code>NonIdempotentSideEffect</code></td>
+              <td><code>IdempotentSideEffect</code> or <code>NonIdempotentSideEffect</code>. Declares whether running the node twice is harmless — the honest answer here is what makes replay and automatic retry safe.</td>
+            </tr>
+            <tr>
+              <td><code>recoveryMode</code></td><td>enum</td><td>from the document</td>
+              <td><code>RetryAutomatically</code> or <code>FailImmediately</code>.</td>
+            </tr>
+            <tr>
+              <td><code>defaultTimeoutSeconds</code></td><td>integer</td><td><code>0</code></td>
+              <td>Per-execution timeout handed to the sandbox runner for compiled nodes.</td>
+            </tr>
+            <tr>
+              <td><code>capabilities</code></td><td>string array</td><td>empty</td>
+              <td>The privileges the node claims. See the capability table below.</td>
+            </tr>
+            <tr>
+              <td><code>parameters</code></td><td>array</td><td>empty</td>
+              <td>Configuration fields shown in the properties panel. Detailed below.</td>
+            </tr>
+            <tr>
+              <td><code>outputs</code></td><td>array</td><td>empty</td>
+              <td>The node's output sockets. An empty list means the node has nowhere to connect onward.</td>
+            </tr>
+            <tr>
+              <td><code>inputs</code></td><td>array</td><td>empty</td>
+              <td>Typed data inputs consumed from upstream, distinct from configuration parameters. Declaring required fields opts the node into compile-time field checking against the producing output's schema.</td>
+            </tr>
+            <tr>
+              <td><code>retryPolicy</code></td><td>object</td><td>a default policy</td>
+              <td>Omitted means the default policy is applied, not that retries are disabled. Fields below.</td>
+            </tr>
+            <tr>
+              <td><code>triggerOnly</code></td><td>boolean</td><td><code>false</code></td>
+              <td>The node can only start a workflow; it is not placeable mid-graph.</td>
+            </tr>
+            <tr>
+              <td><code>secondary</code></td><td>boolean</td><td><code>false</code></td>
+              <td>Editor hint: an escape-hatch node. See below.</td>
+            </tr>
+            <tr>
+              <td><code>description</code></td><td>string</td><td>null</td>
+              <td>A one-line summary. Surfaced to AI workflow generation so a model can map an intent onto the right node — display name and category alone are ambiguous across vendor packs.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Parameters</h3>
+      <p>
+        A parameter is a configuration field, not a data socket. The properties panel renders one
+        editor per parameter, in manifest order.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>string</td><td>The key the executor reads out of <code>NodeInput.Parameters</code>, and the label shown above the field.</td></tr>
+            <tr><td><code>type</code></td><td>string</td><td>Which editor to render. See the type list below.</td></tr>
+            <tr><td><code>required</code></td><td>boolean</td><td>Renders a red asterisk beside the label.</td></tr>
+            <tr><td><code>expression</code></td><td>boolean</td><td>Advertises that the field accepts <code>{{ … }}</code> expressions, and shows the hint under it.</td></tr>
+            <tr><td><code>values</code></td><td>string array</td><td>The options, for <code>enum</code>.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>A hint line rendered under the field.</td></tr>
+            <tr><td><code>optionsLoader</code></td><td>string</td><td>For <code>dynamicOptions</code> and <code>resourceLocator</code>: the server-side loader to call. Loaders are allow-listed by name.</td></tr>
+            <tr><td><code>integrationType</code></td><td>string</td><td>The endpoint namespace the loader lives under.</td></tr>
+            <tr><td><code>dependsOn</code></td><td>string array</td><td>Sibling parameter names whose current values are passed to the loader.</td></tr>
+            <tr><td><code>loaderConfig</code></td><td>string map</td><td>Static loader configuration, for example a path or a label field. <code>connectionParam</code> names the sibling holding the connection id.</td></tr>
+            <tr><td><code>allowManualEntry</code></td><td>boolean</td><td>Permits free text when the remote system is unreachable at design time.</td></tr>
+            <tr><td><code>multiple</code></td><td>boolean</td><td>Stores an order-preserving array of keys instead of a single value.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The property form renders these types: <code>string</code>, <code>number</code>,
+        <code>boolean</code>, <code>enum</code>, <code>credentialRef</code>,
+        <code>notificationChannelRef</code>, <code>code</code>, <code>keyValue</code>,
+        <code>dynamicOptions</code>, <code>resourceLocator</code>, <code>dynamicFields</code>,
+        <code>agentTools</code> and <code>aiModel</code>. An unrecognised type falls back to the string
+        editor rather than failing.
+      </p>
+
+      <h3>Outputs, inputs and field schemas</h3>
+      <p>
+        An output has a <code>name</code>, an optional <code>type</code> defaulting to <code>any</code>,
+        and an optional <code>fields</code> list. An input has the same three. A field schema entry has
+        <code>name</code>, <code>type</code> (default <code>any</code>) and <code>required</code>
+        (default false).
+      </p>
+      <p>
+        Leaving <code>type</code> as <code>any</code> is the compatible choice: untyped sockets never
+        trigger type-mismatch warnings. Declaring concrete types and required fields is opting in to
+        compile-time checking, where the compiler verifies that a downstream node's required fields are
+        actually delivered by whatever is wired into it.
+      </p>
+
+      <h3>Retry policy</h3>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Default</th></tr></thead>
+          <tbody>
+            <tr><td><code>maxAttempts</code></td><td><code>3</code></td></tr>
+            <tr><td><code>initialDelaySeconds</code></td><td><code>2</code></td></tr>
+            <tr><td><code>backoffRate</code></td><td><code>2.0</code></td></tr>
+            <tr><td><code>jitter</code></td><td><code>true</code></td></tr>
+            <tr><td><code>maxDelaySeconds</code></td><td><code>30</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Capabilities</h3>
+      <p>
+        Capability strings are both documentation and enforcement. The draft test runner fails a case
+        that invokes a capability the manifest did not declare, and the import flow warns before
+        installing a workflow containing a node that claims a security-sensitive one.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Capability</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>filesystem.read</code></td><td>Reads local files, enforced against the file-access policy.</td></tr>
+            <tr><td><code>filesystem.write</code></td><td>Writes local files, enforced against the same policy.</td></tr>
+            <tr><td><code>code.execute</code></td><td>Executes arbitrary code on the host. The highest privilege, and off by default.</td></tr>
+            <tr><td><code>database</code></td><td>Runs arbitrary database queries. Off by default.</td></tr>
+            <tr><td><code>aiAgent</code></td><td>Runs an LLM tool-use loop that can invoke other workflows. Off by default.</td></tr>
+            <tr><td><code>network</code></td><td>Makes outbound network calls. An informal tag rather than a hard gate.</td></tr>
+            <tr><td><code>credentials</code></td><td>Resolves stored secrets. Also an informal tag.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The draft sandbox records three names when it observes them — <code>logging</code>,
+        <code>http</code> and <code>credentials</code> — so a package whose executor logs must declare
+        <code>logging</code>, and one that sends a request must declare <code>http</code>, even though
+        neither string appears in the table above. Declare both the runtime capability and the tag the
+        sandbox records.
+      </p>
+
+      <h3>The <code>secondary</code> flag</h3>
+      <p>
+        <code>secondary: true</code> marks a node as a de-emphasized escape hatch. The palette pulls
+        every such node out of its normal category and into a single <strong>Advanced</strong> section,
+        which is <strong>collapsed by default</strong> and rendered last. Use it when your package
+        offers both a friendly block and a raw one and you want the friendly one to be the obvious
+        choice; a user who wants the raw block can still find it, but will not trip over it.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The in-app editor reads a smaller schema</span>
+        <p>
+          The node editor's sandbox parser ignores properties it does not recognise, and it spells two
+          of them differently: it reads <code>sideEffectKindName</code> and
+          <code>recoveryModeName</code>, not <code>sideEffectKind</code> and <code>recoveryMode</code>.
+          The scaffolded templates use the short spellings, so those two lines are silently discarded
+          during a draft test run and the defaults apply instead. Separately, the editor's own YAML
+          reader drops every field except id, version, displayName, category, tier and parameters when
+          it publishes. Both behaviours are covered in detail on
+          <a href="node-editor.html">The node editor</a>; the practical consequence is that a manifest
+          which must be complete should not be authored there.
+        </p>
+      </div>
+
+      <h2>A complete manifest</h2>
+      <p>
+        The following is a full manifest for a compiled package with two parameters, two outputs, a
+        typed input, an explicit retry policy, and the palette flags set. As JSON this is exactly what
+        goes in a binary package's <code>manifest.json</code> or in the <code>manifestJson</code> field
+        of an install request:
+      </p>
+
+      <pre><code>{
+  <span class="tok-str">"id"</span>: <span class="tok-str">"acme.invoice.submit"</span>,
+  <span class="tok-str">"version"</span>: <span class="tok-str">"1.2.0"</span>,
+  <span class="tok-str">"displayName"</span>: <span class="tok-str">"Submit Invoice"</span>,
+  <span class="tok-str">"category"</span>: <span class="tok-str">"Network"</span>,
+  <span class="tok-str">"tier"</span>: <span class="tok-str">"Compiled"</span>,
+  <span class="tok-str">"description"</span>: <span class="tok-str">"Posts an invoice to the Acme billing API and returns the receipt id."</span>,
+  <span class="tok-str">"sideEffectKind"</span>: <span class="tok-str">"NonIdempotentSideEffect"</span>,
+  <span class="tok-str">"recoveryMode"</span>: <span class="tok-str">"FailImmediately"</span>,
+  <span class="tok-str">"defaultTimeoutSeconds"</span>: <span class="tok-num">60</span>,
+  <span class="tok-str">"secondary"</span>: <span class="tok-num">false</span>,
+  <span class="tok-str">"triggerOnly"</span>: <span class="tok-num">false</span>,
+  <span class="tok-str">"capabilities"</span>: [<span class="tok-str">"logging"</span>, <span class="tok-str">"http"</span>, <span class="tok-str">"network"</span>, <span class="tok-str">"credentials"</span>],
+  <span class="tok-str">"parameters"</span>: [
+    {
+      <span class="tok-str">"name"</span>: <span class="tok-str">"endpoint"</span>,
+      <span class="tok-str">"type"</span>: <span class="tok-str">"string"</span>,
+      <span class="tok-str">"required"</span>: <span class="tok-num">true</span>,
+      <span class="tok-str">"expression"</span>: <span class="tok-num">true</span>,
+      <span class="tok-str">"description"</span>: <span class="tok-str">"Absolute URL of the billing endpoint."</span>
+    },
+    {
+      <span class="tok-str">"name"</span>: <span class="tok-str">"apiKey"</span>,
+      <span class="tok-str">"type"</span>: <span class="tok-str">"credentialRef"</span>,
+      <span class="tok-str">"required"</span>: <span class="tok-num">true</span>,
+      <span class="tok-str">"expression"</span>: <span class="tok-num">false</span>
+    }
+  ],
+  <span class="tok-str">"inputs"</span>: [
+    {
+      <span class="tok-str">"name"</span>: <span class="tok-str">"invoice"</span>,
+      <span class="tok-str">"type"</span>: <span class="tok-str">"object"</span>,
+      <span class="tok-str">"fields"</span>: [
+        { <span class="tok-str">"name"</span>: <span class="tok-str">"customerId"</span>, <span class="tok-str">"type"</span>: <span class="tok-str">"string"</span>, <span class="tok-str">"required"</span>: <span class="tok-num">true</span> },
+        { <span class="tok-str">"name"</span>: <span class="tok-str">"amount"</span>,     <span class="tok-str">"type"</span>: <span class="tok-str">"number"</span>, <span class="tok-str">"required"</span>: <span class="tok-num">true</span> }
+      ]
+    }
+  ],
+  <span class="tok-str">"outputs"</span>: [
+    {
+      <span class="tok-str">"name"</span>: <span class="tok-str">"success"</span>,
+      <span class="tok-str">"type"</span>: <span class="tok-str">"object"</span>,
+      <span class="tok-str">"fields"</span>: [
+        { <span class="tok-str">"name"</span>: <span class="tok-str">"receiptId"</span>, <span class="tok-str">"type"</span>: <span class="tok-str">"string"</span>, <span class="tok-str">"required"</span>: <span class="tok-num">true</span> }
+      ]
+    },
+    { <span class="tok-str">"name"</span>: <span class="tok-str">"error"</span>, <span class="tok-str">"type"</span>: <span class="tok-str">"object"</span> }
+  ],
+  <span class="tok-str">"retryPolicy"</span>: {
+    <span class="tok-str">"maxAttempts"</span>: <span class="tok-num">2</span>,
+    <span class="tok-str">"initialDelaySeconds"</span>: <span class="tok-num">5</span>,
+    <span class="tok-str">"backoffRate"</span>: <span class="tok-num">2.0</span>,
+    <span class="tok-str">"jitter"</span>: <span class="tok-num">true</span>,
+    <span class="tok-str">"maxDelaySeconds"</span>: <span class="tok-num">60</span>
+  }
+}</code></pre>
+
+      <p>
+        The same manifest expressed as YAML, for the node editor's <code>manifest.yaml</code> tab —
+        note the lower-case <code>tier</code>, which the editor requires, and the two
+        <code>…Name</code> spellings its parser actually reads:
+      </p>
+
+      <pre><code><span class="tok-key">id</span>: acme.invoice.submit
+<span class="tok-key">version</span>: <span class="tok-str">1.2.0</span>
+<span class="tok-key">displayName</span>: Submit Invoice
+<span class="tok-key">category</span>: Network
+<span class="tok-key">tier</span>: compiled
+<span class="tok-key">sideEffectKindName</span>: NonIdempotentSideEffect
+<span class="tok-key">recoveryModeName</span>: FailImmediately
+<span class="tok-key">defaultTimeoutSeconds</span>: <span class="tok-num">60</span>
+<span class="tok-key">capabilities</span>:
+  - logging
+  - http
+  - credentials
+<span class="tok-key">parameters</span>:
+  - <span class="tok-key">name</span>: endpoint
+    <span class="tok-key">type</span>: string
+    <span class="tok-key">required</span>: <span class="tok-num">true</span>
+    <span class="tok-key">expression</span>: <span class="tok-num">true</span>
+  - <span class="tok-key">name</span>: apiKey
+    <span class="tok-key">type</span>: credentialRef
+    <span class="tok-key">required</span>: <span class="tok-num">true</span>
+<span class="tok-key">outputs</span>:
+  - <span class="tok-key">name</span>: success
+  - <span class="tok-key">name</span>: error</code></pre>
+
+      <h2>Writing the executor</h2>
+      <p>
+        A compiled package's source must contain a concrete, non-abstract class implementing
+        <code>INodeExecutor</code>. The loader takes the first such type it finds in the assembly, so
+        ship one executor per package.
+      </p>
+
+      <pre><code><span class="tok-key">using</span> System;
+<span class="tok-key">using</span> System.Text.Json;
+<span class="tok-key">using</span> System.Threading;
+<span class="tok-key">using</span> System.Threading.Tasks;
+<span class="tok-key">using</span> Microsoft.Extensions.Logging;
+<span class="tok-key">using</span> Knotarium.Core.Contracts;
+<span class="tok-key">using</span> Knotarium.Core.Domain;
+
+<span class="tok-key">namespace</span> Knotarium.Nodes;
+
+<span class="tok-key">public class</span> SubmitInvoiceExecutor : INodeExecutor
+{
+    <span class="tok-key">public async</span> ValueTask&lt;NodeResult&gt; ExecuteAsync(
+        NodeInput input, INodeContext context, CancellationToken cancellationToken)
+    {
+        context.Logger.LogInformation(<span class="tok-str">"Submitting invoice…"</span>);
+
+        <span class="tok-key">if</span> (!input.Parameters.TryGetValue(<span class="tok-str">"endpoint"</span>, <span class="tok-key">out var</span> endpointElement))
+        {
+            <span class="tok-key">return new</span> NodeResult(<span class="tok-str">"error"</span>,
+                JsonSerializer.SerializeToElement(<span class="tok-key">new</span> { error = <span class="tok-str">"endpoint is required"</span> }),
+                NodeExecutionStatus.Failed);
+        }
+
+        <span class="tok-key">var</span> payload = JsonSerializer.SerializeToElement(<span class="tok-key">new</span>
+        {
+            receiptId = Guid.NewGuid().ToString(<span class="tok-str">"N"</span>),
+            submittedAt = DateTimeOffset.UtcNow
+        });
+
+        <span class="tok-key">return new</span> NodeResult(<span class="tok-str">"success"</span>, payload, NodeExecutionStatus.Succeeded);
+    }
+}</code></pre>
+
+      <p>
+        The pieces worth knowing:
+      </p>
+      <ul>
+        <li><code>input.Parameters</code> is a dictionary of <code>JsonElement</code> keyed by the
+            parameter names from your manifest. Expressions have already been evaluated by the time you
+            see them.</li>
+        <li><code>context</code> gives you <code>Logger</code>, <code>State</code> for workflow
+            variables and upstream node outputs, and the nullable <code>Http</code> and
+            <code>Credentials</code> accessors. Every one of them is recorded against your declared
+            capabilities during a draft test run.</li>
+        <li>The first argument to <code>NodeResult</code> is the <strong>output socket name</strong>,
+            and it must match one of your declared outputs or the graph has nowhere to send the
+            result.</li>
+        <li>Honour <code>cancellationToken</code>. Both the 15-second draft test limit and the runtime
+            timeout are cooperative: code that never observes the token cannot be stopped.</li>
+      </ul>
+      <p>
+        The draft compiler also accepts a bare script body — source that does not look like a class
+        implementing the interface is wrapped into a generated executor with an
+        <code>Input.Get&lt;T&gt;(name)</code> helper. That is convenient for experiments and is not a
+        good shape for something you intend to install.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Banned namespaces</span>
+        <p>
+          The analyzer that runs before compilation rejects <code>System.IO</code>,
+          <code>System.Diagnostics</code>, <code>System.Reflection.Emit</code>,
+          <code>System.Net.Sockets</code>, <code>System.Runtime.InteropServices</code>,
+          <code>System.Runtime.Loader</code> and <code>Microsoft.Win32</code>, resolving symbols rather
+          than matching text so aliases and casing tricks do not help. It also flags mutable static
+          state. Treat it as a linter, not a jail: a binary package you drop into the watch folder is
+          never analyzed at all, and even the analyzed path executes in-process.
+        </p>
+      </div>
+
+      <h2>How the catalog merges</h2>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 250" role="img" aria-labelledby="merge-title">
+          <title id="merge-title">Built-in, binary and database packages merging into one catalog, custom taking precedence</title>
+          <defs>
+            <marker id="cp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+          </defs>
+
+          <rect x="8" y="14" width="250" height="62" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="24" y="38" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">LOWEST PRECEDENCE</text>
+          <text x="24" y="59" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Built-in manifests</text>
+
+          <rect x="8" y="92" width="250" height="62" rx="10" fill="rgba(6,182,212,0.08)" stroke="#06b6d4" stroke-width="1.5"/>
+          <text x="24" y="116" fill="#06b6d4" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">OVERRIDES BUILT-IN</text>
+          <text x="24" y="137" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Binary packages on disk</text>
+
+          <rect x="8" y="170" width="250" height="62" rx="10" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.5"/>
+          <text x="24" y="194" fill="#c7d2fe" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">OVERRIDES BOTH</text>
+          <text x="24" y="215" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Database packages</text>
+
+          <path d="M262 45 L318 110" stroke="#6366f1" stroke-width="1.4" marker-end="url(#cp-arrow)"/>
+          <path d="M262 123 L318 123" stroke="#6366f1" stroke-width="1.4" marker-end="url(#cp-arrow)"/>
+          <path d="M262 201 L318 136" stroke="#6366f1" stroke-width="1.4" marker-end="url(#cp-arrow)"/>
+
+          <rect x="330" y="80" width="360" height="86" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="350" y="106" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">GET /api/node-packages</text>
+          <text x="350" y="128" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">One entry per id, last writer wins</text>
+          <text x="350" y="150" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Sorted by display name, ids compared ignoring case</text>
+        </svg>
+        <figcaption>Three sources, one catalog. A duplicate id is resolved, not surfaced twice.</figcaption>
+      </figure>
+
+      <p>
+        The catalog endpoint concatenates built-ins, then binary packages, then database packages into
+        a dictionary keyed by id, so <strong>the later source wins</strong>: custom beats binary beats
+        built-in. Ids are compared ignoring case. The intent is that a deployed package can override a
+        placeholder built-in of the same id and the palette shows one authoritative entry rather than a
+        shadowing pair.
+      </p>
+      <p>
+        Within one package, the versions are ordered newest-first by creation time, and the manifest
+        lookup uses the newest. A package whose manifest JSON is malformed is skipped rather than
+        breaking the whole catalog — it simply disappears from the palette, which is worth remembering
+        when a node you know you installed is not there.
+      </p>
+
+      <h3>Resolution at run time is a different order</h3>
+      <p>
+        Executing a node does <em>not</em> go through the catalog merge. The task registry resolves a
+        node type in this order:
+      </p>
+      <ol>
+        <li>A built-in task type, matched by name.</li>
+        <li>The binary executor registry — the highest loaded version for that id.</li>
+        <li>The database, via the dynamic custom-node task.</li>
+      </ol>
+      <p>
+        So a built-in <em>task</em> still wins at execution time even where a database package of the
+        same id won the catalog merge and is what the palette showed you. Overriding a built-in id is
+        therefore only partially effective, and that inconsistency is a good reason to choose a fresh,
+        vendor-prefixed id.
+      </p>
+      <p>
+        For a database package the tier decides what happens next. Declarative runs the shared
+        interpreter. Compiled first checks the <strong>code execution</strong> capability and fails with
+        an explicit message if it is off, then compiles the stored source with Roslyn — cached on a key
+        of node type, version and creation timestamp, so a republished version recompiles and an
+        unchanged one does not — and hands it to the sandbox runner if one is configured, which is what
+        makes <code>Security__Sandbox__Mode</code> effective for custom nodes.
+      </p>
+
+      <h2>Installing and publishing</h2>
+      <p>
+        Two endpoints write a package into the database. They share their implementation and differ
+        only in how trust is established.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Route</th><th>Trust model</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>POST /api/node-packages/install</code></td>
+              <td>The caller supplies a <code>signature</code>. It is verified against
+                  <code>Security__PackageSigning__TrustedPublicKeys</code>; an unsigned or
+                  unverifiable package is rejected with a 400. Use this to install someone else's
+                  package.</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/node-packages/publish</code></td>
+              <td>No signature is accepted from the caller. The server requires a passing sandbox test
+                  for this exact package id and version, then signs the package itself with
+                  <code>Security__PackageSigning__HostPrivateKeyBase64</code>. Use this from the node
+                  editor.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Both are administrator-only and both take <code>multipart/form-data</code> with a
+        <code>package</code> file part plus these text parts: <code>packageId</code>,
+        <code>version</code>, <code>displayName</code>, <code>category</code>,
+        <code>manifestJson</code>, <code>sourceCode</code>, and for install <code>signature</code>.
+        Missing values are filled in: the package id falls back to the uploaded file's base name
+        lower-cased, the version to <code>1.0.0</code>, the display name to the package id, the
+        category to <code>Utility</code>, the manifest to <code>{}</code> and the source to the literal
+        placeholder <code>ZIP Extracted Binary</code>.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Two things the write path does not do</span>
+        <p>
+          The stored version's capability list is <strong>hard-coded to <code>["logging"]</code></strong>
+          on both routes, whatever your manifest declares — the manifest's own
+          <code>capabilities</code> array is what the runtime reads, but the package row does not
+          reflect it. And the uploaded <code>package</code> file is only used for its name: nothing
+          unzips it, and nothing extracts an assembly from it. The executor that runs is the
+          <code>sourceCode</code> text. A genuinely pre-compiled package belongs in the watch folder,
+          not in an install request.
+        </p>
+      </div>
+
+      <h3>Signing</h3>
+      <p>
+        Signatures are Ed25519 over a SHA-256 digest of a canonical serialization of the package id,
+        version, display name, category, manifest JSON, source and capability list. Both keys are
+        base64 and the private key must decode to exactly 32 bytes; anything else fails the publish
+        with a 500 naming the setting. Verification tries every key in
+        <code>Security__PackageSigning__TrustedPublicKeys</code> in turn, so distributing a package to
+        colleagues means giving them your public key to add to that list.
+      </p>
+      <p>
+        Because the digest covers the manifest and the source, re-signing is required after any edit —
+        a signature does not survive a "small fix" to the YAML.
+      </p>
+
+      <h2>Binary packages and the watch folder</h2>
+      <p>
+        The third route into the catalog needs no API call at all. A hosted watcher scans a folder for
+        assemblies and registers what it finds.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>What lives there</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>NodeRuntime__WatchPath</code></td>
+              <td><code>&lt;app folder&gt;/nodes</code></td>
+              <td><strong>Binary node packages.</strong> Scanned recursively for <code>*.dll</code>. Created if missing.</td>
+            </tr>
+            <tr>
+              <td><code>NodeRuntime__PluginsPath</code></td>
+              <td><code>&lt;app folder&gt;/plugins</code></td>
+              <td><strong>Host service plugins</strong> — a different mechanism entirely. These contribute an external-signal provider, editor option loaders, workflow import providers and background loops. They are loaded once at startup into real dependency injection and are never hot-reloaded.</td>
+            </tr>
+            <tr>
+              <td><code>NodeRuntime__DevMode</code></td>
+              <td>on in Development</td>
+              <td>Whether the watch folder is <em>watched</em> after the initial scan.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Each assembly needs a companion <code>manifest.json</code> <strong>in the same folder</strong>.
+        Without one the DLL is skipped with a warning and the node never appears — the most common
+        reason a binary package seems to be ignored. One folder per package, holding the assembly and
+        its manifest, is the layout that works.
+      </p>
+      <p>
+        Loading reads both files with a short retry loop, because a build system may still hold the
+        file open, then deserializes the manifest and registers the executor under its id and version
+        in a collectible load context. A malformed manifest, an assembly with no
+        <code>INodeExecutor</code>, or a type that cannot be instantiated is logged as an error and
+        skipped; nothing fails the startup.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The initial scan always runs</span>
+        <p>
+          Loading packages that are present at boot is not a development feature and is not gated by
+          <code>NodeRuntime__DevMode</code>. The setting controls only whether a file-system watcher
+          keeps running afterwards. A production instance therefore picks up everything in the watch
+          folder at startup with hot-reload off, which is the intended arrangement.
+        </p>
+      </div>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Leave hot-reload off in production</span>
+        <p>
+          With <code>NodeRuntime__DevMode</code> on, any write under the watch folder re-registers the
+          package and <strong>unloads the previous assembly context</strong> — while runs may be
+          executing code from it. It is also an unauthenticated code-loading path: anyone who can write
+          a file into that folder gets their code executed in the Knotarium process, with no signature
+          check anywhere in this route. Set it explicitly to <code>false</code> rather than relying on
+          the environment being Production, and treat write access to the watch folder as equivalent to
+          administrator access.
+        </p>
+      </div>
+
+      <h3>Versions on disk</h3>
+      <p>
+        The registry keys on id <em>and</em> version, so two versions of the same package can be loaded
+        at once. Execution picks the highest, ordered as a .NET version when both parse and ordinally
+        when they do not. Since a version such as <code>1.2.0-rc.1</code> does not parse, mixing plain
+        and pre-release versions in the same folder gives you text ordering — where
+        <code>1.2.0-rc.1</code> sorts after <code>1.2.0</code>. Keep one version per folder unless you
+        have a reason not to.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="node-editor.html">
+          <div class="kg-card-title">The node editor</div>
+          <div class="kg-card-desc">Authoring a package in the browser, the sandboxed test runner, and the gate that guards publishing.</div>
+        </a>
+        <a class="kg-card" href="rest-api.html">
+          <div class="kg-card-title">REST API</div>
+          <div class="kg-card-desc">The install, publish and catalog endpoints, with the authentication rules that apply to them.</div>
+        </a>
+        <a class="kg-card" href="capabilities.html">
+          <div class="kg-card-title">Capabilities</div>
+          <div class="kg-card-desc">What each capability actually unlocks, and which ones are off until an administrator says otherwise.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The signing keys, the sandbox mode, and the plugin and watch paths in full.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

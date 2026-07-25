@@ -1,0 +1,699 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Network node reference. Every parameter, default and port here is taken from
+  Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs (the catalog) and from the
+  matching *NodeTask.cs executor (the runtime defaults). The manifests under nodes/ are a stale copy and
+  were not used. See AUTHORING.md.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network nodes · Knotarium Help</title>
+<meta name="description" content="Reference for the nodes that leave the machine: HTTP Request, Database Query, File Read and Write, SMTP, IMAP, MQTT, notifications and imported OpenAPI operations.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="nodes-network.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Network nodes</h1>
+      <p class="kg-lead">
+        The nodes that reach outside the process — HTTP, SQL, the local filesystem, mail, MQTT,
+        notification channels, and the operations generated from an imported OpenAPI specification.
+        These are the nodes that need a credential, a capability grant, or both, and they are the ones
+        that fail for reasons outside your workflow. Each entry lists every parameter the executor
+        actually reads, the default it falls back to, and what the node does when it goes wrong.
+      </p>
+
+      <h2>What every node on this page has in common</h2>
+
+      <p>
+        A node in this group has three things a Log or a Set Variable node does not: it may need a
+        <strong>credential</strong>, it may need a <strong>capability</strong> switched on, and it can
+        fail because of something on the other end of a socket. Understanding those three before
+        reading the individual entries saves repeating them nine times.
+      </p>
+
+      <h3>Credentials are referenced, never stored</h3>
+      <p>
+        Any parameter whose type is <code>credentialRef</code> holds the <em>identifier</em> of a stored
+        credential, not the secret itself. The executor resolves it at run time through the secret
+        resolver, so the password, token or connection string never appears in the workflow definition,
+        in an exported bundle, or in a version diff. A blank <code>credentialRef</code> is not an error
+        at compile time — the node simply runs with no secret, which usually surfaces as an
+        authentication failure from the remote server rather than as a Knotarium error.
+      </p>
+
+      <h3>Which nodes are gated, and by what</h3>
+      <p>
+        Two different mechanisms gate these nodes, and they live on different settings screens. The
+        coarse on/off switches at <span class="kg-path">Settings &rsaquo; Capabilities</span> cover code
+        execution, database access and the AI agent loop. File access is deliberately <em>not</em> one of
+        those switches — it has its own finer-grained directory policy at
+        <span class="kg-path">Settings &rsaquo; File Access</span>. Everything else on this page runs
+        without a grant.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Node</th><th>Capability tags</th><th>Gate</th><th>Needs a credential?</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>HTTP Request</td>
+              <td><code>network</code></td>
+              <td>None — descriptive only</td>
+              <td>Only for <code>bearer</code>, <code>basic</code> or <code>apiKey</code> auth</td>
+            </tr>
+            <tr>
+              <td>Database Query</td>
+              <td><code>network</code>, <code>database</code></td>
+              <td><span class="kg-pill is-off">Off by default</span> <span class="kg-pill is-danger">Privileged</span> — <span class="kg-path">Settings &rsaquo; Capabilities</span></td>
+              <td><strong>Yes</strong> — <code>connectionRef</code> is required</td>
+            </tr>
+            <tr>
+              <td>File Read</td>
+              <td><code>filesystem.read</code></td>
+              <td><span class="kg-pill is-off">Deny by default</span> <span class="kg-pill is-danger">Privileged</span> — <span class="kg-path">Settings &rsaquo; File Access</span></td>
+              <td>No</td>
+            </tr>
+            <tr>
+              <td>File Write</td>
+              <td><code>filesystem.write</code></td>
+              <td><span class="kg-pill is-off">Deny by default</span> <span class="kg-pill is-danger">Privileged</span> — <span class="kg-path">Settings &rsaquo; File Access</span></td>
+              <td>No</td>
+            </tr>
+            <tr><td>Email Send (SMTP)</td><td><code>network</code></td><td>None</td><td>Only when a username is set</td></tr>
+            <tr><td>Email Fetch (IMAP)</td><td><code>network</code></td><td>None</td><td>Effectively yes — the node always authenticates</td></tr>
+            <tr><td>MQTT Publish</td><td><code>network</code></td><td>None</td><td>Only when a username is set</td></tr>
+            <tr><td>Send Notification</td><td>none</td><td>None</td><td>No — the channel owns its secret</td></tr>
+            <tr><td>Imported OpenAPI operations</td><td><code>http</code>, <code>credentials</code></td><td>None</td><td>Held by the server configuration</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Only three capabilities are actually enforced</span>
+        <p>
+          The capability list on a manifest is mostly descriptive metadata used to warn you before
+          installing an imported workflow. Exactly three tags are enforced at run time as on/off
+          switches: <code>code.execute</code>, <code>database</code> and <code>aiAgent</code>. The
+          <code>network</code> and <code>credentials</code> tags are never checked — a node carrying
+          <code>network</code> is not gated by anything, so do not read the absence of a capability
+          warning as "this node cannot reach the network".
+        </p>
+      </div>
+
+      <h3>Outbound HTTP goes through the egress policy</h3>
+      <p>
+        Every named HTTP client that can reach a user-supplied URL is registered behind the egress
+        guard, and the guard validates twice: once against the literal URI, and once again at the point
+        the socket is opened, pinning the connection to an address it has already vetted. That second
+        check is what stops a redirect hop or a DNS name that resolves to <code>169.254.169.254</code>
+        from reaching a private or metadata address after the URL passed inspection.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Effect on these nodes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Security__HttpEgress__DenyPrivateNetworks</code></td>
+              <td><code>true</code></td>
+              <td>Refuses any request that resolves to a private, loopback or link-local address. This is the setting that blocks an HTTP Request aimed at a machine on your own LAN.</td>
+            </tr>
+            <tr>
+              <td><code>Security__HttpEgress__AllowDomains</code></td>
+              <td>empty</td>
+              <td>When non-empty, only these domains may be reached. Empty means no allow-list is applied at all.</td>
+            </tr>
+            <tr>
+              <td><code>Security__HttpEgress__BlockDomains</code></td>
+              <td>empty</td>
+              <td>Always refused, checked after the allow-list.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The guarded clients cover the HTTP Request node, the OpenAPI caller, the polling trigger, AI
+        provider calls, dynamic-options loaders, OAuth token fetches, the <code>context.Http</code> handed
+        to inline and compiled scripts, and outbound notification webhooks. See the
+        <a href="configuration.html">configuration reference</a> for the full list of security settings.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">SMTP, IMAP, MQTT and SQL bypass the egress guard</span>
+        <p>
+          The egress policy is an HTTP-client concern. Email Send, Email Fetch, MQTT Publish and
+          Database Query open their own TCP sockets through MailKit, MQTTnet and the database driver, so
+          <code>DenyPrivateNetworks</code> and the domain lists have <strong>no effect</strong> on them.
+          A mail or broker host on a private network is reachable even with the strictest egress
+          configuration. If that matters to you, the boundary has to be enforced at the firewall.
+        </p>
+      </div>
+
+      <h3>How the ports behave</h3>
+      <p>
+        The ports listed in each entry are the handles you can draw an edge from. Only six node types
+        pick a single branch to follow — Condition, For Loop, Parallel For-Each, AI Router, AI Verify and
+        AI Semantic Diff. <strong>Nothing on this page is one of them.</strong> When a node here succeeds,
+        the engine schedules <em>every</em> outgoing edge, whichever handle it left.
+      </p>
+      <p>
+        When the node fails, the engine looks for outgoing edges whose handle is named
+        <code>error</code> or <code>failure</code>. If it finds any, it follows those and the run
+        continues; if it finds none, the whole run is marked failed at that node.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">An error edge also fires on success</span>
+        <p>
+          Because these nodes do not select a branch, an edge you draw from the <code>error</code> handle
+          is scheduled on a successful run <em>as well as</em> a failed one. The handle is a failure edge
+          in the sense that the engine takes it when the node fails — not in the sense that it is skipped
+          when the node succeeds. If your error branch must run only on failure, gate it with a Condition
+          on the upstream node's output rather than relying on the handle alone.
+        </p>
+      </div>
+
+      <h3>Automatic retry is narrower than the manifest suggests</h3>
+      <p>
+        Several manifests here declare a recovery mode of "retry automatically", but the retry scheduler
+        also requires the node to be marked as an <em>idempotent</em> side effect. A node that changes
+        something on the far end is never retried automatically, no matter what its recovery mode says —
+        re-sending an email or re-running an <code>INSERT</code> because a socket hiccuped is worse than
+        failing. In practice that leaves three nodes on this page with automatic retry.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Node</th><th>Default timeout</th><th>Automatic retry</th></tr></thead>
+          <tbody>
+            <tr><td>HTTP Request</td><td>30 s</td><td>No — non-idempotent</td></tr>
+            <tr><td>Database Query</td><td>30 s</td><td>No — non-idempotent</td></tr>
+            <tr><td>File Read</td><td>30 s</td><td><strong>Yes</strong></td></tr>
+            <tr><td>File Write</td><td>30 s</td><td>No — fails immediately</td></tr>
+            <tr><td>Email Send (SMTP)</td><td>60 s</td><td>No — non-idempotent</td></tr>
+            <tr><td>Email Fetch (IMAP)</td><td>60 s</td><td><strong>Yes</strong></td></tr>
+            <tr><td>MQTT Publish</td><td>30 s</td><td>No — non-idempotent</td></tr>
+            <tr><td>Send Notification</td><td>30 s</td><td>No — fails immediately</td></tr>
+            <tr><td>Imported OpenAPI operations</td><td>30 s</td><td>No — non-idempotent</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Where retry does apply, the default policy is three attempts with a two-second initial delay,
+        doubling with jitter up to thirty seconds. A <code>timeoutSeconds</code> (or <code>timeout</code>)
+        property set on the node overrides the manifest default, clamped to 1–3600 seconds.
+      </p>
+
+      <h2>Web and API nodes</h2>
+
+      <h3>HTTP Request</h3>
+      <p>
+        The general-purpose way to call something that speaks HTTP. Reach for it when there is no
+        imported OpenAPI specification to generate a typed node from, when you are calling a webhook or
+        a one-off endpoint, or when you need control over the exact headers and body. If you are calling
+        many operations of the same documented API, importing its specification is less work and gives
+        you an operation picker instead of hand-written URLs.
+      </p>
+      <p>
+        Authentication is applied <em>before</em> your custom headers, deliberately: an explicit
+        <code>Authorization</code> header in the headers field overrides whatever the auth block
+        produced, so an API with a non-standard scheme is still reachable.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>url</code></td><td>string</td><td>In practice</td><td>yes</td><td>none</td><td>The absolute request URL. The manifest does not mark it required, so the editor will let you leave it blank — the node then fails at run time with "Missing required 'url' input".</td></tr>
+            <tr><td><code>method</code></td><td>string</td><td>no</td><td>no</td><td><code>GET</code></td><td>Any HTTP method name; it is passed through verbatim, so an unknown verb reaches the server rather than being rejected locally.</td></tr>
+            <tr><td><code>body</code></td><td>string</td><td>no</td><td>yes</td><td>none</td><td>Request body. A non-string value is JSON-serialized. The legacy field name <code>payload</code> is still accepted for workflows built before <code>body</code> existed.</td></tr>
+            <tr><td><code>headers</code></td><td>string</td><td>no</td><td>yes</td><td>none</td><td>Either a JSON object or newline-separated <code>Key: Value</code> lines — paste whichever form the API's documentation shows. A malformed JSON object silently falls back to line parsing.</td></tr>
+            <tr><td><code>authType</code></td><td>enum</td><td>no</td><td>no</td><td><code>none</code></td><td>One of <code>none</code>, <code>bearer</code>, <code>basic</code>, <code>apiKey</code>. Blank is treated as <code>none</code>.</td></tr>
+            <tr><td><code>authCredentialRef</code></td><td>credentialRef</td><td>no</td><td>no</td><td>none</td><td>The stored credential supplying the token, password or key. Resolved at run time; if it resolves to nothing, <code>bearer</code> sends no header at all while <code>basic</code> and <code>apiKey</code> send an empty secret.</td></tr>
+            <tr><td><code>authUsername</code></td><td>string</td><td>no</td><td>yes</td><td>empty</td><td>Username half of <code>basic</code>. Ignored by the other schemes.</td></tr>
+            <tr><td><code>authHeaderName</code></td><td>string</td><td>no</td><td>no</td><td><code>X-API-Key</code></td><td>Header the <code>apiKey</code> scheme writes into. Ignored by the other schemes.</td></tr>
+            <tr><td><code>authValuePrefix</code></td><td>string</td><td>no</td><td>no</td><td>empty</td><td>Prepended to the secret for <code>apiKey</code> — for an API that wants <code>Token abc123</code> in a custom header, set the prefix to <code>Token&nbsp;</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>When it fires</th></tr></thead>
+          <tbody>
+            <tr><td><code>success</code></td><td>object</td><td>The response status was 2xx.</td></tr>
+            <tr><td><code>error</code></td><td>string</td><td>The node failed — a non-2xx status, or a transport exception. Also scheduled on success; see the warning above.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        On a successful call the node emits three values downstream: <code>statusCode</code> (a number),
+        <code>body</code> (the raw response text) and <code>isSuccess</code> (a boolean, always true here,
+        since a non-2xx fails the node instead).
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Content-Type is handled specially</span>
+        <p>
+          A <code>Content-Type</code> entry in the headers field is pulled out and applied to the request
+          body rather than added as a request header. With no body it therefore has no effect at all, and
+          with a body but no explicit Content-Type the node sends <code>application/json</code>. This is
+          the usual explanation for an API rejecting a form-encoded body you thought you had labelled
+          correctly on a <code>GET</code>.
+        </p>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A 4xx or 5xx fails the node, it does not branch</span>
+        <p>
+          Any non-2xx status makes the node fail with a message containing the status code and the
+          response body. Because HTTP Request is a non-idempotent side effect, it is not retried
+          automatically even though its manifest declares "retry automatically". Handle expected error
+          statuses with an <code>error</code> edge, or with a workflow-level error handler.
+        </p>
+      </div>
+
+      <h3>Imported OpenAPI operations (<code>openapi.&lt;slug&gt;</code>)</h3>
+      <p>
+        Importing an OpenAPI specification does not generate one node per endpoint. It generates
+        <strong>one node package for the whole specification</strong>, whose <code>operationId</code>
+        parameter is a picker over every operation the document declares. Reach for these instead of
+        HTTP Request whenever the API you are calling publishes a specification: you get an operation
+        list, a reusable server configuration holding the base URL and credential, and a version pin.
+      </p>
+      <p>
+        The package id is <code>openapi.</code> followed by the specification's own id lowercased with
+        every character outside <code>a</code>–<code>z</code>, <code>0</code>–<code>9</code> and
+        <code>-</code> removed; an id that reduces to nothing becomes <code>openapi.spec</code>. The
+        node's display name is the specification's title, and it is filed under the Integrations
+        category in the palette.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>operationId</code></td><td>string</td><td>yes</td><td>no</td><td>Which operation to invoke. The generated manifest lists every operation id found in the specification as a selectable value, so this renders as a dropdown rather than free text.</td></tr>
+            <tr><td><code>serverConfigId</code></td><td>string</td><td>yes</td><td>no</td><td>The saved server configuration supplying the base URL, the credential and the certificate policy. Without it the node has no idea which host to call.</td></tr>
+            <tr><td><code>specVersion</code></td><td>string</td><td>no</td><td>no</td><td>Pins the call to a specific stored version of the specification. Left blank, the active version is used — which means re-importing a changed specification can change what this node does.</td></tr>
+            <tr><td><code>arguments</code></td><td>string</td><td>no</td><td>yes</td><td>The path, query, header and body arguments for the chosen operation. This is the field that carries your <code>{{ }}</code> references to upstream data.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>When it fires</th></tr></thead>
+          <tbody>
+            <tr><td><code>success</code></td><td>The operation returned a successful response.</td></tr>
+            <tr><td><code>error</code></td><td>The node failed. Also scheduled on success, as with every non-branching node.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">No code is generated or compiled</span>
+        <p>
+          Every <code>openapi.*</code> node runs through a single pre-compiled interpreter rather than
+          per-specification C#. Importing a specification therefore does not invoke the compiler, cannot
+          fail with a compilation error, and does not depend on the sandbox settings. It is a manifest
+          and nothing more.
+        </p>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The capability tags differ from the built-ins</span>
+        <p>
+          Generated OpenAPI manifests carry the tags <code>http</code> and <code>credentials</code>,
+          where the built-in nodes use <code>network</code>. Neither tag is enforced, so this is
+          cosmetic — but it does mean a search for nodes tagged <code>network</code> will not find your
+          imported API operations.
+        </p>
+      </div>
+
+      <h2>Data store and file nodes</h2>
+
+      <h3>Database Query</h3>
+      <p>
+        Runs one parameterized SQL statement against PostgreSQL or SQLite and hands the rows back as
+        data. Use it for the cases an HTTP API cannot cover: reading a table your organisation already
+        maintains, or writing a row as the last step of a workflow. Anything more elaborate than a
+        single statement belongs in a stored procedure or a view that this node then calls.
+      </p>
+      <p>
+        Values are always bound as database parameters and never concatenated into the statement text,
+        which is what makes the node injection-safe. Write <code>@name</code> in the query and supply
+        <code>name</code> under <strong>Parameters</strong>; the key may be written with or without a
+        leading <code>@</code>, <code>:</code> or <code>$</code> and is normalised to <code>@name</code>,
+        a form both drivers accept.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Off until an administrator turns it on</span>
+        <p>
+          The node checks the <code>database</code> capability before it does anything else. On a fresh
+          instance nothing is enabled, so the node fails immediately with "Database Query is disabled:
+          the 'database' capability is off." Enable it at
+          <span class="kg-path">Settings &rsaquo; Capabilities</span>. This is a privileged capability:
+          a workflow that can run arbitrary SQL against a connection string you supplied can do anything
+          that connection string permits.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>provider</code></td><td>enum</td><td><strong>yes</strong></td><td>no</td><td><code>postgres</code> or <code>sqlite</code>. The executor also accepts the spelling <code>postgresql</code>. Anything else fails with "Unsupported database provider".</td></tr>
+            <tr><td><code>connectionRef</code></td><td>credentialRef</td><td><strong>yes</strong></td><td>no</td><td>The stored credential holding the whole connection string. If it is missing or resolves to nothing, the node fails with "no connection string resolved from 'connectionRef'" before opening a socket.</td></tr>
+            <tr><td><code>query</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>The SQL to run. Expressions are evaluated before execution, so it is possible to build SQL by string interpolation — do not. Bind values with <code>@name</code> instead.</td></tr>
+            <tr><td><code>parameters</code></td><td>keyValue</td><td>no</td><td>yes</td><td>Named bind values. Accepts rows, a JSON object or a JSON array of <code>{name, value}</code>. A null value is bound as SQL <code>NULL</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td><code>rows</code> (array of row objects, keyed by column name) and <code>rowCount</code> (number)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The node has no <code>error</code> port of its own: a failure is an ordinary node failure, so an
+        edge named <code>error</code> or <code>failure</code> drawn from it is still followed. For a
+        <code>SELECT</code>, <code>rowCount</code> is the number of rows returned; for a write it is the
+        number of rows affected as reported by the driver. Byte-array columns are base64-encoded and
+        <code>GUID</code>s are stringified so the result survives the JSON journal.
+      </p>
+
+      <h3>File Read</h3>
+      <p>
+        Reads one local file and emits its contents. Use <code>utf8</code> when the file is text you want
+        to parse or match on, and <code>base64</code> when it is binary — an image, a PDF, a zip — that
+        you intend to pass through to an attachment or an upload without interpreting it.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Deny by default, and it is not the Capabilities screen</span>
+        <p>
+          A fresh instance grants no directories at all, so every read is denied until an administrator
+          adds one at <span class="kg-path">Settings &rsaquo; File Access</span>. The check happens before
+          any I/O: the requested path is made absolute, every symlink and junction along it is resolved to
+          its real target, and the result must sit inside a granted subtree. Textual <code>..</code>, a
+          different drive, and a junction pointing out of an allowed root are all rejected, and a path
+          whose real location cannot be determined is denied rather than trusted.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>path</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>none</td><td>Absolute path to the file. A relative path is rejected outright under an enforced policy, because it cannot be safely bounded against absolute grants.</td></tr>
+            <tr><td><code>encoding</code></td><td>enum</td><td>no</td><td>no</td><td><code>utf8</code></td><td><code>utf8</code> returns text; <code>base64</code> returns the raw bytes base64-encoded. Any other value is treated as <code>utf8</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td><code>content</code> (string), <code>encoding</code> (string), <code>size</code> (number, bytes) and <code>path</code> (string — the canonical, boundary-checked path actually read, not what you typed)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        A policy refusal and a missing file are different failures. A refusal carries the error code
+        <code>FileAccessDenied</code>, which is what lets the run view offer a one-click "grant this path"
+        action; the message always names the resolved path in single quotes. A file that is permitted but
+        absent fails with "file not found" and no error code.
+      </p>
+
+      <h3>File Write</h3>
+      <p>
+        Writes text or decoded bytes to a local file, creating any missing parent directories along the
+        way. Use <code>append</code> for a running log; leave it off to replace the file wholesale.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>path</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>none</td><td>Absolute destination path. Missing parent folders are created after the policy check passes.</td></tr>
+            <tr><td><code>content</code></td><td>string</td><td>no</td><td>yes</td><td>empty</td><td>What to write. An unset content writes a zero-byte file rather than failing.</td></tr>
+            <tr><td><code>encoding</code></td><td>enum</td><td>no</td><td>no</td><td><code>utf8</code></td><td><code>base64</code> decodes the content to raw bytes first. Content that is not valid base64 fails with a clear message before any file is touched.</td></tr>
+            <tr><td><code>append</code></td><td>boolean</td><td>no</td><td>no</td><td><code>false</code></td><td>Appends instead of overwriting. Also changes the free-space arithmetic: an overwrite only needs headroom for its net growth, an append needs headroom for the whole payload.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td><code>path</code> (the canonical path written) and <code>bytesWritten</code> (number)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Writes are checked against the same directory policy as reads, plus a free-space reserve: if the
+        write would leave the target drive below the configured reserve, it is refused with a message
+        naming both the remaining space and the required reserve. Two folder-shaped mistakes are caught
+        with their own messages rather than a raw operating-system permission error — a path ending in a
+        directory separator, and a path that resolves to an existing directory.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">A known, accepted race</span>
+        <p>
+          The guard validates a path and returns it as a string; the node opens the file afterwards. An
+          actor able to swap a validated directory component for a junction between the check and the
+          open could redirect the write. This is accepted under the assumption that operating-system
+          ACLs on a granted root prevent untrusted content from creating reparse points inside it. If you
+          grant a writable root to workflows you did not author, set its ACLs accordingly.
+        </p>
+      </div>
+
+      <h2>Messaging nodes</h2>
+
+      <h3>Email Send (SMTP)</h3>
+      <p>
+        Composes and sends a message through an SMTP server. Reach for it when the recipient is a person
+        who expects mail; for operational alerts that should follow the same routing as automatic failure
+        notifications, Send Notification is the better choice because the server details and secret live
+        on the channel rather than on every node.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>host</code></td><td>string</td><td><strong>yes</strong></td><td>no</td><td>none</td><td>SMTP server hostname.</td></tr>
+            <tr><td><code>port</code></td><td>number</td><td>no</td><td>no</td><td><code>587</code></td><td>Anything unparseable also falls back to 587, so a typo silently sends on the submission port.</td></tr>
+            <tr><td><code>security</code></td><td>enum</td><td>no</td><td>no</td><td><code>auto</code></td><td><code>auto</code> lets the client negotiate; <code>starttls</code> upgrades an open connection; <code>ssl</code> is TLS on connect; <code>none</code> disables transport security. An unrecognised value falls back to <code>auto</code>.</td></tr>
+            <tr><td><code>username</code></td><td>string</td><td>no</td><td>no</td><td>none</td><td>Leave blank for a relay that does not authenticate — the node skips the authentication step entirely when it is empty.</td></tr>
+            <tr><td><code>credentialRef</code></td><td>credentialRef</td><td>no</td><td>no</td><td>none</td><td>The password. If a username is set but this resolves to nothing, the node authenticates with an empty password and the server rejects it.</td></tr>
+            <tr><td><code>from</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>none</td><td>Sender address. A single mailbox, parsed strictly.</td></tr>
+            <tr><td><code>to</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>none</td><td>Recipients, separated by commas, semicolons or newlines.</td></tr>
+            <tr><td><code>cc</code></td><td>string</td><td>no</td><td>yes</td><td>none</td><td>Same separator rules as <code>to</code>. There is no BCC field.</td></tr>
+            <tr><td><code>subject</code></td><td>string</td><td>no</td><td>yes</td><td>empty</td><td>An unset subject sends an empty subject line rather than a placeholder.</td></tr>
+            <tr><td><code>body</code></td><td>string</td><td>no</td><td>yes</td><td>empty</td><td>The message body.</td></tr>
+            <tr><td><code>isHtml</code></td><td>boolean</td><td>no</td><td>no</td><td><code>false</code></td><td>Sends the body as HTML instead of plain text. The two are exclusive — there is no multipart alternative.</td></tr>
+            <tr><td><code>attachments</code></td><td>keyValue</td><td>no</td><td>yes</td><td>none</td><td>Filename to base64 content. Pairs naturally with a File Read node set to <code>base64</code>. Content that is not valid base64 fails the node while building the message, before any connection is made.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td><code>messageId</code> (string, empty when the library did not assign one) and <code>sent</code> (boolean)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Sending mail is a non-idempotent side effect, so a failure is never retried automatically — a
+        transport error halfway through a send could otherwise deliver the message twice. The node also
+        journals an explicit "attempting external effect" entry before it connects, which is what lets
+        the run history distinguish "never sent" from "possibly sent".
+      </p>
+
+      <h3>Email Fetch (IMAP)</h3>
+      <p>
+        Pulls recent messages from a mailbox and emits them as data. It pairs with the polling trigger
+        for the common "watch an inbox" shape: poll on a schedule, fetch the unseen messages, mark them
+        seen so the next run does not see them again.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>host</code></td><td>string</td><td><strong>yes</strong></td><td>no</td><td>none</td><td>IMAP server hostname.</td></tr>
+            <tr><td><code>port</code></td><td>number</td><td>no</td><td>no</td><td><code>993</code></td><td>The implicit-TLS IMAP port, matching the default security mode.</td></tr>
+            <tr><td><code>security</code></td><td>enum</td><td>no</td><td>no</td><td><code>ssl</code></td><td><code>ssl</code>, <code>starttls</code>, <code>auto</code> or <code>none</code>. Note this default differs from Email Send, which defaults to <code>auto</code>.</td></tr>
+            <tr><td><code>username</code></td><td>string</td><td><strong>yes</strong></td><td>no</td><td>none</td><td>The mailbox login. Unlike SMTP, the node always authenticates.</td></tr>
+            <tr><td><code>credentialRef</code></td><td>credentialRef</td><td>no</td><td>no</td><td>none</td><td>The password. Not marked required by the manifest, but an unauthenticated IMAP session is not a thing — leaving it blank sends an empty password.</td></tr>
+            <tr><td><code>folder</code></td><td>string</td><td>no</td><td>no</td><td><code>INBOX</code></td><td>Blank uses the account's inbox. A named folder that does not exist fails the node.</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>no</td><td>no</td><td><code>10</code></td><td>How many messages to return. The node takes the <em>last</em> matching messages, so this is "the newest N". Zero, negative or unparseable falls back to 10.</td></tr>
+            <tr><td><code>unseenOnly</code></td><td>boolean</td><td>no</td><td>no</td><td><code>false</code></td><td>Restricts the search to unread messages.</td></tr>
+            <tr><td><code>markSeen</code></td><td>boolean</td><td>no</td><td>no</td><td><code>false</code></td><td>Flags each fetched message as seen. This also decides how the folder is opened: read-write when set, read-only when not.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td><code>messages</code> (array) and <code>count</code> (number)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Each message in the array is flattened to <code>uid</code>, <code>from</code>, <code>to</code>,
+        <code>subject</code>, <code>date</code> (UTC, ISO 8601 round-trip format) and <code>body</code>.
+        The body is the plain-text part when the message has one and the HTML part otherwise — there is
+        no separate HTML field, and attachments are not extracted.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Without markSeen you will reprocess the same mail</span>
+        <p>
+          Fetching is idempotent, which is why this node <em>is</em> retried automatically on failure. The
+          flip side is that a polling workflow which does not set <code>markSeen</code> — or which fails
+          after fetching but before acting — sees the same messages on the next poll. Set
+          <code>unseenOnly</code> together with <code>markSeen</code> for at-most-once-ish behaviour, and
+          accept that a crash between the flag and your side effect can still lose a message.
+        </p>
+      </div>
+
+      <h3>MQTT Publish</h3>
+      <p>
+        Publishes one message to a topic on an MQTT broker. Use it to push a workflow's result onto a bus
+        that devices or other services already listen to. This node only publishes; consuming a topic is
+        a separate long-lived subsystem, not a node you drop on the canvas.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>host</code></td><td>string</td><td><strong>yes</strong></td><td>no</td><td>none</td><td>Broker hostname.</td></tr>
+            <tr><td><code>port</code></td><td>number</td><td>no</td><td>no</td><td><code>1883</code></td><td>The plaintext MQTT port. <strong>Turning on <code>useTls</code> does not change it</strong> — set 8883 yourself.</td></tr>
+            <tr><td><code>clientId</code></td><td>string</td><td>no</td><td>no</td><td>library-generated</td><td>Blank lets the client library pick one. Set it if your broker's ACLs key off the client id.</td></tr>
+            <tr><td><code>username</code></td><td>string</td><td>no</td><td>no</td><td>none</td><td>Blank connects anonymously; credentials are only attached when a username is present.</td></tr>
+            <tr><td><code>credentialRef</code></td><td>credentialRef</td><td>no</td><td>no</td><td>none</td><td>The password that goes with the username.</td></tr>
+            <tr><td><code>useTls</code></td><td>boolean</td><td>no</td><td>no</td><td><code>false</code></td><td>Enables TLS on the connection.</td></tr>
+            <tr><td><code>topic</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>none</td><td>The topic to publish to.</td></tr>
+            <tr><td><code>payload</code></td><td>string</td><td>no</td><td>yes</td><td>empty</td><td>The message body. An unset payload publishes an empty message, which some brokers treat as a retained-message deletion when combined with <code>retain</code>.</td></tr>
+            <tr><td><code>qos</code></td><td>enum</td><td>no</td><td>no</td><td><code>0</code></td><td><code>0</code>, <code>1</code> or <code>2</code>. Out-of-range values are clamped into that range rather than rejected.</td></tr>
+            <tr><td><code>retain</code></td><td>boolean</td><td>no</td><td>no</td><td><code>false</code></td><td>Asks the broker to keep the message as the topic's retained value.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Declared type</th><th>Fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>object</td><td><code>topic</code> (string) and <code>published</code> (boolean)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The node connects, publishes and disconnects on every execution — there is no pooled connection.
+        For a workflow publishing in a tight loop that connection churn is the dominant cost, and a
+        broker with connection rate limits will notice.
+      </p>
+
+      <h3>Send Notification</h3>
+      <p>
+        Sends a message through a notification channel you configured once at
+        <span class="kg-path">Settings &rsaquo; Notifications</span>. This is the right node for
+        "tell someone this happened": the channel owns the transport, the endpoint and the secret, so the
+        workflow carries only a channel reference and the text. It reuses exactly the same channel
+        storage and sender layer as the automatic failure alerts, which means a channel you have already
+        tested for alerts is already proven for this node.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th><code>{{ }}</code></th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>channelId</code></td><td>notificationChannelRef</td><td><strong>yes</strong></td><td>no</td><td>none</td><td>Which configured channel to send through, picked from a list. A channel that has since been deleted fails the node with "channel '…' not found".</td></tr>
+            <tr><td><code>subject</code></td><td>string</td><td>no</td><td>yes</td><td><code>Workflow Notification</code></td><td>Blank or whitespace falls back to that literal default rather than sending an empty subject.</td></tr>
+            <tr><td><code>message</code></td><td>string</td><td><strong>yes</strong></td><td>yes</td><td>none</td><td>The body. An empty message fails the node — a notification with nothing in it is never what was meant.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td><code>sent</code> (boolean) and <code>channel</code> (the channel's display name)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The node declares no capabilities and needs no grant, because it cannot be pointed at an
+        arbitrary destination — it can only use a channel an administrator already created. Delivery
+        failures are reported with the channel name in the message, so a broken webhook is identifiable
+        without opening the settings screen. Webhook-based channels do go through the egress guard.
+      </p>
+
+      <h2>Where to look next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="nodes-ai.html">
+          <div class="kg-card-title">AI nodes</div>
+          <div class="kg-card-desc">Prompt, Router, Verify, Semantic Diff and the bounded Agent loop — including the capability that gates it.</div>
+        </a>
+        <a class="kg-card" href="nodes-utility.html">
+          <div class="kg-card-title">Utility nodes</div>
+          <div class="kg-card-desc">Log, variables, Inline Code, the editor-only annotations, and the External Device block.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The egress policy, credential encryption and every other setting these nodes depend on.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

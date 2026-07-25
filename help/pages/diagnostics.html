@@ -1,0 +1,333 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Diagnostics. Every rule and message is taken from Backend/Knotarium.Features.Compiler/
+  WorkflowCompiler.cs and Knotarium.Core/Reactive/ReactiveGraphValidator.cs; the publish gates from
+  Knotarium.Api/Endpoints/WorkflowVersionEndpoints.cs (CheckRunnable). Rules that do NOT exist —
+  orphan nodes, unreachable nodes, duplicate ids — are called out so nobody documents them by habit.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostics · Knotarium Help</title>
+<meta name="description" content="The diagnostics panel: what produces errors and warnings, how to locate the offending node or edge, and exactly which checks block Save &amp; Publish.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="diagnostics.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Diagnostics</h1>
+      <p class="kg-lead">
+        The diagnostics panel in the bottom-left corner of the canvas is the editor's report on whether
+        the graph you have drawn can actually be compiled. This page lists every check that exists,
+        which of them stop you publishing and which merely warn, how to jump from a message to the node
+        or wire that caused it, and — just as usefully — which plausible-sounding checks do
+        <strong>not</strong> exist, so you do not go looking for warnings that will never appear.
+      </p>
+
+      <h2>Where the messages come from</h2>
+      <p>
+        There is no rule engine in the browser. Every message you see is produced by the backend
+        compiler and sent to the editor, which only presents and navigates them. That matters because
+        it means the editor and the publish step agree by construction: what the panel shows is what
+        publishing will decide.
+      </p>
+      <p>
+        Two streams feed the panel:
+      </p>
+      <ul>
+        <li>A <strong>live pass</strong> runs about half a second after the graph stops changing. It
+            compiles the current canvas without saving anything and returns every diagnostic, including
+            non-blocking ones. It is keyed to the graph's meaningful shape, so moving a node or changing
+            the selection does not re-trigger it.</li>
+        <li>A <strong>blocking list</strong> is written whenever Save &amp; Publish or Run is refused.
+            Those diagnostics are the reason the operation failed.</li>
+      </ul>
+      <p>
+        The two are merged, de-duplicated, and sorted most severe first. If the same problem arrives
+        from both streams it appears once.
+      </p>
+      <div class="kg-note">
+        <span class="kg-note-label">A graph with no edges is never validated live</span>
+        <p>
+          The live pass is skipped entirely when the canvas has no connections at all. A brand-new
+          workflow with a few unwired nodes therefore shows an empty panel, not a clean bill of health.
+          The checks run as soon as the first wire exists.
+        </p>
+      </div>
+
+      <h2>Reading the panel</h2>
+      <p>
+        The panel renders nothing when there is nothing to report — an empty corner means a clean
+        graph. When it does appear, its header summarises the counts by severity, colour-coded red for
+        errors, amber for warnings and blue for information, and the whole panel is bordered in the
+        colour of the worst thing in it. Clicking the header collapses it to that summary bar, so it
+        never has to be in your way.
+      </p>
+      <p>
+        Each row shows the diagnostic's code in brackets, its message, and where it applies — either
+        <em>· edge</em> or <em>· node</em> followed by the node id. <strong>Clicking a row centres the
+        canvas on the offending element and selects it</strong>, which also brings its properties up in
+        the inspector. A row that names an edge frames the midpoint between that edge's two nodes; a
+        row that names a node frames the node. A diagnostic pointing at something that no longer exists
+        simply does nothing when clicked.
+      </p>
+      <p>
+        Edges with problems are also marked on the canvas itself, with a short label such as
+        <em>⚠ type mismatch</em>, <em>⚠ field type</em>, <em>⚠ missing field</em>, or
+        <em>⚠ 3 issues</em> when a single wire has several.
+      </p>
+
+      <h2>Errors and warnings</h2>
+      <p>
+        Severity is what decides everything. <strong>Only <span class="kg-pill is-danger">Error</span>
+        blocks.</strong> A warning never prevents a save, a publish or a run — it rides along with the
+        successful response and stays visible in the panel. The severity model also has an
+        <em>Info</em> level, but the compiler never produces one, so in practice you will only ever see
+        errors and warnings.
+      </p>
+
+      <h3>Errors — the structural checks</h3>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Code</th><th>Raised when</th></tr></thead>
+          <tbody>
+            <tr><td><code>ERR_MISSING_START_NODE</code></td><td>The workflow contains no trigger entry point at all. Entry points are nodes the manifest marks trigger-only, plus the built-ins Start, Manual Trigger, Webhook Trigger and Scheduler. A graph built from external device blocks is exempt.</td></tr>
+            <tr><td><code>ERR_INVALID_NODE_TYPE</code></td><td>A node's type has no installed package manifest — usually a workflow imported from an instance that had a node package this one does not.</td></tr>
+            <tr><td><code>ERR_TRIGGER_WITH_INCOMING_CONNECTIONS</code></td><td>Something is wired <em>into</em> a trigger node. A trigger starts a run; nothing can lead to it.</td></tr>
+            <tr><td><code>ERR_MISSING_REQUIRED_PARAMETER</code></td><td>A required parameter is absent, null, or blank.</td></tr>
+            <tr><td><code>ERR_INVALID_PARAMETER_TYPE</code></td><td>A parameter declared as a number or a boolean holds something that is neither.</td></tr>
+            <tr><td><code>ERR_INVALID_EDGE_SOURCE</code> · <code>ERR_INVALID_EDGE_TARGET</code></td><td>An edge names a node that is not in the graph.</td></tr>
+            <tr><td><code>ERR_INVALID_SOCKET_MAPPING</code></td><td>An edge is attached to an output or input port the node type does not declare.</td></tr>
+            <tr><td><code>ERR_CYCLE_DETECTED</code></td><td>The graph loops back on itself. Loop-back edges into a For Loop or Parallel For Each container are expected and are not reported.</td></tr>
+            <tr><td><code>ERR_MISSING_SUBFLOW_ID</code>, <code>ERR_SUBFLOW_NOT_FOUND</code>, <code>ERR_SUBFLOW_MISSING_START</code>, <code>ERR_SUBFLOW_MISSING_END</code>, <code>ERR_RECURSIVE_SUBFLOW</code></td><td>Sub-flow resolution problems, covered in <a href="subflows.html">Sub-flows and grouping</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Two details are worth knowing because they explain surprising silences. A parameter whose value
+        is an expression — a string that starts with <code>{{</code> and ends with <code>}}</code> — is
+        <strong>exempt from the type check</strong>, because the compiler cannot know what the
+        expression will produce. And the generic input port names <code>in</code> and
+        <code>payload</code> are always accepted on any node, whether or not the manifest mentions
+        them.
+      </p>
+      <p>
+        The checks also short-circuit. Sub-flow inlining runs first and stops everything if it fails;
+        if any node or edge error was found, cycle detection is skipped; and if a cycle was found, the
+        missing-trigger check is skipped. So fixing one error can reveal a second one that was there
+        all along. Clearing the panel usually takes a couple of rounds.
+      </p>
+
+      <h3>Warnings — the typed-socket checks</h3>
+      <p>
+        Three warnings compare what an output declares against what the input it feeds expects. They
+        exist because a mismatch is usually a mistake, but they are advisory: the declared types come
+        from manifests that cannot describe every real payload, so blocking on them would be wrong.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Code</th><th>Raised when</th></tr></thead>
+          <tbody>
+            <tr><td><code>WARN_TYPE_MISMATCH</code></td><td>An output's declared type is not assignable to the input's declared type.</td></tr>
+            <tr><td><code>WARN_MISSING_FIELD</code></td><td>The input requires a named field that the output does not declare.</td></tr>
+            <tr><td><code>WARN_FIELD_TYPE_MISMATCH</code></td><td>Both sides declare the field, but with incompatible types.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The assignability rules are deliberately generous. There are six recognised types —
+        <code>string</code>, <code>number</code>, <code>boolean</code>, <code>object</code>,
+        <code>array</code> and <code>any</code> — and an enumeration or a credential reference counts
+        as a string. Any type name the compiler does not recognise is treated as <code>any</code> and
+        is never flagged at all. Beyond that: <code>any</code> on either side always passes, anything
+        may flow into a <code>string</code>, a string may flow into a <code>number</code> or a
+        <code>boolean</code> because it might parse, and <code>object</code> and <code>array</code>
+        accept only themselves.
+      </p>
+      <div class="kg-note">
+        <span class="kg-note-label">A wire with no matching parameter is not type-checked</span>
+        <p>
+          The typed comparison only happens when an edge feeds a declared output into a declared,
+          typed configuration parameter. Wires into the generic <code>in</code> or <code>payload</code>
+          sockets have no parameter to compare against and are treated as untyped, so they never warn.
+          Most control-flow wiring falls into this category.
+        </p>
+      </div>
+
+      <h2>Device-block diagnostics</h2>
+      <p>
+        Graphs containing an external device block are checked by a second, separate validator, whose
+        results are merged into the same panel. It has exactly two rules and returns nothing at all
+        when the graph has no device block:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Code</th><th>Severity</th><th>Message</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>DEVICE_NO_TARGET</code></td>
+              <td><span class="kg-pill is-danger">Error</span></td>
+              <td>Device block has wired pins but no target selected — its rules cannot run. Pick a target.</td>
+            </tr>
+            <tr>
+              <td><code>DEAD_END_WIRE</code></td>
+              <td><span class="kg-pill is-warning">Warning</span></td>
+              <td>An event is wired but its path reaches nothing that runs — the wire does nothing.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Device pins are dynamic — they come from the block's configuration rather than from a manifest
+        — so the ordinary socket checks skip them entirely and this validator covers them instead.
+      </p>
+
+      <h2>What actually blocks Save &amp; Publish</h2>
+      <p>
+        Publishing runs four gates in order, and stops at the first that fails. Only the last of them
+        produces the compilation diagnostics described above; the first three are separate checks with
+        their own messages.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 210" role="img" aria-labelledby="gates-title">
+          <title id="gates-title">The four checks a publish passes through, in order</title>
+          <defs>
+            <marker id="gate-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6b7280"/>
+            </marker>
+          </defs>
+
+          <rect x="10" y="16" width="150" height="62" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="26" y="40" fill="#ef4444" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">1 · CREDENTIALS</text>
+          <text x="26" y="60" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Unbound slots</text>
+
+          <rect x="186" y="16" width="150" height="62" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="202" y="40" fill="#ef4444" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">2 · CONDITIONS</text>
+          <text x="202" y="60" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Incomplete logic</text>
+
+          <rect x="362" y="16" width="150" height="62" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="378" y="40" fill="#ef4444" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">3 · DEVICE BLOCKS</text>
+          <text x="378" y="60" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">No target selected</text>
+
+          <rect x="538" y="16" width="152" height="62" rx="10" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.6"/>
+          <text x="554" y="40" fill="#6366f1" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">4 · COMPILATION</text>
+          <text x="554" y="60" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Any Error diagnostic</text>
+
+          <path d="M166 47 L180 47" stroke="#6b7280" stroke-width="1.6" marker-end="url(#gate-arw)"/>
+          <path d="M342 47 L356 47" stroke="#6b7280" stroke-width="1.6" marker-end="url(#gate-arw)"/>
+          <path d="M518 47 L532 47" stroke="#6b7280" stroke-width="1.6" marker-end="url(#gate-arw)"/>
+
+          <path d="M614 84 L614 118" stroke="#10b981" stroke-width="1.6" marker-end="url(#gate-arw)"/>
+
+          <rect x="452" y="124" width="238" height="66" rx="10" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="470" y="148" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">PUBLISHED AND ACTIVATED</text>
+          <text x="470" y="168" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Warnings ride along, unblocking</text>
+
+          <rect x="10" y="124" width="426" height="66" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="148" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">ANY GATE FAILS</text>
+          <text x="28" y="168" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">The draft is still saved · the diagnostics panel explains why</text>
+        </svg>
+        <figcaption>Publishing stops at the first failing gate. Saving the draft is a separate, earlier step.</figcaption>
+      </figure>
+
+      <ol>
+        <li><strong>Unbound credential slots.</strong> A workflow inserted from a template can carry
+            placeholder credential references. Publishing refuses until each one is bound to a real
+            credential, and names the slots.</li>
+        <li><strong>Incomplete Condition nodes.</strong> A Condition with neither valid logic nor a
+            legacy operator cannot produce a definite branch. The message names the node ids and tells
+            you to open and complete them in the editor. See
+            <a href="conditions.html">Conditions and branching</a>.</li>
+        <li><strong>Misconfigured device blocks.</strong> Only the error-severity device rule blocks; a
+            dead-end wire warning does not.</li>
+        <li><strong>Compilation.</strong> Any diagnostic of severity Error refuses the publish, and the
+            full diagnostic list comes back with the failure.</li>
+      </ol>
+      <p>
+        The same first three gates run when you <strong>activate</strong> an existing version, with
+        slightly different wording, and restoring a version can only activate it if it compiles
+        cleanly.
+      </p>
+
+      <h2>Save, publish, run — which are gated</h2>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Action</th><th>Gated by</th></tr></thead>
+          <tbody>
+            <tr><td>Saving the workflow definition</td><td>Compilation errors only.</td></tr>
+            <tr><td>Saving a draft version</td><td>Nothing. Work in progress always saves.</td></tr>
+            <tr><td>Publishing · activating a version</td><td>All four gates.</td></tr>
+            <tr><td>Triggering a run</td><td>Compilation errors.</td></tr>
+            <tr><td>Importing a workflow</td><td>Nothing. Diagnostics come back as warnings and the imported version is left inactive.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        In the editor, the Save &amp; Publish button turns amber and counts the blocking errors —
+        <em>Save &amp; Publish (2 errors)</em> — but stays clickable, because pressing it still saves
+        your draft. Only the publish half will be refused.
+      </p>
+
+      <h2>Checks that do not exist</h2>
+      <p>
+        It is worth being explicit about this, because these are the warnings people expect from a
+        graph editor and then quietly assume are passing:
+      </p>
+      <ul>
+        <li>There is <strong>no orphan-node check</strong>. A node connected to nothing publishes
+            cleanly and simply never runs.</li>
+        <li>There is <strong>no reachability analysis</strong>. A branch that can never be entered is
+            not reported.</li>
+        <li>There is <strong>no duplicate-id check</strong>.</li>
+        <li>Expressions are <strong>never validated</strong>. A reference to a node that does not exist
+            publishes without complaint and resolves to nothing at run time, as described in
+            <a href="expressions.html">Expressions and data</a>.</li>
+      </ul>
+      <p>
+        A clean diagnostics panel means the graph compiles, not that it is correct. The tools for
+        correctness are a manual run and the run inspector.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="conditions.html">
+          <div class="kg-card-title">Conditions and branching</div>
+          <div class="kg-card-desc">The condition completeness gate and the invalid-socket-mapping trap on Switch.</div>
+        </a>
+        <a class="kg-card" href="subflows.html">
+          <div class="kg-card-title">Sub-flows and grouping</div>
+          <div class="kg-card-desc">The five sub-flow errors and what each of them means.</div>
+        </a>
+        <a class="kg-card" href="canvas.html">
+          <div class="kg-card-title">The canvas editor</div>
+          <div class="kg-card-desc">Save &amp; Publish, Run, and where the panel sits on screen.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

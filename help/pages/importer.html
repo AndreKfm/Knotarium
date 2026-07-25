@@ -1,0 +1,458 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The vendor-configuration importer. Labels, strategies and outcomes are taken from
+  SettingImporter.tsx, ImportProviderEndpoints.cs and IWorkflowImportProvider.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Importing configurations · Knotarium Help</title>
+<meta name="description" content="Turn a vendor configuration file into Knotarium workflows: choose a source format, pick granularity, map device connections, read the coverage report, and undo the import.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="importer.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Importing configurations</h1>
+      <p class="kg-lead">
+        The <span class="kg-path">Import</span> screen reads a configuration file exported from another
+        vendor's system and translates it into Knotarium workflows. It is a migration tool: you hand it
+        someone else's automation, it tells you honestly how much of that automation it could express, and
+        it lands the result as inactive drafts you review before anything is allowed to run. Nothing about
+        this screen is reversible-by-accident — there is a dry run, and there is an undo.
+      </p>
+
+      <h2>What this screen needs before it works</h2>
+      <p>
+        The importer is a generic shell around a plugin. Knotarium itself understands no vendor format
+        whatsoever; a host plugin supplies a <strong>source-format provider</strong> that knows how to
+        parse one. With no plugin installed, the screen shows a single message — that no import providers
+        are registered and that you need to install a connection-manager plugin that ships one — and
+        nothing else on this page applies.
+      </p>
+      <p>
+        Plugins are loaded at startup from the folder named by <code>NodeRuntime__PluginsPath</code>, which
+        defaults to a <code>plugins</code> folder beside the application. Each plugin lives in its own
+        subfolder. Adding one means restarting; a plugin that fails to load is logged and skipped rather
+        than stopping startup, so a provider that never appears in the list is worth looking for in the
+        startup log.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The vendor format never reaches Knotarium</span>
+        <p>
+          The boundary is deliberate. The host passes the plugin raw bytes, a hint derived from the file
+          extension, and your options; the plugin returns generic workflow definitions plus a coverage
+          report. No vendor-specific type crosses that line, which is why the importer can describe results
+          in the same vocabulary regardless of which system the file came from — and also why the accuracy
+          of a translation is entirely the provider's business, not the host's.
+        </p>
+      </div>
+
+      <h2>The three steps</h2>
+      <p>
+        A stepper across the top tracks where you are: <strong>Upload file</strong>,
+        <strong>Configure</strong>, then <strong>Review coverage</strong>. Uploading a file advances to
+        Configure; previewing or importing advances to Review coverage. Removing the file returns you to
+        the start and clears every choice you made.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 210" role="img" aria-labelledby="imp-title">
+          <title id="imp-title">The import flow: upload, configure, dry run, then import or undo</title>
+          <defs>
+            <marker id="iarw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#06b6d4"/>
+            </marker>
+          </defs>
+
+          <rect x="10" y="42" width="150" height="66" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="68" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">1 · UPLOAD</text>
+          <text x="28" y="90" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Provider + file</text>
+
+          <path d="M166 75 L204 75" stroke="#06b6d4" stroke-width="1.6" marker-end="url(#iarw)"/>
+
+          <rect x="210" y="42" width="160" height="66" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="228" y="68" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">2 · CONFIGURE</text>
+          <text x="228" y="90" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Granularity + servers</text>
+
+          <path d="M376 75 L414 75" stroke="#06b6d4" stroke-width="1.6" marker-end="url(#iarw)"/>
+
+          <rect x="420" y="14" width="270" height="60" rx="10" fill="rgba(6,182,212,0.12)" stroke="#06b6d4" stroke-width="1.5"/>
+          <text x="440" y="38" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">PREVIEW — DRY RUN</text>
+          <text x="440" y="60" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Coverage report only. Nothing written.</text>
+
+          <rect x="420" y="86" width="270" height="60" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="440" y="110" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">IMPORT</text>
+          <text x="440" y="132" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Inactive drafts + provisioned targets.</text>
+
+          <path d="M555 150 L555 168" stroke="#f59e0b" stroke-width="1.6" marker-end="url(#iarw)"/>
+          <rect x="420" y="172" width="270" height="34" rx="10" fill="#17212f" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="440" y="194" fill="#f59e0b" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Undo import — archives what it created.</text>
+        </svg>
+        <figcaption>Preview and import share the same configuration; only import writes anything.</figcaption>
+      </figure>
+
+      <h2>Step 1 — choosing a source format and a file</h2>
+      <p>
+        When more than one provider is installed, a <strong>Source format</strong> dropdown appears above
+        the drop zone listing each provider by its display name. With exactly one provider the dropdown is
+        hidden and that provider is selected automatically. Changing the source format resets the whole
+        form, because a file parsed by one provider means nothing to another.
+      </p>
+      <p>
+        The drop zone accepts a click or a drag-and-drop. The file picker is filtered to the extensions the
+        selected provider declares, and those extensions are also printed on the chip below the drop zone
+        next to the provider's name — so the screen tells you what it will accept rather than making you
+        guess. Three explanatory cards under the drop zone restate the flow: upload and translate, review
+        coverage, publish and arm.
+      </p>
+      <p>
+        Selecting a file parses it immediately. This first parse is a preview call — it is required to be
+        free of side effects, and it is what discovers the servers the configuration references and
+        produces the first coverage report. Once it finishes, a file chip shows the file's name, its size
+        in kilobytes, the provider that read it, and how many constructs were detected, with a
+        <strong>Parsed</strong> badge that reads <strong>Parsing…</strong> while the call is in flight.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A parse failure is reported, not explained</span>
+        <p>
+          If the provider cannot read the file, the screen shows the provider's own error message prefixed
+          with a generic import failure. There is no partial parse and no salvage mode: the file is either
+          understood or it is not. The commonest cause is the wrong provider selected for the file, which
+          looks like a corrupt file rather than a mismatch.
+        </p>
+      </div>
+
+      <h2>Step 2 — configuring the import</h2>
+
+      <h3>Granularity: one workflow or many</h3>
+      <p>
+        Under <strong>Create as</strong>, two cards decide how the flows in the file are distributed across
+        workflows. The section only appears when the provider declares that it honours the choice.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Option</th><th>What you get</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>One combined workflow</strong></td>
+              <td>Every flow in the file lands in a single workflow as independent chains, side by side on one canvas.</td>
+            </tr>
+            <tr>
+              <td><strong>Separate workflows</strong></td>
+              <td>One workflow per flow. Each is published, armed and managed on its own.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The provider chooses which one is preselected, and the preselection is re-applied whenever you
+        change provider. Vendor configuration files typically default to the combined option, for a
+        practical reason: a single exported configuration can hold well over a hundred flows, and importing
+        them as a hundred separate workflows floods the dashboard with entries nobody named.
+      </p>
+      <p>
+        The trade-off is real in both directions. One combined workflow is a single thing to publish and a
+        single thing to arm, which makes the migration manageable — but it is also a single failure domain
+        and a canvas you will have to untangle later. Separate workflows give you per-flow control from the
+        start at the cost of a large, unstructured list. If you are evaluating an import, combine; if you
+        are committing to it, consider separating and expect to spend time naming things.
+      </p>
+      <p>
+        Granularity does not change what the parse finds, so switching between the two does not re-parse
+        the file. Only the coverage report's workflow count changes.
+      </p>
+
+      <h3>Device connections</h3>
+      <p>
+        Vendor configurations usually address physical devices or servers. When the provider declares that
+        it references external systems <em>and</em> the parse discovered at least one, a
+        <strong>Device connections</strong> section appears, headed with the count and listing the
+        discovered aliases. Three strategies are offered:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Strategy</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Create automatically</strong></td>
+              <td>Makes a connection target for each referenced server, reusing any existing target with the same name instead of duplicating it. This is the default.</td>
+            </tr>
+            <tr>
+              <td><strong>Map to existing</strong></td>
+              <td>Binds each referenced server to a connection target you already have. One dropdown per alias, each showing the alias and its host.</td>
+            </tr>
+            <tr>
+              <td><strong>Don't map</strong></td>
+              <td>Provisions nothing. The imported nodes address the default target.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Choosing <strong>Map to existing</strong> and leaving any alias unmapped disables the
+        <strong>Import</strong> button, with a line beside it saying every server must be mapped. Preview
+        stays available, so you can still inspect coverage with an incomplete mapping. If you have no
+        connection targets at all, an amber line says so and points you at connection settings — targets
+        are managed under <span class="kg-path">Settings &rsaquo; External Systems</span>.
+      </p>
+      <p>
+        Changing the strategy, or changing any individual mapping, re-parses the file. That is what keeps
+        the plan below accurate rather than stale.
+      </p>
+
+      <h3>The provisioning plan</h3>
+      <p>
+        Whenever a strategy other than <strong>Don't map</strong> is selected and the provider returned a
+        plan, a <strong>Plan:</strong> line lists what would happen to each referenced server. Each entry
+        is an alias, an action, and where applicable the target it resolves to:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Action</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Create</strong></td><td>A new connection target will be created for this alias.</td></tr>
+            <tr><td><strong>Reuse</strong></td><td>An existing target with a matching name will be used as-is.</td></tr>
+            <tr><td><strong>Bind</strong></td><td>The alias will be bound to the target you selected.</td></tr>
+            <tr><td><strong>Skip</strong></td><td>Nothing will be provisioned for this alias.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Created targets arrive without passwords</span>
+        <p>
+          The plan line says so, and so does the success banner afterwards. A connection target created by
+          the import carries the host and user the configuration described, but no credential — the vendor
+          file does not contain one, and the importer will not invent one. Until you open
+          <span class="kg-path">Settings &rsaquo; External Systems</span> and set each new target's
+          password, those targets are offline and any workflow addressing them fails at run time. This is
+          the single most common reason a technically successful import does nothing useful.
+        </p>
+      </div>
+
+      <h2>The dry run</h2>
+      <p>
+        <strong>Preview</strong> re-parses the file with your current options and switches to the coverage
+        view without writing anything. The banner reads <em>Preview</em>, states how many workflows would
+        be produced and whether they would be combined or separate, and says explicitly that this is a dry
+        run and nothing has been imported.
+      </p>
+      <p>
+        The dry run is genuinely side-effect free — provisioning is switched off for it at the contract
+        level, so even the <strong>Create</strong> actions in the plan are hypothetical. From the preview
+        you can go <strong>Back</strong> to change your options, or <strong>Import</strong> to commit
+        without re-reading the report.
+      </p>
+
+      <h3>The coverage report</h3>
+      <p>
+        The report is the reason this screen exists. Every construct the provider encountered gets one row,
+        including the ones it could not translate — the contract states that a construct with no analogue
+        is surfaced here and never silently dropped. Four columns:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Column</th><th>Contents</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Scope</strong></td>
+              <td>Where in the source file the construct came from, in monospace — the provider's own coordinate for it.</td>
+            </tr>
+            <tr>
+              <td><strong>Construct</strong></td>
+              <td>What it was. Bare numbers in this text — device and sequence identifiers — are highlighted, and a plain <code>-&gt;</code> is rendered as an arrow, so relationships are readable at a glance.</td>
+            </tr>
+            <tr>
+              <td><strong>Outcome</strong></td>
+              <td>A colour-coded pill: <strong>Mapped</strong>, <strong>Partial</strong> or <strong>Flagged</strong>.</td>
+            </tr>
+            <tr>
+              <td><strong>Note</strong></td>
+              <td>The provider's reason, where it supplied one; otherwise an em dash.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The three outcomes are graded by the provider, and mean exactly this:</p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Outcome</th><th>Meaning</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="kg-pill is-on">Mapped</span></td>
+              <td>Translated cleanly to a Knotarium construct.</td>
+              <td>Nothing. Spot-check a few.</td>
+            </tr>
+            <tr>
+              <td><span class="kg-pill is-warning">Partial</span></td>
+              <td>Translated approximately. Something about the original was not fully expressible.</td>
+              <td>Review each one. The result will run, but it may not do precisely what the original did.</td>
+            </tr>
+            <tr>
+              <td><span class="kg-pill is-danger">Flagged</span></td>
+              <td>No analogue exists. The construct is emitted as a stub so it is visible on the canvas rather than absent.</td>
+              <td>Rebuild it by hand, or accept that this behaviour did not come across.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Above the table, three count pills summarise the whole report — how many mapped, how many partial,
+        how many flagged. A segmented control filters to <strong>All</strong> or to one outcome, and a
+        search box filters rows by the text of their scope or construct; the two combine, so you can search
+        within the flagged rows alone. The footer says how many rows are visible out of the total, which
+        matters because a filtered table can otherwise look reassuringly short.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Read the flagged rows before you import, not after</span>
+        <p>
+          The count pills are the honest summary of what a migration will cost you. Filter to
+          <strong>Flagged</strong> first: if that list is long, the import is a starting point rather than a
+          migration, and it is better to know before you have a hundred drafts on the dashboard. Then read
+          <strong>Partial</strong>, which is the more dangerous of the two — a partial row produces
+          something that runs, and therefore something that can be wrong quietly.
+        </p>
+      </div>
+
+      <h2>Importing</h2>
+      <p>
+        <strong>Import</strong> runs the same translation with provisioning switched on, creates the
+        connection targets the plan described, and installs each generated workflow as an inactive
+        <em>Imported</em> version. The success banner reports how many workflows were imported and whether
+        they were combined or separate, repeats that they are inactive drafts that will not run until you
+        publish and arm them, and lists any connection targets that were created along with the reminder to
+        set their passwords.
+      </p>
+      <p>
+        The coverage report stays on screen after the import, now reflecting the committed run, with three
+        actions in its footer: <strong>Undo import</strong>, <strong>Import another</strong>, and
+        <strong>Go to dashboard</strong>.
+      </p>
+
+      <h3>Collision handling</h3>
+      <p>
+        Providers assign their own workflow ids, and those ids are not necessarily unique across imports —
+        a provider that produces one workflow per file may well use the same fixed id every time. Left
+        alone, importing a second configuration would file it as a hidden new <em>version</em> of the first
+        rather than as its own workflow.
+      </p>
+      <p>
+        The importer prevents that. Before installing, it reads the ids and names already in the database
+        and, for each workflow whose id collides, mints a fresh id and appends a numeric suffix to the name
+        until it is free — so a second import of a configuration named <em>Building A</em> installs as
+        <em>Building A (2)</em>. The set of taken ids grows as the import proceeds, so several workflows
+        inside a single upload cannot collide with each other either.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Re-importing does not update anything</span>
+        <p>
+          Importing a corrected version of the same configuration file produces a <em>new</em> set of
+          workflows beside the old ones, not an update to them. There is no merge, no diff, and no
+          reconciliation. If you are iterating on an import, undo the previous attempt before running the
+          next one — otherwise the dashboard accumulates near-identical drafts distinguished only by a
+          numeric suffix.
+        </p>
+      </div>
+
+      <h2>Undoing an import</h2>
+      <p>
+        <strong>Undo import</strong> is offered in the report footer immediately after a successful import,
+        labelled with the number of workflows it will remove. It archives every workflow the import
+        created, in one call, and the banner then reads that the import was undone and how many workflows
+        were removed. The button disappears once used.
+      </p>
+      <p>
+        "Archives" is the precise word. A workflow that has versions is marked archived and its draft
+        removed, rather than being erased — archived workflows are hidden from the dashboard list but can
+        be restored, which un-archives the header and rebuilds its draft from the latest version. A
+        workflow with no versions at all is simply dropped.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Undo covers workflows only</span>
+        <p>
+          It removes exactly the workflows listed in the import result, and nothing else. Connection
+          targets the import created under <strong>Create automatically</strong> stay behind, along with
+          any password you set on them. If you undo an import and re-run it, expect the second run to
+          report <strong>Reuse</strong> where the first reported <strong>Create</strong>. Cleaning up
+          orphaned targets is a manual job under
+          <span class="kg-path">Settings &rsaquo; External Systems</span>.
+        </p>
+      </div>
+
+      <p>
+        Undo is also bounded in time by the screen itself: it is available while the result is on screen,
+        and it is gone once you press <strong>Import another</strong>, navigate away, or reload. There is
+        no undo history. If you leave the screen and want the same effect, archive the workflows
+        individually from the dashboard.
+      </p>
+
+      <h2>After the import</h2>
+      <p>
+        Everything the importer creates is inert. In order for an imported workflow to do anything, three
+        separate things have to happen, and the importer does none of them:
+      </p>
+      <ol>
+        <li>Any connection target the import created needs its password set under
+            <span class="kg-path">Settings &rsaquo; External Systems</span>.</li>
+        <li>The workflow needs to be published — an imported version is created but not made active.</li>
+        <li>The runtime needs to be armed, and the workflow enabled, before a trigger will fire.</li>
+      </ol>
+      <p>
+        That ordering is worth respecting. Publishing before the targets are online produces a workflow
+        that publishes cleanly and fails on its first run, which is a more confusing failure than one that
+        never starts.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Importing is an administrator action</span>
+        <p>
+          Both the preview and the install endpoints require an administrator, because an import creates
+          workflows and can act on connection targets. When sign-in is disabled the check is a no-op — which
+          is one more reason an instance running without authentication should never be reachable beyond
+          localhost. See the <a href="configuration.html">configuration reference</a>.
+        </p>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="openapi.html">
+          <div class="kg-card-title">Importing an OpenAPI specification</div>
+          <div class="kg-card-desc">The other importer: turning an API description into a callable node.</div>
+        </a>
+        <a class="kg-card" href="templates.html">
+          <div class="kg-card-title">Templates</div>
+          <div class="kg-card-desc">Sharing a single workflow as a portable file that carries no secrets.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,291 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The global armed/disarmed switch. Behaviour verified against RuntimeArmingToggle.tsx, App.tsx,
+  RuntimeSettingsEndpoints.cs, Program.cs, SchedulingWorker.cs, PollingWorker.cs,
+  ExternalSignalTriggerRegistry.cs, ExecutionEndpoints.cs and DiskSpaceGuardWorker.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime arming · Knotarium Help</title>
+<meta name="description" content="The global armed/disarmed switch that decides whether automatic triggers may start runs, why entering the editor turns it off, and how the low-disk guard uses it.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="arming.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Runtime arming</h1>
+      <p class="kg-lead">
+        Arming is the one switch that separates design time from run time. While the runtime is
+        disarmed, nothing starts a workflow except you; while it is armed, schedules, webhooks, polls
+        and inbound device signals are all live. It is a single global switch — there is no per-workflow
+        arming — and it is deliberately sticky: several things turn it off automatically, but nothing
+        ever turns it back on for you.
+      </p>
+
+      <h2>Where the switch lives</h2>
+      <p>
+        The control is the pill button in the application header, to the right of the navigation. It has
+        exactly three appearances: <span class="kg-pill is-on">Armed</span> in green with a filled shield
+        while automatic execution is enabled, <span class="kg-pill is-warning">Disarmed</span> in amber
+        with a crossed-out shield while it is paused, and a muted <em>Runtime…</em> label during the brief
+        moment after page load when the current state has not arrived from the server yet. The button is
+        disabled while it is loading and while a change is in flight, so a double click cannot leave the
+        interface and the server disagreeing.
+      </p>
+      <p>
+        Changing the switch is an administrator action. It is the master enable for anonymous webhook and
+        external triggers, so a signed-in user without the administrator role is refused — the button is
+        present but the request comes back denied. On an instance with authentication turned off the role
+        check is a no-op and anyone can flip it.
+      </p>
+
+      <h2>What arming actually gates</h2>
+      <p>
+        Automatic execution requires <strong>two</strong> independent conditions to be true, and it is
+        worth being precise about which is which. The runtime must be armed, <em>and</em> the individual
+        workflow must be enabled. Disabling a single workflow does not disarm the instance, and disarming
+        the instance does not disable any workflow — they are separate switches that both have to allow a
+        run through.
+      </p>
+      <p>
+        Every automatic start path consults the switch:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Start path</th><th>Behaviour while disarmed</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Cron scheduler</td>
+              <td>The scheduling loop still ticks every ten seconds but skips schedule evaluation entirely. Nothing is queued and no schedule is advanced.</td>
+            </tr>
+            <tr>
+              <td>Polling trigger</td>
+              <td>The polling loop skips evaluation the same way. No HTTP request is made, so the change-detection cursor does not move either.</td>
+            </tr>
+            <tr>
+              <td>Inbound webhook</td>
+              <td>The request is rejected with HTTP 409 and the message <em>"Runtime is disarmed. Arm the runtime to allow external triggers."</em></td>
+            </tr>
+            <tr>
+              <td>External device signal</td>
+              <td>The provider subscription stays connected — the signal arrives and is then dropped without starting a run. Reactive rules that dispatch an effect straight back to the device are suppressed in the same way.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Manual start paths are <strong>not</strong> gated. Running a workflow from the editor, firing a
+        scheduler node by hand from the run inspector, and firing a device pin from the Simulate signal
+        dialog all work on a disarmed instance. That is the point of the switch: you can build and test
+        freely without any chance of the same graph also firing on its schedule while you edit it.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The webhook secret is checked before the arming state</span>
+        <p>
+          When a workflow has a webhook secret configured, an inbound request that presents the wrong
+          secret is refused with 401 <em>before</em> the arming check runs. A caller who is not authorised
+          therefore cannot use the difference between 401 and 409 to discover whether your instance is
+          currently armed.
+        </p>
+      </div>
+
+      <h2>The state is stored in the database</h2>
+      <p>
+        When you flip the switch, the new value is written to the application settings table under the
+        key that records runtime arming. On the next start-up — after the schema migration and before any
+        worker begins evaluating anything — that stored value is read back and applied. An instance you
+        armed once stays armed across restarts, upgrades and service recycles.
+      </p>
+      <p>
+        The precedence is worth memorising, because it explains almost every "why is my configuration
+        being ignored" question about this setting:
+      </p>
+      <ol>
+        <li>The <strong>persisted value</strong>, if one has ever been written by the switch.</li>
+        <li>Otherwise the configuration seed <code>Runtime__Armed</code>.</li>
+        <li>Otherwise <strong>disarmed</strong>.</li>
+      </ol>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Runtime__Armed is a first-boot seed, not a setting</span>
+        <p>
+          <code>Runtime__Armed=true</code> exists so an unattended deployment can come up armed on its
+          very first start without anybody opening a browser. The moment the switch is used once — by a
+          person, or by the editor's automatic disarm described below — the stored value wins and the
+          configuration key stops having any effect at all. Editing it on a running instance and
+          restarting changes nothing, silently. If you need to force an instance back to a known state,
+          use the switch, not the configuration file.
+        </p>
+      </div>
+
+      <h2>Opening the editor disarms the runtime</h2>
+      <p>
+        Navigating into the canvas editor automatically disarms the instance. The rule is precisely
+        "on entering the editor from any other screen" — moving between workflows inside the editor does
+        not re-trigger it, and leaving the editor does not undo it. Re-arming is always a deliberate,
+        manual click on the header switch.
+      </p>
+      <p>
+        This is the behaviour that surprises people most, so it is worth stating its two consequences
+        plainly. First, <strong>the automatic disarm goes through the same endpoint as a manual one, so
+        it is persisted</strong>. If you open a workflow to read it, close the browser and never touch
+        the switch, the instance is still disarmed the next morning and after the next restart. Second,
+        because it happens on navigation rather than on editing, merely <em>looking</em> at a graph is
+        enough to stop your production schedules.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Check the switch before you walk away</span>
+        <p>
+          The single most common cause of "my scheduled workflow stopped running overnight" is an editor
+          visit earlier that day. The header pill is the fastest way to confirm: if it reads
+          <span class="kg-pill is-warning">Disarmed</span>, no schedule, poll, webhook or device signal
+          has started a run since it turned amber.
+        </p>
+      </div>
+
+      <p>
+        The editor makes the state visible where it matters. On an event-driven device graph, the
+        <em>Watch live runs</em> button explains in its tooltip that the runtime is disarmed and that new
+        live runs will not arrive until you arm it in the header. And when the instance transitions to
+        armed while a graph is open, the canvas re-frames the whole workflow — arming is treated as a
+        deliberate "go live" moment, so it shows you the entire thing you just made live.
+      </p>
+
+      <h2>The low-disk guard disarms and stays disarmed</h2>
+      <p>
+        A background guard samples free space on the volume holding the data directory. When free space
+        falls below the floor, it disarms the runtime so that no new automatic run starts, and it logs at
+        critical level: every run writes many journal rows, and a database that runs out of room mid-write
+        is a much worse failure than a paused schedule.
+      </p>
+      <p>
+        The policy is read live from <span class="kg-path">Settings &rsaquo; Retention</span> on every
+        check, so changing it applies from the next tick without a restart. Where nothing has been stored
+        there, the configuration section supplies the fallback:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Storage__MinFreeSpaceMb</code></td>
+              <td><code>256</code></td>
+              <td>Free-space floor in megabytes. Zero disables the guard entirely; the loop keeps running so that switching it back on later takes effect without a restart.</td>
+            </tr>
+            <tr>
+              <td><code>Storage__FreeSpaceCheckSeconds</code></td>
+              <td><code>60</code></td>
+              <td>How often free space is sampled. Values below 30 seconds are raised to 30. The first check happens one full interval after start-up, so a short-lived process never trips the guard.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Recovery is deliberately not automatic. When free space climbs back above the floor the guard logs
+        a warning saying the instance was disarmed by the disk-space guard and that it is now safe to
+        re-arm — and then does nothing else. Re-arming is an operator decision, because the guard has no
+        way of knowing whether the space was freed by fixing the underlying problem or by something that
+        will fill it again in an hour.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">A guard disarm is not written to the database</span>
+        <p>
+          Only the arming endpoint persists a value. The guard changes the in-memory state alone, on
+          purpose, so that a transient low-disk blip cannot permanently disarm an instance. The visible
+          consequence is that <strong>restarting the process restores the last state you chose
+          explicitly</strong>: an instance you armed comes back armed, and if the disk is still full the
+          guard disarms it again on its next check. Do not use a restart as a way to clear a disk-space
+          disarm — free the space first.
+        </p>
+      </div>
+
+      <h2>Other things that read the switch</h2>
+      <p>
+        Restoring a backup is refused while the runtime is armed. The restore replaces all current state,
+        so it insists that nothing can be firing mid-restore; the restore panel makes disarming the first
+        of its guided steps and blocks the confirmation until the switch reads
+        <span class="kg-pill is-warning">Disarmed</span>. This is checked before any decryption or write,
+        so a refused restore leaves the existing data untouched.
+      </p>
+
+      <h2>Reading the state without the interface</h2>
+      <p>
+        The current value is exposed as a plain read for monitoring. A one-field JSON response with an
+        <code>armed</code> boolean is what the header pill itself renders, and it is the honest answer to
+        "is this instance live?" — far more reliable than inferring it from whether runs are appearing.
+      </p>
+
+      <h2>Troubleshooting</h2>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Symptom</th><th>Likely cause</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Manual runs work, scheduled runs do not.</td>
+              <td>Disarmed. Manual paths bypass the switch entirely, which is exactly what makes this symptom diagnostic.</td>
+            </tr>
+            <tr>
+              <td>A webhook caller gets HTTP 409 mentioning the runtime.</td>
+              <td>Disarmed. A 409 that mentions deactivation or a missing active version is a different problem — the workflow is disabled or has never been published and activated.</td>
+            </tr>
+            <tr>
+              <td>The instance disarms itself repeatedly.</td>
+              <td>Either the low-disk guard is tripping — check the logs for the critical free-space message — or somebody is opening the editor.</td>
+            </tr>
+            <tr>
+              <td>It came up disarmed despite <code>Runtime__Armed=true</code>.</td>
+              <td>A persisted value exists and wins. Arm it once with the switch; that value then survives restarts on its own.</td>
+            </tr>
+            <tr>
+              <td>The switch does nothing when clicked.</td>
+              <td>The signed-in account is not an administrator, or a previous request is still in flight and the button is temporarily disabled.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="triggers.html">
+          <div class="kg-card-title">Triggers</div>
+          <div class="kg-card-desc">Every way a run can start, and which of them the arming switch gates.</div>
+        </a>
+        <a class="kg-card" href="retention.html">
+          <div class="kg-card-title">Retention and disk space</div>
+          <div class="kg-card-desc">Where the free-space floor the guard enforces is configured.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The storage keys the disk-space guard falls back to.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

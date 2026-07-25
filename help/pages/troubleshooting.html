@@ -1,0 +1,690 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Problem-oriented reference. Every symptom, cause and quoted message here was read out of the source,
+  not reproduced from memory. Where an in-app string and the code disagree, the code wins and the
+  discrepancy is called out.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting · Knotarium Help</title>
+<meta name="description" content="Symptoms, causes and fixes for the things that most often go wrong in Knotarium — triggers that never fire, settings that seem ignored, nodes that are refused, and where the logs are.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="troubleshooting.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Troubleshooting</h1>
+      <p class="kg-lead">
+        Organised by what you observe rather than by which component is at fault. Almost every entry
+        here has the same shape: something is refusing to happen quietly, because a secure default is
+        doing its job. The messages quoted are the exact strings the application produces, so you can
+        search this page for the text in front of you.
+      </p>
+
+      <h2>Nothing runs automatically</h2>
+
+      <h3>A scheduled workflow never fires</h3>
+      <p>
+        Three separate switches all have to be in the right position before a schedule produces a run,
+        and none of them announces itself when it is not. Check them in this order.
+      </p>
+      <p>
+        <strong>The runtime is disarmed.</strong> The switch in the header reads
+        <strong>Disarmed</strong>. While it does, the scheduler and the pollers keep ticking but skip
+        every evaluation, so there is no failed run to look at and nothing in the dead letter queue —
+        the workflow simply does not appear to exist. A fresh instance starts disarmed on purpose, and
+        so does one you have just been editing, because opening the canvas disarms it. Click the switch
+        to arm it.
+      </p>
+      <p>
+        <strong>The workflow is deactivated.</strong> This is separate from arming and applies to one
+        workflow rather than the instance. A deactivated workflow shows an <strong>Inactive</strong>
+        badge on its card in the dashboard, and its power button reads
+        <em>Inactive — click to activate</em>. Newly created workflows start deactivated, which is the
+        single most common reason a first schedule never fires. Deactivating also cancels anything
+        already in flight, so do not use it as a pause button on a busy workflow.
+      </p>
+      <p>
+        <strong>There is no active version.</strong> Triggers run the active published version, never
+        your draft. A workflow you have drawn but never published has nothing to run. The scheduler
+        marks the firing as failed, advances to the next occurrence and writes a warning naming the
+        schedule and the workflow — <code>Skipped schedule fire for schedule … because workflow … has
+        no active version.</code> A polling trigger logs the equivalent. Publish and activate the
+        workflow, then wait for the next occurrence.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Manual runs bypass only the first of the three</span>
+        <p>
+          Arming does not gate a manual run, so a workflow you can run by hand may still be
+          deactivated or unpublished. If the manual run also fails, you are looking at the second or
+          third cause, not the first.
+        </p>
+      </div>
+
+      <h3>A webhook call is rejected</h3>
+      <p>
+        Inbound triggers go to a single anonymous endpoint, <code>POST /api/executions</code>, which
+        names the target workflow in the request body. It applies seven checks in a fixed order and
+        returns a different status for each, so the response tells you exactly which gate closed:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Status</th><th>Message</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>401</code></td>
+              <td><code>Invalid or missing webhook secret.</code></td>
+              <td>Send the secret in the <code>X-Knotarium-Webhook-Secret</code> header. This check is deliberately first so that an unauthorised caller cannot learn the instance's arming state.</td>
+            </tr>
+            <tr>
+              <td><code>409</code></td>
+              <td><code>Runtime is disarmed. Arm the runtime to allow external triggers.</code></td>
+              <td>Arm the runtime from the header switch.</td>
+            </tr>
+            <tr>
+              <td><code>404</code></td>
+              <td><code>Workflow definition not found</code></td>
+              <td>The identifier in the body does not match a workflow. Check for a stale id after a restore.</td>
+            </tr>
+            <tr>
+              <td><code>409</code></td>
+              <td><code>Workflow is deactivated and cannot be triggered externally.</code></td>
+              <td>Activate the workflow from its dashboard card.</td>
+            </tr>
+            <tr>
+              <td><code>409</code></td>
+              <td><code>Workflow has no active version. Publish and activate a version before triggering execution.</code></td>
+              <td>Publish, then set a version active.</td>
+            </tr>
+            <tr>
+              <td><code>429</code></td>
+              <td><code>Execution queue is at capacity (…&nbsp;pending runs). Retry later.</code></td>
+              <td>See the section on runs being refused below.</td>
+            </tr>
+            <tr>
+              <td><code>400</code></td>
+              <td><code>Workflow failed compilation and cannot be triggered</code></td>
+              <td>The response carries the compiler diagnostics. Open the workflow and fix what the <a href="diagnostics.html">Diagnostics</a> panel reports.</td>
+            </tr>
+            <tr>
+              <td><code>202</code></td>
+              <td>—</td>
+              <td>Accepted. The run identifier is in the <code>Location</code> header.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A workflow with no secret configured accepts unauthenticated calls, so the first check is
+        skipped rather than failed. Request bodies larger than
+        <code>Security__WebhookMaxBodyBytes</code> — one megabyte by default — are rejected before any
+        of this.
+      </p>
+
+      <h3>Webhook calls are rejected with an empty 429</h3>
+      <p>
+        Two different limits return <code>429</code> and they are easy to confuse. The queue-capacity
+        rejection carries a JSON message naming the limit. The <em>rate</em> limit returns a bare
+        <code>429</code> with <strong>no body at all</strong> — there is no rejection handler, so
+        nothing explains itself.
+      </p>
+      <p>
+        The anonymous machine-to-machine limit allows
+        <code>Security__RateLimit__AnonymousMachinePerMinute</code> requests per minute, sixty by
+        default, in a fixed one-minute window with no queueing, partitioned by the caller's IP address.
+        It covers exactly two endpoints: the webhook trigger and run resumption. A burst of legitimate
+        webhook traffic from one source address will hit it. Raise the setting and restart; see the
+        <a href="configuration.html">configuration reference</a>.
+      </p>
+
+      <h3>The runtime disarmed itself</h3>
+      <p>
+        There are two mechanisms, and they behave differently enough that telling them apart matters.
+      </p>
+      <p>
+        <strong>Opening the canvas editor disarms it.</strong> Every time you enter the editor from
+        somewhere else, the runtime is disarmed. The reasoning is that design time should be safe time:
+        a half-finished draft should not fire on a schedule while you are still moving nodes around.
+        This writes the disarmed state to the database, so it <strong>survives a restart</strong>, and
+        re-arming is always a deliberate click on the header switch. Nothing pops up to tell you it
+        happened; the only hint in the interface is the tooltip on the toolbar's run-history button,
+        which notes that editing auto-disarms.
+      </p>
+      <p>
+        <strong>The low-disk guard disarms it.</strong> When free space on the data drive falls below
+        <code>Storage__MinFreeSpaceMb</code> — 256&nbsp;MB by default — the guard disarms the runtime
+        and logs at critical level:
+      </p>
+      <pre><code>Free disk space 118 MB is below the 256 MB threshold — runtime DISARMED
+to stop new runs. Free up space and re-arm manually.</code></pre>
+      <p>
+        It does not re-arm when space comes back. Recovery is logged, and the wording is explicit that
+        the decision is yours:
+      </p>
+      <pre><code>Free disk space recovered to 4096 MB. The runtime was disarmed by the
+disk-space guard; re-arm it when ready.</code></pre>
+
+      <div class="kg-note">
+        <span class="kg-note-label">A guard disarm is undone by a restart</span>
+        <p>
+          Unlike the editor's auto-disarm, the disk guard changes only the in-memory state and does not
+          write to the database — the reasoning is that a transient low-disk blip should not
+          permanently disarm an instance. The consequence is that restarting the process re-reads the
+          stored value and can silently arm the instance again while the disk is still nearly full. The
+          guard will trip again within a minute, but runs can start in that window. Free the space
+          before restarting.
+        </p>
+      </div>
+      <p>
+        The threshold and the check interval are edited at
+        <span class="kg-path">Settings &rsaquo; Retention</span>, under
+        <strong>Minimum free space (MB)</strong>. Setting it to zero disables the guard entirely.
+      </p>
+
+      <h3>My error workflow never runs</h3>
+      <p>
+        The global error handler is configured at
+        <span class="kg-path">Settings &rsaquo; Notifications</span>. It is enqueued by an internal
+        producer, which means it is never refused for queue depth — but it is a
+        <strong>silent no-op when the workflow you nominated has no active version</strong>. An error
+        workflow you drew and saved but never published will never run and will never complain.
+        Publish it and set a version active.
+      </p>
+
+      <h2>A change appears to be ignored</h2>
+
+      <h3>My edits to the workflow have no effect</h3>
+      <p>
+        Nothing in Knotarium ever executes an unsaved draft. Not a trigger, and not the Run button.
+      </p>
+      <p>
+        Pressing <strong>Run</strong> on the canvas activates whichever version is selected in the
+        toolbar's version dropdown and then triggers the workflow. Your unsaved changes are not part of
+        that version, so a run started immediately after an edit executes the code as it was when you
+        last published. If the workflow has never been published at all, the run does not start and the
+        toolbar reports <code>Publish a version (Save &amp; Publish) before running.</code>
+      </p>
+      <p>
+        The fix is always the same: press <strong>Save &amp; Publish</strong>, which saves the draft,
+        snapshots it as a new version and makes that version active in one step. See
+        <a href="versioning.html">Versions and publishing</a>.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">One of the in-app tips is wrong about this</span>
+        <p>
+          The Tip of the Day card on the dashboard states that "triggers use the active version while
+          manual runs use what you're editing". The second half of that sentence does not match the
+          code. A manual run activates and executes a published version exactly like a trigger does.
+          Do not rely on the tip.
+        </p>
+      </div>
+
+      <h3>A configuration change has no effect</h3>
+      <p>
+        There are four distinct reasons a setting can be edited correctly and still do nothing.
+      </p>
+      <p>
+        <strong>The interface overrides the file.</strong> Several groups of settings are editable at
+        runtime and are then stored in the database, where the stored value wins permanently over
+        anything in <code>appsettings.json</code> or the environment. This applies to the
+        <a href="sandbox.html">sandbox</a>
+        (<span class="kg-path">Settings &rsaquo; Sandbox</span>), retention and the disk threshold
+        (<span class="kg-path">Settings &rsaquo; Retention</span>), the
+        <a href="capabilities.html">capability</a> policy
+        (<span class="kg-path">Settings &rsaquo; Capabilities</span>), the
+        <a href="file-access.html">file access</a> policy
+        (<span class="kg-path">Settings &rsaquo; File Access</span>), the AI provider
+        (<span class="kg-path">Settings &rsaquo; AI Provider</span>) and the arming state. Change these
+        in the interface, not in the file.
+      </p>
+      <p>
+        <strong>The environment variable is set for the wrong account.</strong> Under the Windows
+        service manager the process runs as the service account, and reads that account's environment,
+        not your interactive session's. Setting a variable in a PowerShell window and restarting the
+        service changes nothing. Set it as a machine-level variable or in the service definition.
+      </p>
+      <p>
+        <strong>The setting is read once at startup.</strong> Everything not in the list above is read
+        during startup only. Restart the process after editing it.
+      </p>
+      <p>
+        <strong>The <code>Logging</code> section is inert.</strong> <code>appsettings.json</code>
+        contains one, but logging is configured in code and never consults it. Editing
+        <code>Logging__LogLevel__Default</code> has no effect whatsoever.
+      </p>
+
+      <h3><code>KG_AUTH_ENABLED</code> or <code>KG_ENCRYPTION_KEY</code> has no effect</h3>
+      <p>
+        These are not application settings. They are shell variables interpolated by
+        <code>docker-compose.yml</code> before the container ever starts, and the translation into real
+        setting names happens entirely inside that file. Setting <code>KG_AUTH_ENABLED=false</code> on
+        a zip install, a Windows service, a systemd unit or a plain <code>docker run</code> does
+        nothing at all — and it fails silently, which is worse, because you are left believing sign-in
+        is disabled when it is not.
+      </p>
+      <p>
+        Outside Compose use the full names: <code>Auth__Enabled</code>,
+        <code>Security__Credentials__EncryptionKeyBase64</code> and
+        <code>Security__PackageSigning__HostPrivateKeyBase64</code>.
+      </p>
+
+      <h2>A node is refused at run time</h2>
+
+      <h3>A File Read or File Write node is denied</h3>
+      <p>
+        File access is deny-by-default: a fresh instance permits nothing, and every path must be
+        granted explicitly. The node fails with <code>File read failed:</code> or
+        <code>File write failed:</code> followed by the specific reason, and carries the error code
+        <code>FileAccessDenied</code>. The reasons distinguish four different situations:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Reason</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>… is not permitted (nothing is granted yet). An administrator must grant it under Settings → File Access.</code></td>
+              <td>The policy is empty. This is what a new instance says.</td>
+            </tr>
+            <tr>
+              <td><code>… is outside every permitted directory.</code></td>
+              <td>Grants exist but none covers this path.</td>
+            </tr>
+            <tr>
+              <td><code>… is within a grant that does not permit writing.</code></td>
+              <td>The directory is granted, but read-only. The same message appears with <code>reading</code> for the opposite case.</td>
+            </tr>
+            <tr>
+              <td><code>only absolute paths are allowed, got '…'.</code></td>
+              <td>A relative path was passed. Resolve it in the workflow first.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Open the failed run and the sidebar will have recognised the denial and offered a remediation
+        button reading <strong>Grant access in File Access settings →</strong>, with a heading naming
+        the specific problem — <em>Path is not permitted</em>, <em>Path is granted read-only</em> and so
+        on. Following it switches to <span class="kg-path">Settings &rsaquo; File Access</span> with the
+        parent directory of the attempted path already filled in as a new rule, left unsaved so you can
+        review it before committing.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The pre-filled grant is always write</span>
+        <p>
+          The remediation adds the rule with the mode set to <strong>Write</strong> regardless of which
+          operation failed. If a File Read node was denied, change the mode to <strong>Read</strong>
+          before saving rather than granting write access you did not intend. Grants are recursive —
+          they cover the named directory and everything beneath it.
+        </p>
+      </div>
+
+      <p>
+        A write can also be denied for a reason that has nothing to do with policy: if completing it
+        would leave the target drive below the reserved free space, the node fails with a message
+        naming how much would be left and what the reserve is.
+      </p>
+
+      <h3>An Inline Code or Database Query node refuses to run</h3>
+      <p>
+        Both are privileged capabilities and both are <span class="kg-pill is-off">off by default</span>.
+        The messages name themselves precisely:
+      </p>
+      <ul>
+        <li><code>Inline Code is disabled: the 'code execution' capability is off. An administrator can
+            enable it under Settings → Capabilities.</code></li>
+        <li><code>Database Query is disabled: the 'database' capability is off. An administrator can
+            enable it under Settings → Capabilities.</code></li>
+      </ul>
+      <p>
+        A custom node package fails the same way, because running one is running compiled code:
+        <code>Custom node '…' runs compiled code, which is disabled: the 'code execution' capability is
+        off.</code> Testing a node from the node editor produces its own variant of the same refusal.
+      </p>
+      <p>
+        Enable them at <span class="kg-path">Settings &rsaquo; Capabilities</span>, where the toggles
+        are labelled <strong>Inline code execution</strong> and <strong>Database access</strong>. The
+        toggles save immediately; no restart is needed. Do this only on an instance whose workflows you
+        trust, because inline code is real C# with the process's own reach.
+      </p>
+
+      <h3>An outbound HTTP request is refused</h3>
+      <p>
+        Every outbound request the engine makes passes through the egress policy, including the HTTP
+        Request node, AI provider calls and OpenAPI operations. All refusals start with
+        <code>Outbound egress denied</code>. The variants tell you which rule fired:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Message</th><th>Rule</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Outbound egress denied for local host '…'.</code></td>
+              <td><code>localhost</code> and any name ending in <code>.local</code> or <code>.internal</code>. This one is <strong>unconditional</strong> — turning off <code>DenyPrivateNetworks</code> does not lift it.</td>
+            </tr>
+            <tr>
+              <td><code>Outbound egress denied for private or loopback address '…'.</code></td>
+              <td>A literal IP address in a private, loopback or link-local range.</td>
+            </tr>
+            <tr>
+              <td><code>Outbound egress denied: host '…' resolves to a private, loopback, or link-local address.</code></td>
+              <td>A hostname that resolved to such an address. If <em>any</em> of the resolved addresses qualifies, the whole host is refused.</td>
+            </tr>
+            <tr>
+              <td><code>Outbound egress denied by blocklist for host '…'.</code></td>
+              <td>The host matched <code>Security__HttpEgress__BlockDomains</code>.</td>
+            </tr>
+            <tr>
+              <td><code>Outbound egress denied because host '…' is not in the allowlist.</code></td>
+              <td>An allow-list is configured and the host is not on it.</td>
+            </tr>
+            <tr>
+              <td><code>Outbound egress denied because host '…' did not resolve to any address.</code></td>
+              <td>DNS returned nothing. Usually a genuine name or resolver problem rather than policy.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Two ordering details save time. The block-list is evaluated <em>before</em> the allow-list, so a
+        host on both is refused. An empty allow-list means no allow-list — it permits everything rather
+        than nothing.
+      </p>
+      <p>
+        The check runs on every physical connection, including each redirect hop, and the socket then
+        connects to the addresses that were just validated. A hostname cannot be rebound to an internal
+        address between the check and the connection. This is also why a host that resolves differently
+        from inside your network may be refused here and reachable from a browser on the same machine.
+      </p>
+      <p>
+        If reaching internal hosts is the actual point of the instance, set
+        <code>Security__HttpEgress__DenyPrivateNetworks</code> to <code>false</code> and restart — but
+        note the <code>.local</code> and <code>localhost</code> refusals remain in force regardless.
+      </p>
+
+      <h2>Runs queue up or are refused</h2>
+      <p>
+        Four runs execute at once by default and the rest wait, so a backlog is normal rather than a
+        fault. Refusal only starts when the queue reaches
+        <code>Execution__MaxQueueDepth</code>, one thousand by default, at which point new starts get
+        <code>429</code> with the message <code>Execution queue is at capacity (1000 pending runs).
+        Retry later.</code>
+      </p>
+      <p>
+        Which starts are refused is not obvious and is worth knowing before you raise any limits:
+      </p>
+      <ul>
+        <li><strong>Refused:</strong> manual runs, inbound webhook calls, and firing a schedule by hand
+            from the editor.</li>
+        <li><strong>Never refused:</strong> automatic schedule fires, polling triggers, external device
+            signals, the error workflow, and runs re-queued by crash recovery. These are internal
+            producers and bypass the cap by design, so an automatic workload can push the queue past
+            its own ceiling while manual runs are being turned away.</li>
+      </ul>
+      <p>
+        The live counters — in-flight runs, queue depth, both limits and the number of rejected starts
+        — are available from <code>GET /api/runtime/execution</code>. Both limits are read at startup
+        only, so raising <code>Execution__MaxConcurrentRuns</code> (valid range 1–64) or
+        <code>Execution__MaxQueueDepth</code> (1–100000) requires a restart.
+      </p>
+
+      <h2>AI nodes fail</h2>
+
+      <h3>The provider is not configured</h3>
+      <p>
+        Every AI node fails with the same sentence until a provider is set up:
+      </p>
+      <pre><code>The AI provider is not configured. Choose a provider, model, and API-key
+credential in Settings → AI Provider.</code></pre>
+      <p>
+        The configuration is only considered complete when <strong>all three</strong> are present: a
+        recognised vendor, a non-blank model name, and a credential reference. Setting the vendor and
+        leaving the model blank produces this same message, which reads as though nothing was
+        configured at all. The supported vendors are Anthropic, OpenAI, Azure OpenAI and Gemini.
+      </p>
+      <p>
+        The API key itself is never stored with the provider settings — only a reference to a stored
+        <a href="security.html">credential</a> or an environment variable. If that reference cannot be
+        resolved you get a different message naming it: <code>The AI provider API key could not be
+        resolved from '…'. Check the credential in Settings → AI Provider.</code> The workflow
+        generator has its own wording, <code>AI workflow generation is not configured…</code>, but the
+        same fix applies.
+      </p>
+      <p>
+        <span class="kg-path">Settings &rsaquo; AI Provider</span> has a test button that reports the
+        specific gap rather than a generic failure — <em>A model (or Azure deployment name) is
+        required.</em>, <em>An API-key credential is required.</em> and so on. Use it before debugging a
+        workflow.
+      </p>
+
+      <h3>The AI Agent will not use tools</h3>
+      <p>
+        Three different causes produce this, and they are distinguishable by the message.
+      </p>
+      <p>
+        <strong>The capability is off.</strong> The node fails immediately with <code>AI Agent is
+        disabled: the 'aiAgent' capability is off. An administrator can enable it under Settings →
+        Capabilities.</code>
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">That advice cannot currently be followed</span>
+        <p>
+          <span class="kg-path">Settings &rsaquo; Capabilities</span> renders only two toggles, for
+          inline code and database access. There is no toggle for the AI Agent capability, even though
+          the backend accepts it as switchable and the node enforces it. Until a toggle is added, the
+          only way to enable it is a direct administrator call to
+          <code>PUT /api/settings/capabilities</code> including <code>aiAgent</code> in the list of
+          enabled capabilities. This is a gap in the interface, not a misreading of the message.
+        </p>
+      </div>
+
+      <p>
+        <strong>The vendor does not support it.</strong> <code>The AI Agent node does not support
+        Gemini in this version. Configure Anthropic or an OpenAI-compatible provider in Settings → AI
+        Provider.</code> Other AI nodes work with Gemini; only the agent's tool loop does not.
+      </p>
+      <p>
+        <strong>The model is an OpenAI reasoning model.</strong> Reasoning models reject function tools
+        on the chat completions API. Knotarium adapts automatically — it retries once with the
+        parameter those models require and remembers the model so later turns skip the wasted round
+        trip — but when the retry also fails you get:
+      </p>
+      <pre><code>the configured model does not support function tools on the OpenAI Chat
+Completions API (it looks like a reasoning model, e.g. the gpt-5 family).
+The AI Agent needs a tool-capable model — set a per-node model override
+such as gpt-4o or gpt-4.1, or choose a non-reasoning model in
+Settings → AI Provider.</code></pre>
+      <p>
+        The per-node override is the better fix, because it leaves the reasoning model in place for the
+        prompt and routing nodes that benefit from it while giving the agent a tool-capable model.
+      </p>
+
+      <h2>Credentials, data and upgrades</h2>
+
+      <h3>Saved credentials cannot be decrypted after a move or restore</h3>
+      <p>
+        <code>Knotarium.db</code> stores credentials encrypted; <code>.credential-key</code> in the same
+        data directory is what decrypts them. Copying the database without the key file is the single
+        most damaging mistake available in this product, and the way it fails is what makes it
+        dangerous.
+      </p>
+      <p>
+        <strong>It does not fail at startup.</strong> Finding no key file, the application generates a
+        new random one and carries on. The instance starts cleanly, the credentials are all still
+        listed by name, and everything looks intact. Only when a workflow actually resolves a
+        credential does it fail, with an authentication-tag mismatch from the cryptography layer,
+        surfaced as the failed node's error in the run. The same happens when a notification channel
+        sends and when a new backup is created.
+      </p>
+      <p>
+        There is no recovery without the original key. Restore <code>.credential-key</code> from the
+        source machine into the data directory and restart; if it is genuinely gone, every stored
+        secret must be re-entered.
+      </p>
+      <p>
+        Restoring an instance backup produces a much clearer message, because that path checks
+        explicitly. A server-key backup restored on the wrong host reports <code>Couldn't decrypt with
+        this server's key — a server-key backup only restores on the host that created it (its
+        credential key must be unchanged).</code> A passphrase backup with the wrong passphrase reports
+        <code>Incorrect passphrase, or the backup archive is corrupt.</code> Both come from
+        <span class="kg-path">Settings &rsaquo; Backup &amp; Restore</span>. See
+        <a href="backup-restore.html">Backup and restore</a>.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Back the two up together, always</span>
+        <p>
+          <code>Knotarium.db</code> and <code>.credential-key</code> are a pair. Back up the whole data
+          directory as a unit rather than picking files out of it.
+        </p>
+      </div>
+
+      <h3>Upgrading left the workflows or the database behind</h3>
+      <p>
+        Older builds kept workflow drafts in the per-user <code>%APPDATA%\Knotarium</code> folder. On
+        every non-development startup the application looks there and moves what it finds into the
+        current data directory. What it moves is narrow:
+      </p>
+      <ul>
+        <li>Draft <code>.json</code> files from <code>%APPDATA%\Knotarium\workflows\</code>, not
+            recursively.</li>
+        <li><code>groups.json</code>.</li>
+      </ul>
+      <p>
+        It moves <strong>nothing else</strong>. Not the database, not the credential key, not the
+        export folder. If your previous installation kept <code>Knotarium.db</code> next to the
+        executable, the new version starts with an empty database and the old one sits where it always
+        was. Copy it and its <code>.credential-key</code> into the data directory before first launch,
+        or point <code>Database__ConnectionString</code> at the old file.
+      </p>
+      <p>
+        Two further traps are worth knowing. The source folder is the <em>AppData of the account
+        running the process</em>, so a service running as a machine account will find nothing in your
+        user profile and log nothing interesting — run the executable interactively once to migrate
+        your own drafts. And a file whose name already exists at the destination is never overwritten:
+        it is skipped with <code>Skipping legacy workflow file …: a file with the same name already
+        exists in …</code> and left in <code>%APPDATA%</code>, where it remains recoverable by hand.
+      </p>
+      <p>
+        A migration that fails on permissions or a locked file logs <code>Could not migrate the legacy
+        workflow store from …; continuing with the shared data directory only</code> and startup
+        continues rather than aborting. A successful one logs how many files moved.
+      </p>
+
+      <h2>The application will not start</h2>
+
+      <h3>Startup fails because authentication is disabled</h3>
+      <p>
+        If <code>Auth__Enabled</code> is <code>false</code> while any configured binding is not a
+        loopback address, startup aborts on purpose with:
+      </p>
+      <pre><code>Authentication is disabled (Auth:Enabled=false) but the server is
+configured to bind a non-loopback address (…). In no-auth mode every
+endpoint is anonymous, so this would expose an unauthenticated
+remote-code-execution surface. Bind loopback only (e.g.
+http://127.0.0.1:PORT), enable authentication (Auth:Enabled=true), or set
+Security:AllowUnauthenticatedNonLoopback=true to accept the risk (e.g.
+behind a trusted reverse proxy).</code></pre>
+      <p>
+        The guard inspects both the aggregate URL setting — which covers
+        <code>ASPNETCORE_URLS</code>, <code>DOTNET_URLS</code> and <code>--urls</code> — and any Kestrel
+        endpoint URLs. Note that a <em>DNS hostname</em> counts as non-loopback even if it happens to
+        resolve to the local machine; only <code>localhost</code> and literal loopback addresses pass.
+        Wildcards such as <code>*</code>, <code>+</code>, <code>0.0.0.0</code> and <code>::</code>
+        obviously do not.
+      </p>
+      <p>
+        In a development environment the same condition is downgraded to a <code>[WARN]</code> line on
+        standard error and startup continues, which is why this can appear only after a deployment.
+        Take the first two remedies in the message before the third.
+      </p>
+
+      <h3>Startup fails on the audit chain</h3>
+      <p>
+        The audit log is hash-chained and the chain is verified during startup; a chain that does not
+        verify aborts the launch rather than starting with a log that can no longer be trusted. This is
+        normally a symptom of a partially restored or hand-edited database. Note that enabling audit
+        retention deliberately rewrites the chain to re-anchor the surviving entries, so older entries
+        can no longer be checked against the original chain — that is expected, not corruption.
+      </p>
+
+      <h2>Where to find the logs</h2>
+      <p>
+        Application logging is console-only, one line of compact JSON per event, written to standard
+        output. There is <strong>no log file and no rolling policy</strong> — do not go looking for a
+        <code>logs</code> folder, there is not one. The log level is fixed in code at information, with
+        database logging held down to warnings, and cannot be changed through configuration.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>How you run it</th><th>Where the log goes</th></tr></thead>
+          <tbody>
+            <tr><td>From a folder or a shortcut</td><td>The console window it was started from.</td></tr>
+            <tr><td>systemd on Linux</td><td>The journal: <code>journalctl -u knotarium -f</code>.</td></tr>
+            <tr><td>Docker</td><td><code>docker logs</code> on the container.</td></tr>
+            <tr><td>Windows service</td><td>Nowhere retrievable. See below.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A Windows service has no log destination</span>
+        <p>
+          The service is registered without stdout redirection and nothing writes to the Windows event
+          log, so console output from a service run is discarded. To diagnose a service-mode problem,
+          stop the service and run the executable interactively from a console with the same
+          configuration. This is a real gap, not an undocumented location.
+        </p>
+      </div>
+
+      <p>
+        Two things inside the interface look like logs and are not. The
+        <a href="runs.html">run</a> timeline is the per-run <a href="glossary.html">journal</a> — the
+        record of what each node received and produced — and is the right place to debug a workflow.
+        The <a href="diagnostics.html">Diagnostics</a> panel in the editor shows compiler diagnostics
+        for the graph you are drawing. Neither shows application log events, and there is no in-app
+        viewer that does.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Every setting named on this page, with its type, default and effect.</div>
+        </a>
+        <a class="kg-card" href="glossary.html">
+          <div class="kg-card-title">Glossary</div>
+          <div class="kg-card-desc">Precise definitions of the terms these explanations depend on.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

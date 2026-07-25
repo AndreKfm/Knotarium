@@ -1,0 +1,533 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  How to read the node reference. Every fact here is taken from the authoritative catalog in
+  Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs and the executors under
+  Backend/Knotarium.Features/Nodes — not from the manifests in nodes/, which are a stale second copy.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to read this reference · Knotarium Help</title>
+<meta name="description" content="The anatomy of a node entry: ids, palette categories, parameter types, expressions, ports, capabilities, timeouts and retries.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="nodes-overview.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>How to read this reference</h1>
+      <p class="kg-lead">
+        Every node in the reference is documented the same way: what it does, its parameters with
+        types, and its output ports. This page explains what those columns mean — where a node's
+        identity comes from, why the palette group rarely matches the category in the catalog, which
+        fields accept expressions, and why a property form is blank even when the code behind it has a
+        sensible default. Read it once; the six pages that follow assume it.
+      </p>
+
+      <h2>Where a node's facts come from</h2>
+      <p>
+        A node is described by a <strong>manifest</strong>: a small record holding its id, display
+        name, category, parameters, output ports, capability tags, timeout and retry policy. The
+        built-in manifests are registered in code when the application starts. The property form, the
+        palette entry, the ports drawn on the canvas and the compiler's socket validation are all
+        generated from that one record, which is why an entry in this reference can be trusted to
+        match what you see on screen.
+      </p>
+      <p>
+        What the manifest does <em>not</em> describe is behaviour. The value a node emits, the shape
+        of its payload and every fallback it applies to a missing parameter live in the executor — a
+        separate piece of code. Where the two differ, this reference documents the executor, because
+        that is what actually runs.
+      </p>
+
+      <h2>Display name and internal id</h2>
+      <p>
+        Each entry's heading is the <strong>display name</strong> — what the palette, the canvas and
+        the properties panel call it. Immediately after it, in monospace, is the <strong>internal
+        id</strong>: the string stored in the workflow file, quoted in compiler diagnostics and
+        journal entries, and used by the REST API. They frequently disagree, and the id is the one
+        that matters when you are reading an error message. <span class="kg-path">Cron
+        Scheduler</span> is stored as <code>scheduler</code>; <span class="kg-path">Email Send
+        (SMTP)</span> is <code>smtpSend</code>; <span class="kg-path">Parallel For-Each</span> is
+        <code>parallelForEach</code>.
+      </p>
+      <p>
+        Ids are matched case-insensitively throughout the engine, but they are written in the
+        workflow exactly as the palette produced them. Renaming a node on the canvas changes only its
+        label; the id of the node <em>type</em> never changes, and the per-node instance id
+        (<code>httpRequest-3</code> and the like) is what expressions reference.
+      </p>
+
+      <h2>Palette category</h2>
+      <p>
+        The category in the manifest is not the group you see in the sidebar. The palette
+        <strong>normalises</strong> nine manifest categories down to six sections, and the collapsing
+        is lossy: <em>Utility</em>, <em>Scripting</em>, <em>Annotations</em>, <em>External</em> and
+        anything it does not recognise all land in a single <strong>Utility</strong> section. This is
+        why <span class="kg-path">Inline Code</span> — category <code>Scripting</code> in the catalog —
+        appears under Utility in the palette.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Manifest category</th><th>Palette section</th></tr></thead>
+          <tbody>
+            <tr><td><code>Triggers</code></td><td>Trigger</td></tr>
+            <tr><td><code>Control</code></td><td>Logic</td></tr>
+            <tr><td><code>Data</code></td><td>Data</td></tr>
+            <tr><td><code>Integrations</code></td><td>Network</td></tr>
+            <tr><td><code>AI</code></td><td>Ai</td></tr>
+            <tr><td><code>Utility</code></td><td>Utility</td></tr>
+            <tr><td><code>Scripting</code></td><td>Utility</td></tr>
+            <tr><td><code>Annotations</code></td><td>Utility <em>(but hidden — see below)</em></td></tr>
+            <tr><td><code>External</code></td><td>Utility</td></tr>
+            <tr><td>anything else</td><td>Utility</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Three nodes are registered and fully executable but never offered in the palette.
+        <strong>Sticky Note</strong> and <strong>Group</strong> are editor-only annotations inserted
+        from the canvas toolbar instead. <strong>Manual Trigger</strong> is hidden because it is
+        redundant with <strong>Start</strong> — both are manual-run entry points — so new workflows
+        get one obvious choice. An existing workflow that already contains a Manual Trigger still
+        loads, renders and runs; only the palette stopped offering it.
+      </p>
+      <p>
+        Palette search matches the display name, the one-line description and the palette section.
+        It deliberately does <strong>not</strong> match the internal id, so searching for
+        <code>x</code> no longer surfaces External Device through the <code>x</code> in
+        <code>externalDevice</code>. If you know the id and not the name, use this reference rather
+        than the search box.
+      </p>
+      <p>
+        A manifest can also mark a node <strong>secondary</strong>, which routes it out of its normal
+        section into a collapsed <span class="kg-path">Advanced</span> panel at the bottom of the
+        palette. No built-in node sets that flag today, so the Advanced panel appears only when a
+        custom or imported package uses it.
+      </p>
+
+      <h2>Parameters</h2>
+      <p>
+        A parameter is configuration you fill in on the node; it is not the same thing as data
+        arriving over a wire. Every parameter carries a name, a type, and a required flag. The
+        <strong>Required</strong> column in this reference reflects the manifest's own flag — the
+        publish gate uses it to refuse a workflow with an unconfigured required field, so a missing
+        required value fails at publish time rather than mid-run.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Type</th><th>Field rendered</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>string</code></td>
+              <td>Single-line text, or a resizable text area</td>
+              <td>Switches to a multi-line editor automatically for long or multi-line values, and always for fields such as <code>body</code>, <code>message</code>, <code>prompt</code> and <code>payload</code>.</td>
+            </tr>
+            <tr>
+              <td><code>number</code></td>
+              <td>Numeric input</td>
+              <td>Stored as a number. An empty field is absent, not zero — the executor's own fallback applies.</td>
+            </tr>
+            <tr>
+              <td><code>boolean</code></td>
+              <td>Toggle</td>
+              <td>An untouched toggle stores nothing at all, so the executor's default decides.</td>
+            </tr>
+            <tr>
+              <td><code>enum</code></td>
+              <td>Drop-down of the manifest's declared values</td>
+              <td>The allowed values are listed in each node's parameter table.</td>
+            </tr>
+            <tr>
+              <td><code>json</code></td>
+              <td>Node-specific editor</td>
+              <td>Used once, by Condition's <code>logic</code>. The generic form never renders it; a dedicated logic editor replaces the whole form.</td>
+            </tr>
+            <tr>
+              <td><code>code</code></td>
+              <td>Full-screen source editor</td>
+              <td>Used by Inline Code. Double-clicking the node on the canvas opens it.</td>
+            </tr>
+            <tr>
+              <td><code>keyValue</code></td>
+              <td>Repeating name/value rows</td>
+              <td>Query parameters, bulk variable assignments, mail attachments.</td>
+            </tr>
+            <tr>
+              <td><code>credentialRef</code></td>
+              <td>Drop-down of stored credentials</td>
+              <td>Persists the credential's id. The secret itself is resolved at run time and never written into the workflow.</td>
+            </tr>
+            <tr>
+              <td><code>notificationChannelRef</code></td>
+              <td>Drop-down of configured notification channels</td>
+              <td>Used only by Send Notification.</td>
+            </tr>
+            <tr>
+              <td><code>resourceLocator</code></td>
+              <td>Live picker against a remote system</td>
+              <td>Persists a stable key plus a display label, re-resolved at run time. May allow free-text entry when the system is unreachable at design time, and may be multi-select.</td>
+            </tr>
+            <tr>
+              <td><code>dynamicOptions</code></td>
+              <td>Drop-down loaded from a server-side loader</td>
+              <td>No built-in node uses it; it exists for imported OpenAPI operations and custom packages.</td>
+            </tr>
+            <tr>
+              <td><code>dynamicFields</code></td>
+              <td>A form whose fields are themselves fetched</td>
+              <td>Also reserved for imported and custom packages.</td>
+            </tr>
+            <tr>
+              <td><code>agentTools</code></td>
+              <td>Structured tool list editor</td>
+              <td>Used only by AI Agent, to allow-list the workflows the model may call.</td>
+            </tr>
+            <tr>
+              <td><code>aiModel</code></td>
+              <td>Model picker</td>
+              <td>Overrides the instance-wide model from <span class="kg-path">Settings &rsaquo; AI Provider</span> for one node.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Some parameters never appear in the form even though they exist in the manifest. A parameter
+        named <code>end</code> is always hidden, because it is the loop-back <em>input port</em> of a
+        container node and is wired with an edge rather than typed in. On a node with a
+        <code>mode</code> parameter the form shows only the fields that mode uses, so switching
+        For Loop from <code>count</code> to <code>foreach</code> swaps <code>count</code> for
+        <code>collection</code> instead of showing both.
+      </p>
+
+      <h3>Which parameters accept expressions</h3>
+      <p>
+        Each parameter carries an <strong>expression</strong> flag, listed in the
+        <strong>Expr</strong> column of every parameter table. When it is set, the engine resolves
+        <code>{{ }}</code> placeholders in the value <em>before</em> handing it to the node:
+      </p>
+      <pre><code><span class="tok-comment"># an upstream node's output</span>
+{{ $node.httpRequest-1.output.body }}
+
+<span class="tok-comment"># a workflow variable, including a nested path</span>
+{{ $variables.customer.email }}
+{{ $variables.rows[0].id }}</code></pre>
+      <p>
+        When the flag is clear, the raw value is handed over untouched. That is not an oversight — it
+        is load-bearing. Inline Code's <code>code</code> parameter must not be rewritten, or a
+        <code>{{ }}</code> sequence inside a C# string literal would be mangled before the compiler
+        ever saw it. Condition's <code>logic</code> is handed over unresolved so the node can resolve
+        each operand itself and tell a genuinely missing reference apart from one that resolved to
+        <code>null</code>. The practical consequence is simple: <strong>typing
+        <code>{{ ... }}</code> into a field whose Expr column is empty stores those characters
+        literally</strong>, and the node will use them as text.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Manifest parameters carry no default values</span>
+        <p>
+          The manifest record has no field for a default. The property form asks for one, finds
+          nothing, and falls back to an empty string — so <strong>every field starts blank, including
+          the ones the executor has a perfectly good default for</strong>. Delay does not show
+          <code>0</code>, Parallel For-Each does not show <code>8</code>, HTTP Request does not
+          pre-select <code>GET</code>.
+        </p>
+        <p>
+          A blank field is therefore not the same as a field set to the default — it is a field that
+          is <em>absent</em>, and absence is exactly what makes the executor apply its own fallback.
+          The defaults are documented in the prose of each node entry rather than in the parameter
+          tables, because putting them in a "Default" column would imply the form shows them.
+        </p>
+      </div>
+
+      <h2>Output ports</h2>
+      <p>
+        Ports are the sockets on the right edge of a node card. The manifest declares them, the
+        canvas draws one handle per declared port, and the compiler checks that every edge names a
+        port that exists. Three shapes occur.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 250" role="img" aria-labelledby="ports-title">
+          <title id="ports-title">The three kinds of output port a node can declare</title>
+
+          <rect x="10" y="16" width="210" height="94" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="42" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">SINGLE</text>
+          <text x="28" y="66" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13">Log, Set Variable,</text>
+          <text x="28" y="84" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13">Delay, Subflow</text>
+          <circle cx="220" cy="63" r="6" fill="#6366f1"/>
+          <text x="236" y="68" fill="#c7d2fe" font-family="'JetBrains Mono',monospace" font-size="12">result</text>
+
+          <rect x="10" y="128" width="210" height="108" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="154" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">BRANCH</text>
+          <text x="28" y="178" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13">Condition, For Loop,</text>
+          <text x="28" y="196" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="13">httpRequest</text>
+          <circle cx="220" cy="166" r="6" fill="#10b981"/>
+          <circle cx="220" cy="196" r="6" fill="#ef4444"/>
+          <text x="236" y="171" fill="#a7f3d0" font-family="'JetBrains Mono',monospace" font-size="12">true / success</text>
+          <text x="236" y="201" fill="#fecaca" font-family="'JetBrains Mono',monospace" font-size="12">false / error</text>
+
+          <rect x="390" y="16" width="300" height="220" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="410" y="42" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">DYNAMIC</text>
+          <text x="410" y="66" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13">The manifest declares none;</text>
+          <text x="410" y="84" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13">the editor derives them from</text>
+          <text x="410" y="102" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13">the node's own configuration.</text>
+
+          <text x="410" y="136" fill="#06b6d4" font-family="'JetBrains Mono',monospace" font-size="12">aiRouter</text>
+          <text x="410" y="154" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">one port per category label,</text>
+          <text x="410" y="170" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">plus otherwise</text>
+
+          <text x="410" y="198" fill="#06b6d4" font-family="'JetBrains Mono',monospace" font-size="12">externalDevice</text>
+          <text x="410" y="216" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">evt:… and act:… pins</text>
+        </svg>
+        <figcaption>Single, branch and dynamic ports. Only declared ports are socket-validated.</figcaption>
+      </figure>
+
+      <p>
+        <strong>A single <code>result</code> port</strong> is the common case: the node did its work
+        and the run continues. <strong>Branch ports</strong> mean the node <em>chooses</em> one wire.
+        Condition emits on <code>true</code> or <code>false</code>; HTTP Request on
+        <code>success</code> or <code>error</code>; container nodes on <code>start</code> for each
+        pass through the body and <code>success</code> once the loop is done. Only the chosen port's
+        edges are followed, so a branch node with nothing wired to the port it selected simply ends
+        that path.
+      </p>
+      <p>
+        <strong>Dynamic ports</strong> are the exception. Two nodes declare no outputs at all, which
+        makes the compiler skip socket validation for them, and the editor derives the handles from
+        the node's own properties instead. AI Router splits its <code>categories</code> value on
+        commas, semicolons and newlines, trims each label, drops empties, de-duplicates
+        case-insensitively keeping the first spelling, and draws one port per surviving label plus a
+        permanent <code>otherwise</code> fallback. External Device draws one source pin per selected
+        event (<code>evt:&lt;type&gt;</code>) and per selected incoming action
+        (<code>act:&lt;type&gt;</code>); it is a purely inbound surface and has no input pins.
+      </p>
+      <p>
+        Because dynamic ports are derived from configuration, editing that configuration changes the
+        node's shape. Removing a category label or unticking a device pin drops the corresponding
+        port, and any edge attached to it is pruned. There is no warning — the wire is simply gone
+        the next time the graph loads.
+      </p>
+
+      <h2>Capabilities and what "privileged" means</h2>
+      <p>
+        A manifest lists the privileged resources its node touches as capability tags. Five of them
+        are classed as <strong>privileged</strong>, meaning a workflow containing such a node can
+        reach past ordinary data flow and touch the host itself. That classification is what drives
+        the warning shown before you install an imported template or bundle, and before you accept an
+        AI-generated graph.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Tag</th><th>Privileged</th><th>Enforcement</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>filesystem.read</code></td>
+              <td><span class="kg-pill is-danger">Privileged</span></td>
+              <td>Checked against the file access policy on every call. Deny-all until directories are permitted.</td>
+            </tr>
+            <tr>
+              <td><code>filesystem.write</code></td>
+              <td><span class="kg-pill is-danger">Privileged</span></td>
+              <td>Same policy, separate permission.</td>
+            </tr>
+            <tr>
+              <td><code>code.execute</code></td>
+              <td><span class="kg-pill is-danger">Privileged</span></td>
+              <td>Gated by the instance capability switch, off until an administrator enables it.</td>
+            </tr>
+            <tr>
+              <td><code>database</code></td>
+              <td><span class="kg-pill is-danger">Privileged</span></td>
+              <td>Same switch.</td>
+            </tr>
+            <tr>
+              <td><code>aiAgent</code></td>
+              <td><span class="kg-pill is-danger">Privileged</span></td>
+              <td>Same switch. The agent loop can invoke other workflows as tools, so it is treated like code execution.</td>
+            </tr>
+            <tr>
+              <td><code>network</code></td>
+              <td><span class="kg-pill is-off">Descriptive</span></td>
+              <td>Not switchable. Outbound requests are governed by the egress policy instead.</td>
+            </tr>
+            <tr>
+              <td><code>credentials</code></td>
+              <td><span class="kg-pill is-off">Descriptive</span></td>
+              <td>Not switchable. Marks a node that resolves stored secrets.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The capability switch is secure by default: an instance with nothing enabled denies code
+        execution, database access and the agent loop outright. A node whose capability is denied
+        <strong>fails when it runs</strong>, not when you publish, so a workflow that passes
+        validation on your machine can still fail on a locked-down instance. The vocabulary is an
+        open list of plain strings, shared with binary and custom node packages, so a third-party
+        package may declare a tag not listed here.
+      </p>
+
+      <h3>Credentials</h3>
+      <p>
+        Any parameter typed <code>credentialRef</code> stores nothing but the id of a credential
+        saved under <span class="kg-path">Settings &rsaquo; Credentials</span>. The secret is
+        decrypted and injected at run time. This is why exporting a workflow never leaks a password,
+        and equally why importing one onto a different instance leaves the credential reference
+        dangling until you point it at a local credential.
+      </p>
+
+      <h2>Timeouts</h2>
+      <p>
+        Every manifest carries a default timeout in seconds, listed in each node entry. The engine
+        starts from that value and applies two adjustments:
+      </p>
+      <ul>
+        <li>A <code>timeoutSeconds</code> (or <code>timeout</code>) property on the node overrides it,
+            clamped to between 1 and 3600 seconds.</li>
+        <li>A manifest timeout of <code>0</code> means "not specified"; a node that actually executes
+            then gets a 5-second timeout. Most nodes declaring <code>0</code> are triggers, which never
+            execute a task at all, so the fallback rarely bites.</li>
+      </ul>
+      <p>
+        Delay is special-cased: its timeout is raised to the configured wait plus two seconds, so a
+        long deliberate pause can never trip a limit that exists to catch a hung node. Inside a
+        Parallel For-Each body the rules differ — each body node's manifest timeout is clamped to
+        between 1 and 600 seconds, and a body node whose manifest declares <code>0</code> gets 30
+        seconds rather than 5.
+      </p>
+
+      <h2>Retry behaviour</h2>
+      <p>
+        A node is retried automatically only when <strong>both</strong> manifest flags allow it: its
+        recovery mode must be "retry automatically" <em>and</em> its side effect must be idempotent.
+        Declaring only the first is not enough, and that combination is easy to misread. HTTP Request
+        asks for automatic retry but is marked as having a non-idempotent side effect, so
+        <strong>a failed HTTP Request is never retried by the engine</strong> — a POST that may have
+        already been delivered must not be replayed on the run's behalf. The same applies to Database
+        Query, Email Send and MQTT Publish.
+      </p>
+      <p>
+        The nodes that genuinely retry are File Read, Email Fetch (IMAP), Resource Picker, AI Prompt,
+        AI Router, AI Verify and AI Semantic Diff. Everything else fails immediately and hands control
+        to the workflow's own error path.
+      </p>
+      <p>
+        No built-in node declares a custom retry policy, so all of them use the same defaults: at most
+        <strong>3 attempts</strong>, a <strong>2-second</strong> initial delay, doubling each time,
+        with random jitter of up to ±15% and a <strong>30-second</strong> ceiling on any single delay.
+        While waiting, the run is parked rather than blocking a worker.
+      </p>
+
+      <h2>The catalog at a glance</h2>
+      <p>
+        Thirty-seven node types are registered. Thirty-four of them are offered in the palette; the
+        three that are not are called out in the last column.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Category</th><th>Palette section</th><th>Count</th><th>Nodes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Triggers</code></td><td>Trigger</td><td>7</td>
+              <td>Start, End, Cron Scheduler, Webhook Trigger, Polling Trigger, Error Trigger, Manual Trigger <em>(hidden)</em></td>
+            </tr>
+            <tr>
+              <td><code>Control</code></td><td>Logic</td><td>7</td>
+              <td>Condition, Delay, Switch, For Loop, Parallel For-Each, Join, Subflow</td>
+            </tr>
+            <tr>
+              <td><code>Data</code></td><td>Data</td><td>3</td>
+              <td>Transform, Merge, Resource Picker</td>
+            </tr>
+            <tr>
+              <td><code>Integrations</code></td><td>Network</td><td>8</td>
+              <td>HTTP Request, Database Query, File Read, File Write, Email Send (SMTP), Email Fetch (IMAP), MQTT Publish, Send Notification</td>
+            </tr>
+            <tr>
+              <td><code>AI</code></td><td>Ai</td><td>5</td>
+              <td>AI Prompt, AI Router, AI Verify, AI Semantic Diff, AI Agent</td>
+            </tr>
+            <tr>
+              <td><code>Utility</code></td><td>Utility</td><td>3</td>
+              <td>Log, Set Variable, Set Variables</td>
+            </tr>
+            <tr>
+              <td><code>Scripting</code></td><td>Utility</td><td>1</td>
+              <td>Inline Code</td>
+            </tr>
+            <tr>
+              <td><code>Annotations</code></td><td>Utility</td><td>2</td>
+              <td>Sticky Note <em>(hidden)</em>, Group <em>(hidden)</em></td>
+            </tr>
+            <tr>
+              <td><code>External</code></td><td>Utility</td><td>1</td>
+              <td>External Device</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Counting what the palette shows rather than what is registered: Trigger 6, Logic 7, Data 3,
+        Network 8, Ai 5, Utility 5. A custom or imported node package adds to whichever section its
+        category normalises to, and an unrecognised category always lands in Utility.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Imported operations are nodes too</span>
+        <p>
+          Importing an OpenAPI specification generates node types of its own, one per operation. They
+          are not part of the catalog above and are not documented node by node here — their
+          parameters come from the specification. They behave like any other node otherwise: same
+          port rules, same timeout handling, same expression flags.
+        </p>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="nodes-triggers.html">
+          <div class="kg-card-title">Trigger nodes</div>
+          <div class="kg-card-desc">How a run starts: schedules, webhooks, polling and the global error handler.</div>
+        </a>
+        <a class="kg-card" href="nodes-logic.html">
+          <div class="kg-card-title">Logic nodes</div>
+          <div class="kg-card-desc">Branching, waiting, looping in sequence or in parallel, and calling another workflow.</div>
+        </a>
+        <a class="kg-card" href="nodes-data.html">
+          <div class="kg-card-title">Data nodes</div>
+          <div class="kg-card-desc">Extracting a value from JSON, combining arrays, and picking a live resource.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>
