@@ -8,7 +8,7 @@
 
 One .NET process serves both the API and the UI. Storage sits behind a pluggable database-provider seam: **SQLite by default** — zero setup, all data in one local file — with the provider interface already in place for others (a Postgres provider is scaffolded).
 
-> **Status:** early / active development. The project name is provisional and may change.
+> **Note — built with AI, human-verified.** This project was created largely from scratch with AI assistance and reviewed by a human as thoroughly as reasonably possible. It is in early, active development, may still contain errors, and is **not yet production-ready**. The name is provisional.
 
 ![The Knotarium canvas editor: a branching workflow (manual trigger → HTTP request → condition → set-variable / log) laid out on the node canvas, with the node palette on the left and the property inspector on the right](assets/editor.png)
 
