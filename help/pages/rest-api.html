@@ -1,0 +1,495 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The HTTP API. Every route here was read out of Backend/Knotarium.Api/Endpoints/*.cs, the three
+  endpoint files that live directly under Backend/Knotarium.Api/, the AI endpoints under
+  Services/Ai/, and the mapping block at the end of Program.cs. Nothing is inferred.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REST API · Knotarium Help</title>
+<meta name="description" content="The complete HTTP API: authentication with the kg_auth cookie, the anonymous webhook trigger and its rate limit, CSRF and CORS, and every route grouped by area.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="rest-api.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>REST API</h1>
+      <p class="kg-lead">
+        Everything the user interface does, it does over this API — there is no private channel and no
+        second protocol. That makes the whole product scriptable, and it makes the API surface a
+        security boundary worth understanding before you expose an instance to anything. This page
+        enumerates the routes that exist, the authentication rules that apply to them, and the handful
+        of responses that mean something other than "your request was wrong".
+      </p>
+
+      <h2>Base address and shape</h2>
+      <p>
+        Every route below is rooted at <code>/api</code> on the instance's own address — by default
+        <code>http://localhost:43120</code>. Requests and responses are JSON except where a route is
+        explicitly noted as multipart upload or file download. There is no API version prefix and no
+        published OpenAPI document for Knotarium's own API; the routes here are the contract.
+      </p>
+      <p>
+        One route sits outside <code>/api</code>: <code>GET /help</code> serves this documentation and
+        is anonymous, so the manual is readable from the sign-in screen.
+      </p>
+
+      <h2>Authentication</h2>
+      <p>
+        Authentication is a session cookie named <code>kg_auth</code>, issued by
+        <code>POST /api/auth/login</code>. It is HttpOnly, SameSite <code>Lax</code>, HTTPS-only outside
+        development, and slides forward on a seven-day expiry. There are no API keys and no bearer
+        tokens: a script authenticates by logging in and keeping the cookie.
+      </p>
+      <p>
+        With <code>Auth__Enabled</code> at its default of <code>true</code>, every endpoint requires an
+        authenticated user unless it explicitly opts out. An unauthenticated call gets
+        <strong>401</strong> and an authenticated-but-unauthorized one gets <strong>403</strong> — this
+        is an API, so neither redirects to a login page. A subset of routes additionally requires the
+        <strong>admin</strong> role; those are marked below.
+      </p>
+
+      <pre><code><span class="tok-comment"># Sign in and keep the session cookie in a jar</span>
+<span class="tok-cmd">curl</span> -s -c jar.txt -X POST http://localhost:43120/api/auth/login \
+  -H <span class="tok-str">'Content-Type: application/json'</span> \
+  -d <span class="tok-str">'{"username":"admin","password":"…"}'</span>
+
+<span class="tok-comment"># Then use it</span>
+<span class="tok-cmd">curl</span> -s -b jar.txt http://localhost:43120/api/workflows</code></pre>
+
+      <h3>The anonymous routes</h3>
+      <p>
+        Exactly five endpoints opt out of authentication, and each has its own reason:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Route</th><th>Why it is anonymous</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/auth/status</code></td><td>The interface must be able to ask whether an admin exists before anyone can sign in.</td></tr>
+            <tr><td><code>POST /api/auth/setup</code></td><td>Creates the first administrator on an unconfigured instance. Only works while no accounts exist.</td></tr>
+            <tr><td><code>POST /api/auth/login</code></td><td>Obviously. Rate-limited — see below.</td></tr>
+            <tr><td><code>POST /api/executions</code></td><td>The machine-facing webhook trigger. Guarded by the arming switch, the workflow's enabled state, and an optional per-workflow secret rather than by a session.</td></tr>
+            <tr><td><code>POST /api/executions/resume</code></td><td>Resumes a suspended run. Authenticated by the per-run correlation token, not by a session.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Turning authentication off removes the distinction</span>
+        <p>
+          Setting <code>Auth__Enabled=false</code> makes <em>every</em> endpoint anonymous, including
+          the capability toggle and the inline-code test — which together are remote code execution.
+          Startup refuses to proceed in that configuration on a non-loopback binding for exactly that
+          reason. The admin-role checks below become no-ops as well.
+        </p>
+      </div>
+
+      <h3>Rate limits</h3>
+      <p>
+        Two fixed-window limiters exist, both partitioned by remote IP address, both with no queue —
+        past the limit the request is rejected immediately with <strong>429</strong>.
+      </p>
+      <ul>
+        <li><code>POST /api/auth/login</code> is limited by
+            <code>Security__RateLimit__LoginPerMinute</code>, default <strong>10</strong> per minute,
+            which is what blunts online password guessing.</li>
+        <li><code>POST /api/executions</code> and <code>POST /api/executions/resume</code> share a limit
+            set by <code>Security__RateLimit__AnonymousMachinePerMinute</code>, default
+            <strong>60</strong> per minute. A busy webhook source behind a single NAT address is the
+            realistic reason to raise it.</li>
+      </ul>
+      <p>
+        Nothing else is rate-limited, because everything else needs a session first.
+      </p>
+
+      <h3>Same-origin enforcement</h3>
+      <p>
+        <code>Security__EnforceSameOrigin</code> is <span class="kg-pill is-off">Off by default</span>.
+        When enabled, an authenticated <code>POST</code>, <code>PUT</code>, <code>PATCH</code> or
+        <code>DELETE</code> carrying an <code>Origin</code> header that matches neither this host nor a
+        configured CORS origin is rejected with <strong>403</strong> and the body
+        <code>{"message":"Cross-origin state-changing request rejected."}</code>. A request with no
+        <code>Origin</code> header at all passes, which is why command-line clients are unaffected.
+      </p>
+      <p>
+        It is off by default because a reverse proxy that rewrites <code>Host</code> produces false
+        rejections. On a directly bound instance it is worth turning on: it is defence in depth over
+        the SameSite cookie.
+      </p>
+
+      <h3>CORS</h3>
+      <p>
+        With <code>Cors__AllowedOrigins</code> empty — the default — any origin may call the API but
+        credentials are refused, so a session cookie cannot be replayed from another origin. Listing
+        origins switches to an allow-list that <em>does</em> permit credentials. Configure it only when
+        a separate front-end origin genuinely needs to call this API; the bundled interface is
+        same-origin in production and reaches the backend through the Vite proxy in development.
+      </p>
+
+      <h2>Status codes worth recognising</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Code</th><th>Where you meet it</th></tr></thead>
+          <tbody>
+            <tr><td><strong>202</strong></td><td>A run was accepted. The <code>Location</code> header points at the new execution.</td></tr>
+            <tr><td><strong>401</strong></td><td>No session — or, on the webhook trigger, a missing or wrong <code>X-Knotarium-Webhook-Secret</code>.</td></tr>
+            <tr><td><strong>403</strong></td><td>Authenticated but not an administrator, or the same-origin check rejected the request.</td></tr>
+            <tr><td><strong>409</strong></td><td>State conflict: the runtime is disarmed, the workflow is deactivated, it has no active version, or a bundle install hit a same-version/different-hash collision.</td></tr>
+            <tr><td><strong>422</strong></td><td>A bundle install was refused by the package verification gate.</td></tr>
+            <tr><td><strong>429</strong></td><td>A rate limit, <em>or</em> the execution queue is full — see below.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Two different 429s</span>
+        <p>
+          Past <code>Execution__MaxQueueDepth</code> (default <strong>1000</strong> pending runs) the
+          webhook trigger answers 429 with a body naming the limit —
+          "Execution queue is at capacity (1000 pending runs). Retry later." That is back-pressure from
+          the engine, not the rate limiter, and it means the instance is accepting work faster than
+          <code>Execution__MaxConcurrentRuns</code> can retire it. Backing off is the right response;
+          raising the queue depth only delays the same conversation.
+        </p>
+      </div>
+
+      <h2>Triggering a workflow by webhook</h2>
+      <p>
+        This is the request most integrations actually need. It is anonymous, so no cookie is involved.
+      </p>
+
+      <pre><code><span class="tok-cmd">curl</span> -i -X POST http://localhost:43120/api/executions \
+  -H <span class="tok-str">'Content-Type: application/json'</span> \
+  -H <span class="tok-str">'X-Knotarium-Webhook-Secret: 7f3c…'</span> \
+  -d <span class="tok-str">'{
+        "workflowDefinitionId": "invoice-sync",
+        "inputVariables": { "orderId": "A-1029", "amount": 41.5 }
+      }'</span>
+
+<span class="tok-comment">HTTP/1.1 202 Accepted</span>
+<span class="tok-comment">Location: /api/executions/6f1c0c8e-1a4d-4d21-9a9b-2c9a1f0e77b2</span></code></pre>
+
+      <p>
+        <code>workflowDefinitionId</code> is required; <code>inputVariables</code> is an optional
+        object whose entries become the run's starting variables. The header is only required when a
+        secret is configured for that workflow — workflows without one stay open, which preserves the
+        older machine-facing contract. The secret is compared in constant time and is checked
+        <em>first</em>, before arming and enabled state, so an unauthorized caller cannot learn anything
+        about the instance from the response.
+      </p>
+      <p>
+        The request body is capped at <code>Security__WebhookMaxBodyBytes</code>, default
+        <strong>1 MiB</strong>, and the limit is enforced during the read so an oversized payload is
+        never buffered.
+      </p>
+      <p>
+        Four things must all be true for a 202: a secret check that passes, an <strong>armed</strong>
+        runtime, an <strong>enabled</strong> workflow, and an <strong>active published version</strong>.
+        Each failure has its own 409 message, so the body tells you which one it was. A workflow that
+        fails compilation answers 400 with a <code>diagnostics</code> array.
+      </p>
+
+      <h2>Workflows</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/workflows</code></td><td>List workflow definitions.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}</code></td><td>Read one definition.</td></tr>
+            <tr><td><code>POST /api/workflows</code></td><td>Create. The graph is compiled before it is stored.</td></tr>
+            <tr><td><code>PUT /api/workflows/{id}</code></td><td>Update, preserving activation state and metadata across editor saves.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/duplicate</code></td><td>Copy as a new draft.</td></tr>
+            <tr><td><code>DELETE /api/workflows/{id}</code></td><td>Delete — archives instead when version history exists.</td></tr>
+            <tr><td><code>POST /api/workflows/bulk-delete</code></td><td>Same, for an array of ids.</td></tr>
+            <tr><td><code>GET /api/workflows/archived</code></td><td>List archived workflows.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/unarchive</code></td><td>Restore an archived workflow.</td></tr>
+            <tr><td><code>DELETE /api/workflows/{id}/permanent</code></td><td>Irreversible purge of one workflow.</td></tr>
+            <tr><td><code>DELETE /api/workflows/archived/all</code></td><td>Irreversible purge of every archived workflow.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}/schedules</code></td><td>Schedule summary: cron expression, time zone and next fire time per scheduler node.</td></tr>
+            <tr><td><code>GET /api/workflow-groups</code></td><td>The dashboard's group tree. Returns an ETag.</td></tr>
+            <tr><td><code>PUT /api/workflow-groups</code></td><td>Replace the tree. Uses <code>If-Match</code> so two editors cannot silently clobber each other.</td></tr>
+            <tr><td><code>DELETE /api/workflow-groups/{id}</code></td><td>Delete one group.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Enablement and manual triggers</h3>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/workflows/{id}/enabled</code></td><td>Toggle the enabled flag. Cancels in-flight runs and re-syncs inbound signal subscriptions.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/trigger</code></td><td>Start a run from the active version manually. Unlike the webhook route this works while the runtime is disarmed.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/simulate-signal</code></td><td>Inject a simulated inbound device signal at a wired pin's downstream nodes.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/schedules/{nodeId}/fire</code></td><td>Fire one scheduler node now.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}/webhook-secret</code></td><td>Whether a webhook secret is configured. The value is never returned.</td></tr>
+            <tr><td><code>PUT /api/workflows/{id}/webhook-secret</code></td><td>Set or replace the secret. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>DELETE /api/workflows/{id}/webhook-secret</code></td><td>Clear it, reopening the trigger. <span class="kg-pill is-danger">Admin</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Versions and publishing</h3>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/workflows/{id}/versions</code></td><td>Paged version list with <code>page</code> and <code>pageSize</code>. Deliberately omits node and edge payloads so the history panel stays cheap.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}/versions/{versionId}</code></td><td>One version in full, payload included.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/versions</code></td><td>Save a new version.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/publish</code></td><td>Publish. Shares the runnability gate with activate.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/validate</code></td><td>Compile without persisting anything.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/activate/{versionId}</code></td><td>Make a version the active one.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/restore/{versionId}</code></td><td>Restore an older version as a new one, optionally activating it with <code>?activate=</code>.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}/active-version</code></td><td>Which version is live now.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}/active-version-at</code></td><td>Which version was live at <code>?atUtc=</code>, read from the append-only activation log.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}/activation-history</code></td><td>Paged activation log.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/export</code></td><td>Export the workflow as a document.</td></tr>
+            <tr><td><code>POST /api/workflows/import</code></td><td>Import such a document.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Publish and activate share one gate: unbound credential slots, incomplete conditions and
+        blocking reactive graphs all refuse the operation. That is why a workflow can save fine and
+        still not publish.
+      </p>
+
+      <h2>Runs and executions</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/executions</code></td><td>Start a run externally. <span class="kg-pill is-info">Anonymous, rate-limited</span></td></tr>
+            <tr><td><code>POST /api/executions/resume</code></td><td>Resume a suspended run. The correlation token goes in <code>X-Knotarium-Token</code> or in the body. <span class="kg-pill is-info">Anonymous, rate-limited</span></td></tr>
+            <tr><td><code>GET /api/executions</code></td><td>List runs. Filters: <code>status</code>, <code>search</code>, <code>skip</code>, <code>take</code>. Without <code>take</code> you get the most recent 500; it is clamped at 2000.</td></tr>
+            <tr><td><code>GET /api/executions/{id}</code></td><td>One run.</td></tr>
+            <tr><td><code>DELETE /api/executions/{id}</code></td><td>Delete one run.</td></tr>
+            <tr><td><code>POST /api/executions/bulk-delete</code></td><td>Delete by id list, by status, or all.</td></tr>
+            <tr><td><code>POST /api/executions/{id}/cancel</code></td><td>Cancel a running execution.</td></tr>
+            <tr><td><code>GET /api/executions/{id}/journal</code></td><td>The step-by-step journal that makes the time-travel inspector possible.</td></tr>
+            <tr><td><code>GET /api/executions/{id}/events</code></td><td>Server-sent events: journal catch-up then a live tail. Honours <code>Last-Event-ID</code> to resume.</td></tr>
+            <tr><td><code>POST /api/executions/{id}/replay</code></td><td>Replay from a node, optionally against a different version and with side effects mocked.</td></tr>
+            <tr><td><code>GET /api/executions/{id}/replays</code></td><td>Replay lineage for a run.</td></tr>
+            <tr><td><code>POST /api/executions/{id}/discard</code></td><td>Discard a failed run — dead-letter triage.</td></tr>
+            <tr><td><code>GET /api/executions/{id}/error-run</code></td><td>The error-handler run this failure produced, if any.</td></tr>
+            <tr><td><code>POST /api/executions/{id}/nodes/{nodeId}/manual-decision</code></td><td>Answer a node waiting on a human decision.</td></tr>
+            <tr><td><code>GET /api/workflows/{id}/latest-execution</code></td><td>The most recent run of a workflow.</td></tr>
+            <tr><td><code>POST /api/workflows/{id}/condition-values</code></td><td>Resolve condition operand references against the last real run — what powers the condition editor's live preview.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Node packages</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/node-packages</code></td><td>The merged catalog: built-in, binary and database packages, de-duplicated by id.</td></tr>
+            <tr><td><code>POST /api/node-packages/install</code></td><td>Multipart install of a signed package. The signature must verify against a trusted public key. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/node-packages/publish</code></td><td>Multipart publish from the node editor. Requires a passing sandbox test and the host signing key. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/node-editor/test</code></td><td>Compile and run a draft package's test cases in the sandbox. A pass here is what unlocks publish. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/inline-code/test</code></td><td>Run an inline script once in isolation for editor testing.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The details of the manifest format, the signing payload and the publish gate are on
+        <a href="custom-packages.html">Custom node packages</a>.
+      </p>
+
+      <h2>Templates, bundles and backups</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/templates/export</code></td><td>Export a workflow as a shareable template.</td></tr>
+            <tr><td><code>POST /api/templates/inspect</code></td><td>Inspect an uploaded template without installing it — this is where privileged-node warnings come from.</td></tr>
+            <tr><td><code>POST /api/templates/install</code></td><td>Install an uploaded template.</td></tr>
+            <tr><td><code>POST /api/templates/payload</code></td><td>Read the graph inside an uploaded template.</td></tr>
+            <tr><td><code>GET /api/templates/gallery</code></td><td>The read-only built-in gallery.</td></tr>
+            <tr><td><code>GET /api/templates/gallery/{templateId}</code></td><td>One gallery entry.</td></tr>
+            <tr><td><code>GET /api/templates/gallery/{templateId}/payload</code></td><td>Its graph.</td></tr>
+            <tr><td><code>POST /api/templates/gallery/{templateId}/install</code></td><td>Install from the gallery.</td></tr>
+            <tr><td><code>GET /api/templates/library</code></td><td>The persisted user library.</td></tr>
+            <tr><td><code>POST /api/templates/library/save</code></td><td>Save a workflow into the library.</td></tr>
+            <tr><td><code>POST /api/templates/library/save-archive</code></td><td>Save an uploaded template archive into the library.</td></tr>
+            <tr><td><code>GET /api/templates/library/{templateId}/payload</code></td><td>Read a library entry's graph.</td></tr>
+            <tr><td><code>POST /api/templates/library/{templateId}/install</code></td><td>Install from the library.</td></tr>
+            <tr><td><code>DELETE /api/templates/library/{templateId}</code></td><td>Remove a library entry.</td></tr>
+            <tr><td><code>POST /api/bundles/export</code></td><td>Resolve and lock a bundle manifest, then zip it.</td></tr>
+            <tr><td><code>POST /api/bundles/install</code></td><td>Verify a bundle, rebind its credential slots, and report the verification gate. 409 for a same-version/different-hash conflict, 422 for a gate rejection.</td></tr>
+            <tr><td><code>POST /api/admin/backup</code></td><td>Create a full instance snapshot, protected by a passphrase or the server key. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/admin/backup/inspect</code></td><td>Inspect a snapshot without writing anything. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/admin/restore</code></td><td><strong>Destructive.</strong> Replaces all state. Requires a disarmed runtime and an explicit confirmation, and writes an automatic pre-restore backup first. <span class="kg-pill is-danger">Admin</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>OpenAPI specifications and server configurations</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/openapi/specs</code></td><td>Ingest a spec: multipart upload, inline content, or a server-side URL fetch through the SSRF-guarded egress client.</td></tr>
+            <tr><td><code>GET /api/openapi/specs</code></td><td>List imported specs.</td></tr>
+            <tr><td><code>GET /api/openapi/specs/{id}</code></td><td>One spec with its grouped operations.</td></tr>
+            <tr><td><code>GET /api/openapi/specs/{id}/versions</code></td><td>Version history for a spec.</td></tr>
+            <tr><td><code>GET /api/openapi/specs/{id}/operations/{operationId}</code></td><td>One operation in detail.</td></tr>
+            <tr><td><code>GET /api/openapi/specs/{id}/operations/{operationId}/locator-suggestions</code></td><td>Spec-derived hints about which path parameters can be picked from a sibling collection.</td></tr>
+            <tr><td><code>DELETE /api/openapi/specs/{id}</code></td><td>Remove a spec.</td></tr>
+            <tr><td><code>GET /api/server-configs</code></td><td>Named API base URLs with an auth scheme and an optional credential reference.</td></tr>
+            <tr><td><code>GET /api/server-configs/{id}</code></td><td>One configuration.</td></tr>
+            <tr><td><code>POST /api/server-configs</code></td><td>Create one. Credential references are validated against the database on write.</td></tr>
+            <tr><td><code>PUT /api/server-configs/{id}</code></td><td>Update.</td></tr>
+            <tr><td><code>DELETE /api/server-configs/{id}</code></td><td>Delete.</td></tr>
+            <tr><td><code>POST /api/integrations/{integrationType}/options/{loaderName}</code></td><td>Design-time options for a dynamic field. Add <code>?refresh=1</code> to bypass the cache. Always answers 200: a transport failure is reported inside the envelope so authoring is never hard-blocked.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Settings</h2>
+      <p>
+        Every one of these <code>PUT</code>s writes to the database, and the stored value then overrides
+        the corresponding configuration key — which is the usual explanation for an
+        <code>appsettings.json</code> edit appearing to do nothing. The reads are open to any signed-in
+        user; the writes are marked below.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/runtime/arming</code></td><td>Whether automatic triggers are armed.</td></tr>
+            <tr><td><code>POST /api/runtime/arming</code></td><td>Arm or disarm, persisting the choice across restarts. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>GET /api/runtime/execution</code></td><td>Live execution-runtime state.</td></tr>
+            <tr><td><code>GET</code> / <code>PUT /api/settings/capabilities</code></td><td>The capability policy — code execution, database, AI agent, filesystem. <span class="kg-pill is-danger">Admin to write</span></td></tr>
+            <tr><td><code>GET</code> / <code>PUT /api/settings/sandbox</code></td><td>Sandbox mode, worker count, memory and CPU limits. <span class="kg-pill is-danger">Admin to write</span></td></tr>
+            <tr><td><code>GET</code> / <code>PUT /api/settings/file-access</code></td><td>The deny-by-default directory allow-list. <span class="kg-pill is-danger">Admin to write</span></td></tr>
+            <tr><td><code>GET</code> / <code>PUT /api/settings/retention</code></td><td>Run-history and version retention. <span class="kg-pill is-danger">Admin to write</span></td></tr>
+            <tr><td><code>GET</code> / <code>PUT /api/settings/disk-space</code></td><td>The free-space floor that disarms the runtime. <span class="kg-pill is-danger">Admin to write</span></td></tr>
+            <tr><td><code>GET</code> / <code>PUT /api/settings/error-workflow</code></td><td>The global workflow run whenever any workflow fails. <span class="kg-pill is-danger">Admin to write</span></td></tr>
+            <tr><td><code>GET</code> / <code>PUT /api/settings/ai-provider</code></td><td>Vendor, model, credential reference and base URL. The key itself is never returned. Unlike the settings above, this write is <strong>not</strong> restricted to administrators — any signed-in user can repoint the AI provider.</td></tr>
+            <tr><td><code>POST /api/settings/ai-provider/test</code></td><td>Test the configured provider.</td></tr>
+            <tr><td><code>POST /api/settings/ai-provider/models</code></td><td>Ask the provider which models it offers.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Credentials and notification channels</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/credentials</code></td><td>List credentials. Every response masks the stored value as <code>***</code> — secrets never leave the server.</td></tr>
+            <tr><td><code>POST /api/credentials</code></td><td>Create. The value is encrypted at rest. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>DELETE /api/credentials/{id}</code></td><td>Delete. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>GET /api/notification-channels</code></td><td>Failure-alert destinations — webhook, Slack, email. Configs are masked.</td></tr>
+            <tr><td><code>POST /api/notification-channels</code></td><td>Create or update. The config is optional on update, so a name or default flag can change without re-entering secrets.</td></tr>
+            <tr><td><code>DELETE /api/notification-channels/{id}</code></td><td>Delete.</td></tr>
+            <tr><td><code>POST /api/notification-channels/{id}/test</code></td><td>Send a live test alert.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Users and sign-in</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/auth/status</code></td><td>Whether authentication is on, whether any account exists, and who is signed in. <span class="kg-pill is-info">Anonymous</span></td></tr>
+            <tr><td><code>POST /api/auth/setup</code></td><td>Create the first administrator. <span class="kg-pill is-info">Anonymous</span></td></tr>
+            <tr><td><code>POST /api/auth/login</code></td><td>Sign in, receiving <code>kg_auth</code>. <span class="kg-pill is-info">Anonymous, rate-limited</span></td></tr>
+            <tr><td><code>POST /api/auth/logout</code></td><td>End the session.</td></tr>
+            <tr><td><code>GET /api/auth/users</code></td><td>List accounts. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/auth/users</code></td><td>Create an account. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>DELETE /api/auth/users/{id}</code></td><td>Delete an account. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/auth/change-password</code></td><td>Self-service; it only ever targets the caller's own account.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Why user management is admin-only</span>
+        <p>
+          Without that gate any signed-in user could create an administrator account for themselves,
+          then use it to enable the code-execution capability and run arbitrary C#. The escalation path
+          from "can create users" to "owns the host" is that short.
+        </p>
+      </div>
+
+      <h2>Imports, AI and external systems</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Method and path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/imports/providers</code></td><td>Which plugin-contributed import providers are loaded.</td></tr>
+            <tr><td><code>POST /api/imports/{providerId}/preview</code></td><td>Coverage report for an uploaded vendor configuration file, without installing. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/imports/{providerId}/install</code></td><td>Install the generated workflows as inactive versions. <span class="kg-pill is-danger">Admin</span></td></tr>
+            <tr><td><code>POST /api/ai/generate</code></td><td>Start a workflow-generation job. Supplying an existing workflow refines it instead of generating a new one.</td></tr>
+            <tr><td><code>GET /api/ai/generate/{jobId}</code></td><td>Poll that job.</td></tr>
+            <tr><td><code>POST /api/ai/inline-code</code></td><td>Generate inline-code node source from a description.</td></tr>
+            <tr><td><code>GET /api/external-systems/descriptor</code></td><td>What an administrable external-signal provider exposes. 404 when no loaded plugin supports administration, which is how the interface knows to hide itself.</td></tr>
+            <tr><td><code>GET /api/external-systems</code></td><td>Current state of the administered system.</td></tr>
+            <tr><td><code>PUT /api/external-systems</code></td><td>Rename it.</td></tr>
+            <tr><td><code>PUT /api/external-systems/options</code></td><td>Flip a provider-declared option.</td></tr>
+            <tr><td><code>POST /api/external-systems/targets</code></td><td>Add a target. Secrets are write-only — they go in and never come back.</td></tr>
+            <tr><td><code>POST /api/external-systems/targets/test</code></td><td>Test a target's connection.</td></tr>
+            <tr><td><code>POST /api/external-systems/targets/{targetId}/sync</code></td><td>Synchronise one target.</td></tr>
+            <tr><td><code>DELETE /api/external-systems/targets/{targetId}</code></td><td>Remove a target.</td></tr>
+            <tr><td><code>DELETE /api/external-systems/diagnostics</code></td><td>Clear collected diagnostics.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Version probe</h2>
+      <p>
+        <code>GET /api/version</code> returns <code>{ "version": …, "buildTimeUtc": … }</code>. The
+        version comes from the assembly, with the git hash that source-link appends stripped off; the
+        build time is the assembly file's last-write timestamp, which changes on every rebuild even
+        when the version string does not. That second field is the reliable answer to "am I looking at
+        the build I just deployed?". It is omitted when the assembly location is unavailable, which is
+        the case for a single-file publish.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The rate-limit, CORS, same-origin and queue-depth settings named on this page.</div>
+        </a>
+        <a class="kg-card" href="security.html">
+          <div class="kg-card-title">Security model</div>
+          <div class="kg-card-desc">Why the anonymous routes are the ones they are, and what an exposed instance is worth to an attacker.</div>
+        </a>
+        <a class="kg-card" href="custom-packages.html">
+          <div class="kg-card-title">Custom node packages</div>
+          <div class="kg-card-desc">What the install and publish endpoints expect, and how signatures are verified.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

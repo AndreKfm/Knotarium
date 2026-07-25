@@ -1,0 +1,432 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The API Importer. Generated package shape, parameter names and the retention cap are taken from
+  Knotarium.Features.OpenApi and JournalRetentionWorker, not from the README.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Importing an OpenAPI specification · Knotarium Help</title>
+<meta name="description" content="Import an OpenAPI or Swagger specification, browse its operations and schemas, configure the servers it talks to, and use the generated nodes on the canvas.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="openapi.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Importing an OpenAPI specification</h1>
+      <p class="kg-lead">
+        Point Knotarium at an API's own description and it generates a node for that API — one node per
+        specification, with every operation available as a dropdown value. This is the fastest route from
+        "we have an internal REST service" to "a workflow calls it", and it replaces hand-assembling URLs,
+        headers and authentication in an HTTP Request node. The screen is
+        <span class="kg-path">API Importer</span>.
+      </p>
+
+      <h2>How the screen is laid out</h2>
+      <p>
+        <span class="kg-path">API Importer</span> is split into a narrow left panel and a main area, with
+        two modes selected by the panel's own tabs:
+      </p>
+      <ul>
+        <li><strong>APIs</strong> — the list of imported specifications, with an <strong>Import
+            Spec</strong> button above it. Selecting one fills the main area with its operation browser.</li>
+        <li><strong>Server Configs</strong> — the manager for the base URLs and authentication settings the
+            generated nodes call through.</li>
+      </ul>
+      <p>
+        The two halves are separate on purpose. A specification says what an API <em>can</em> do; a server
+        configuration says which instance of it you are talking to and with what credential. One imported
+        specification can be pointed at staging and at production by selecting a different server
+        configuration per node, with no re-import.
+      </p>
+
+      <h2>Importing a specification</h2>
+      <p>
+        <strong>Import Spec</strong> opens a dialog offering three routes, all of which end in the same
+        parse. OpenAPI 3.0, OpenAPI 3.1 and Swagger 2.0 are accepted, in either JSON or YAML.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Tab</th><th>Use it when</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Paste Content</strong></td><td>You have the document in your clipboard. This is the default tab.</td></tr>
+            <tr><td><strong>Upload File</strong></td><td>You have a file. Click the drop zone or drag a file onto it; the picker filters to <code>.json</code>, <code>.yaml</code> and <code>.yml</code>.</td></tr>
+            <tr><td><strong>From URL</strong></td><td>The API publishes its own specification. Enter an absolute <code>http</code> or <code>https</code> URL.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Fetching by URL</h3>
+      <p>
+        The fetch happens on the server rather than in your browser, which is what makes cross-origin
+        specification URLs work at all — most API hosts do not send the CORS headers a browser would
+        demand. A URL that is not absolute, or that uses a scheme other than <code>http</code> or
+        <code>https</code>, is rejected before any request is made, and a non-success response or an empty
+        body is reported as an import failure rather than being stored.
+      </p>
+      <p>
+        Because the request goes out from the server, it goes through exactly the same egress policy as an
+        HTTP Request node. With the default
+        <code>Security__HttpEgress__DenyPrivateNetworks</code> setting left on, a specification hosted on a
+        private, loopback or link-local address is blocked — which is a common surprise when the API you
+        want to import is on the machine next to you. Paste or upload the document instead, or change the
+        egress policy deliberately; see the <a href="configuration.html">configuration reference</a>.
+      </p>
+      <p>
+        The URL tab also offers <strong>Allow self-signed / untrusted certificate</strong>. It applies to
+        that one fetch and skips TLS certificate validation entirely, which is reasonable for a development
+        or LAN server using its own certificate and unreasonable anywhere else. Egress rules still apply
+        when it is ticked — it relaxes certificate checking, not the network policy.
+      </p>
+
+      <h3>The spec ID field</h3>
+      <p>
+        Every import accepts an optional <strong>Spec ID</strong>. Left blank, the identity is derived from
+        the specification's title: lower-cased, with every run of characters outside <code>a–z</code> and
+        <code>0–9</code> collapsed to a hyphen and leading and trailing hyphens trimmed. An explicit value
+        is slugified by the same rule.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Two APIs with the same title merge into one version history</span>
+        <p>
+          The identity <em>is</em> the title slug, so importing two genuinely different APIs that both call
+          themselves "API" makes the second one look like a new version of the first. Nothing warns you;
+          the earlier specification simply becomes an old version of a spec now named after the newer one,
+          and the generated node's operation list is replaced. Setting an explicit Spec ID on at least one
+          of them is the only way to keep them apart, and it has to be done at import time.
+        </p>
+      </div>
+
+      <h2>Browsing what was imported</h2>
+      <p>
+        Selecting a specification in the left panel shows its title, its declared API version, and the
+        current internal version number, above a browser with two tabs. Each tab carries a count badge.
+      </p>
+
+      <h3>Operations</h3>
+      <p>
+        Operations are grouped by their OpenAPI tag, with one collapsible section per tag showing how many
+        operations it holds. Every group starts expanded. Each row shows the HTTP method as a colour-coded
+        badge — green for GET, blue for POST, amber for PUT, red for DELETE, violet for PATCH, grey for
+        HEAD and for anything unrecognised — followed by the path template and, where the specification
+        supplies one, the operation's summary.
+      </p>
+      <p>
+        Operation rows are <strong>draggable</strong>. Dragging one onto the canvas creates a node of the
+        generated package with that operation already selected and an empty argument object, which is the
+        quickest way to wire up a call. If the drop lands inside a loop node, the new node is parented to
+        that loop.
+      </p>
+      <p>
+        When the specification declares servers, a strip above the list shows the first one with a
+        <strong>Use this spec's server</strong> button. Pressing it switches to Server Configs and opens
+        the create form pre-filled with that base URL and the name <em>Spec Server</em> — a shortcut, not
+        an automatic configuration. You still have to choose a security scheme and save it.
+      </p>
+
+      <h3>Schemas</h3>
+      <p>
+        The Schemas tab lists the named schemas the specification defines, one card each, showing the
+        schema name and its description. <strong>View JSON</strong> expands the card to show the schema
+        pretty-printed; if the stored text is not valid JSON it is shown verbatim rather than failing. The
+        tab is read-only — it exists so you can check the shape of a request body or response while
+        authoring, without leaving the application.
+      </p>
+
+      <h2>What an import generates</h2>
+      <p>
+        Importing does two things: it stores the parsed specification as a new version, and it generates a
+        node package so the API shows up in the palette. The package is generated deterministically from
+        the specification — the same document always produces the same package.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 250" role="img" aria-labelledby="oapi-title">
+          <title id="oapi-title">An imported specification becomes a versioned spec record and a generated node package</title>
+          <defs>
+            <marker id="oarw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+          </defs>
+
+          <rect x="10" y="80" width="180" height="82" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="106" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">THE DOCUMENT</text>
+          <text x="28" y="128" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">OpenAPI 3.0 / 3.1</text>
+          <text x="28" y="147" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">or Swagger 2.0</text>
+
+          <path d="M196 121 L244 121" stroke="#6366f1" stroke-width="1.6" marker-end="url(#oarw)"/>
+          <text x="220" y="112" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10.5" text-anchor="middle">import</text>
+
+          <rect x="250" y="16" width="200" height="96" rx="10" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.5"/>
+          <text x="268" y="42" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">SPEC RECORD</text>
+          <text x="268" y="64" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12">&lt;title-slug&gt;</text>
+          <text x="268" y="83" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Version 1, 2, 3 … on re-import</text>
+          <text x="268" y="101" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Operations and schemas</text>
+
+          <rect x="250" y="128" width="200" height="96" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="268" y="154" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">NODE PACKAGE</text>
+          <text x="268" y="176" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="12">openapi.&lt;slug&gt;</text>
+          <text x="268" y="195" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Version 1.0.&lt;spec version&gt;</text>
+          <text x="268" y="213" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">One node, every operation</text>
+
+          <path d="M456 176 L504 176" stroke="#6366f1" stroke-width="1.6" marker-end="url(#oarw)"/>
+
+          <rect x="510" y="128" width="180" height="96" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="528" y="154" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">ON THE CANVAS</text>
+          <text x="528" y="176" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Pick an operationId,</text>
+          <text x="528" y="195" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">a server config,</text>
+          <text x="528" y="214" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">and arguments.</text>
+        </svg>
+        <figcaption>One import, two artefacts: a versioned specification record and a regenerated node package.</figcaption>
+      </figure>
+
+      <h3>The generated package</h3>
+      <p>
+        The package id is <code>openapi.</code> followed by the specification's slug with every character
+        outside <code>a–z</code>, <code>0–9</code> and <code>-</code> stripped out. A specification whose
+        slug reduces to nothing becomes <code>openapi.spec</code>. Its manifest is fixed apart from the
+        operation list:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Manifest field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Display name</td><td>The specification's title.</td></tr>
+            <tr><td>Category</td><td><code>Integrations</code></td></tr>
+            <tr><td>Tier</td><td><code>Interpreted</code></td></tr>
+            <tr><td>Side-effect kind</td><td><code>NonIdempotentSideEffect</code></td></tr>
+            <tr><td>Recovery mode</td><td><code>RetryAutomatically</code></td></tr>
+            <tr><td>Default timeout</td><td>30 seconds</td></tr>
+            <tr><td>Capabilities</td><td><code>http</code> and <code>credentials</code></td></tr>
+            <tr><td>Outputs</td><td><code>success</code> and <code>error</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        No C# is generated and nothing is compiled. Every <code>openapi.*</code> node runs through one
+        pre-compiled interpreter that reads the stored specification at run time, which is why importing a
+        large API is fast and why these packages carry no source and no signature.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Side effects are assumed, not inferred</span>
+        <p>
+          The manifest marks the whole package as a non-idempotent side effect regardless of which
+          operations it contains. A specification of nothing but read-only <code>GET</code> endpoints is
+          still treated as unsafe to replay blindly, because the classification is per package and the
+          operation is chosen per node at author time. That is the conservative direction to be wrong in,
+          but it does mean recovery behaviour is not tuned to the individual call.
+        </p>
+      </div>
+
+      <h3>The node's four parameters</h3>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Required</th><th>Expression?</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>operationId</code></td><td>Yes</td><td>No</td>
+              <td>Which operation to call. The manifest carries the specification's full list of operation ids as the allowed values, so this renders as a dropdown rather than a free-text field.</td>
+            </tr>
+            <tr>
+              <td><code>serverConfigId</code></td><td>Yes</td><td>No</td>
+              <td>Which server configuration to call through — the base URL, its authentication, and its variables. A run fails immediately if it is empty or names a configuration that no longer exists.</td>
+            </tr>
+            <tr>
+              <td><code>specVersion</code></td><td>No</td><td>No</td>
+              <td>Pins the call to a specific stored version of the specification. Left blank, the latest version is used.</td>
+            </tr>
+            <tr>
+              <td><code>arguments</code></td><td>No</td><td>Yes</td>
+              <td>The call's inputs — path parameters, query parameters, body — as a JSON object. This is the only parameter that accepts expressions, so it is where upstream data is threaded in. It defaults to an empty object.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Because <code>operationId</code> is an enumerated value drawn from the manifest, an operation
+        removed from the API in a later import disappears from the dropdown — but a node already
+        configured with it keeps the stored value. That node will fail at run time rather than at author
+        time, which is the case <code>specVersion</code> exists to rescue: pin the node to the version that
+        still contains the operation while you migrate it.
+      </p>
+
+      <h2>Server configurations</h2>
+      <p>
+        A server configuration is the other half of every generated call. Each one carries a name, a base
+        URL, a security scheme, an optional linked credential, an insecure-certificate flag, and any number
+        of server variables. <strong>New Config</strong> creates one; each card offers Edit and Delete,
+        with a confirmation on delete.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Name</strong></td><td>Required. Shown in every picker that offers server configurations.</td></tr>
+            <tr><td><strong>Base URL</strong></td><td>Required. The origin the operation's path template is appended to.</td></tr>
+            <tr><td><strong>Allow self-signed / untrusted certificate</strong></td><td>Skips TLS validation for calls to this server. The egress policy still applies.</td></tr>
+            <tr><td><strong>Security Scheme</strong></td><td>One of None, API Key, Bearer Token, Basic Authentication, or OAuth2 Client Credentials.</td></tr>
+            <tr><td><strong>Linked Secret / Credential</strong></td><td>The stored credential whose value the scheme uses. For Bearer, the secret value is the token itself, sent as an <code>Authorization: Bearer</code> header.</td></tr>
+            <tr><td><strong>Server Variables</strong></td><td>Key-and-value pairs substituted into a templated base URL, for specifications that parameterise their server — a region, a tenant, an environment.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The credential dropdown lists secrets that already exist, and <strong>+ New secret</strong> creates
+        one inline without leaving the form: give it a name and paste the value, and it is stored encrypted
+        with only the name visible afterwards. This is the recommended route — a token typed into a node
+        property is an ordinary string, while a token stored as a credential is encrypted at rest and can
+        be swapped without touching any workflow.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Deleting a configuration breaks the nodes that referenced it</span>
+        <p>
+          Nodes store the server configuration's id, and nothing checks whether any node is using a
+          configuration before deleting it. The confirmation dialog warns only that the action cannot be
+          undone. Every node pointing at the deleted id then fails at run time with a message that the
+          configuration was not found — at run time, not at publish time. Recreating a configuration with
+          the same name does not help, because a new id is minted.
+        </p>
+      </div>
+
+      <h2>Re-importing and version history</h2>
+      <p>
+        Importing a specification whose id already exists does not replace the previous one. A new
+        specification version is stored, its number increments, and the node package is upserted with a new
+        package version numbered <code>1.0.&lt;spec version&gt;</code> — so the third import of a
+        specification produces package version <code>1.0.3</code>. The left panel shows the latest version
+        number next to each entry.
+      </p>
+      <p>
+        Keeping the history is what makes <code>specVersion</code> meaningful: a node pinned to an older
+        version keeps calling the API the way that version described it, even after a re-import changed
+        paths or parameters. Nodes that leave <code>specVersion</code> blank pick up the new version
+        immediately, with no republish and no warning — convenient when the API added an endpoint,
+        dangerous when it changed one.
+      </p>
+
+      <h3>Capping the history</h3>
+      <p>
+        Version history grows without bound by default. The retention sweep can cap it:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Retention__MaxOpenApiSpecVersionsPerSpec</code></td>
+              <td><code>0</code></td>
+              <td>The number of specification versions kept per specification. Zero disables the cap and keeps every version forever. Any positive value keeps that many of the highest-numbered versions and deletes the rest.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The cap is applied per specification, by version number rather than by age, during the same
+        periodic sweep that prunes run history — so a change takes effect on the next sweep rather than
+        immediately. As with the other retention settings, the value shown under
+        <span class="kg-path">Settings &rsaquo; Retention</span> is stored in the database and overrides
+        the configuration file once it has been set there.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The cap deletes versions that nodes may be pinned to</span>
+        <p>
+          Nothing consults <code>specVersion</code> before pruning. Setting the cap to 3 on a specification
+          you have imported ten times deletes versions 1 through 7, and any node pinned to one of them
+          starts failing. If you rely on pinning, either leave the cap at zero or set it high enough to
+          cover every version still referenced.
+        </p>
+      </div>
+
+      <h3>Deleting a specification</h3>
+      <p>
+        The delete button on a specification row asks for confirmation and warns that it removes the
+        specification and <em>all</em> its imported versions permanently. Workflows that reference the
+        generated package are not consulted.
+      </p>
+
+      <h2>Polling an imported operation</h2>
+      <p>
+        The Polling Trigger can call an imported operation on a schedule instead of hitting a raw URL. Set
+        its <strong>Source Kind</strong> to <code>openapi</code> and the form swaps its HTTP fields for
+        three OpenAPI ones:
+      </p>
+      <ul>
+        <li><strong>Server Config</strong> — required; the same list the generated nodes use, each entry
+            showing its name and base URL.</li>
+        <li><strong>API Spec</strong> — required; which imported specification to draw operations from.</li>
+        <li><strong>Operation</strong> — required; every operation across every tag of that specification,
+            labelled with its method, its path template and its operation id.</li>
+      </ul>
+      <p>
+        Only the server configuration and the operation are saved on the node. The specification selection
+        is interface state used to populate the operation list, which has a visible consequence: reopening
+        the form makes it scan the imported specifications to work out which one owns the saved operation
+        id. If two specifications happen to define the same operation id, the first match wins and the
+        dropdown may show the wrong specification — the saved operation id is still correct, but do not
+        trust the spec picker as a record of your intent.
+      </p>
+      <p>
+        The rest of the form is shared with the HTTP source. <strong>Interval (seconds)</strong> defaults
+        to 60 with a minimum of 1. <strong>Change Detection</strong> decides when a poll counts as
+        something new and offers five strategies:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Strategy</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><code>etag</code></td><td>The response's ETag differs from the last one seen.</td></tr>
+            <tr><td><code>last-modified</code></td><td>The response's Last-Modified header moved.</td></tr>
+            <tr><td><code>hash</code></td><td>The response body hashes differently. The default, and the one that works without server cooperation.</td></tr>
+            <tr><td><code>json-cursor</code></td><td>A field inside the response changed. Selecting this reveals a required <strong>JSON Cursor Path</strong> field taking a JSONPath expression such as <code>$.data.cursor</code>.</td></tr>
+            <tr><td><code>always</code></td><td>Every poll fires, whether anything changed or not.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Choosing <code>always</code> on a short interval turns the trigger into a scheduler that starts a
+        run every interval regardless of the API's state, which is occasionally what you want and more
+        often an accident. If the concern is that the API sends no useful cache headers, <code>hash</code>
+        is the strategy to reach for.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The egress policy that governs URL fetches, and the retention settings that cap version history.</div>
+        </a>
+        <a class="kg-card" href="importer.html">
+          <div class="kg-card-title">Importing configurations</div>
+          <div class="kg-card-desc">The other importer: turning a vendor's exported configuration into workflows.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

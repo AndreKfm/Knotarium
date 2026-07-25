@@ -7,7 +7,7 @@ import { Dashboard } from './components/Dashboard';
 import { Canvas } from './components/Canvas';
 import { ExecutionDetail } from './components/ExecutionDetail/index';
 import { OpenApiView } from './components/OpenApiView';
-import { Activity, Edit3, Grid, Code, Globe, Settings, ArrowLeft, Inbox, Package, LayoutTemplate, FileInput, Sparkles, Compass } from 'lucide-react';
+import { Activity, Edit3, Grid, Code, Globe, Settings, ArrowLeft, Inbox, Package, LayoutTemplate, FileInput, Sparkles, Compass, BookOpen } from 'lucide-react';
 import { AiGenerateModal } from './components/AiGenerateModal';
 import type { WorkflowDefinition, VersionInfo } from './types';
 import { NodeEditorShell } from './node-editor/NodeEditorShell';
@@ -610,6 +610,19 @@ export default function App() {
           >
             <Compass size={15} /> Tour
           </button>
+          {/* Offline help, served from wwwroot/help by the same process. A plain link rather than a
+              router push: the docs are static HTML outside the SPA, and opening them in a new tab
+              means reading them does not discard canvas state. Absolute "/help/" (not "help/") so it
+              resolves the same from every screen. */}
+          <a
+            href="/help/"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open the documentation"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', textDecoration: 'none' }}
+          >
+            <BookOpen size={15} /> Help
+          </a>
           <UserMenu />
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>
             Local time: {new Date().toLocaleTimeString()}

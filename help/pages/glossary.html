@@ -1,0 +1,418 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Alphabetical definitions. Each entry describes what the term means in this product specifically,
+  taken from the domain types and the interface strings rather than from general industry usage.
+  Where the interface and the code use different words for one thing, both are given.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary · Knotarium Help</title>
+<meta name="description" content="Alphabetical definitions of every term this manual uses, with a link to the page that covers each one in depth.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="glossary.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Glossary</h1>
+      <p class="kg-lead">
+        Every term this manual uses with a meaning specific to Knotarium, defined in one or two
+        sentences and linked to the page that covers it properly. Where the interface and the code
+        disagree about a word — and in a few places they do — both are given, because you will meet
+        both.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Five words carry most of the weight</span>
+        <p>
+          If you read only part of this page, read <strong>workflow</strong>, <strong>node</strong>,
+          <strong>edge</strong>, <strong>trigger</strong> and <strong>run</strong>. Nearly every other
+          entry is defined in terms of those five. <a href="concepts.html">Core concepts</a> explains
+          how they fit together.
+        </p>
+      </div>
+
+      <h2>A</h2>
+      <p>
+        <strong>Active version</strong> — the one published <a href="versioning.html">version</a> of a
+        workflow that actually executes. It is recorded separately from the versions themselves, in a
+        pointer with an append-only activation history, and every trigger resolves through it. A
+        workflow with published versions but none set active cannot be triggered.
+      </p>
+      <p>
+        <strong>Arming</strong> — the instance-wide switch in the header that gates every automatic
+        trigger. While disarmed, schedules and pollers keep ticking but skip their work, inbound
+        webhook calls are refused, and only manual runs execute. See
+        <a href="arming.html">Runtime arming</a>.
+      </p>
+      <p>
+        <strong>Audit log</strong> — an append-only, hash-chained record of privileged actions. The
+        chain is verified during startup and a chain that does not verify aborts the launch; there is
+        currently no viewer for it in the interface, and its only presence there is the retention
+        setting that ages entries out. See <a href="security.html">Security model</a>.
+      </p>
+
+      <h2>B</h2>
+      <p>
+        <strong>Backup</strong> — a whole-instance archive, extension <code>.kgbak</code>, protected
+        either by a passphrase or by this server's own credential key. A server-key backup restores
+        only on the host that created it and only while that host's key is unchanged. See
+        <a href="backup-restore.html">Backup and restore</a>.
+      </p>
+      <p>
+        <strong>Bundle</strong> — a distributable archive, extension <code>.kgbundle</code>, holding
+        <em>several</em> workflows together with the <a href="custom-packages.html">node packages</a>
+        they depend on. It carries both an authoring manifest and a resolved lock file recording exact
+        versions, hashes and trust levels, which is verified at install. See
+        <a href="bundles.html">Bundles</a>.
+      </p>
+
+      <h2>C</h2>
+      <p>
+        <strong>Capability</strong> — a named privilege that a node declares it needs and that an
+        administrator must grant instance-wide before any node holding it will run. Three are
+        switchable — code execution, database access and the AI agent — and all of them are
+        <span class="kg-pill is-off">off by default</span>, an unset policy meaning everything is
+        denied. See <a href="capabilities.html">Capabilities</a>.
+      </p>
+      <p>
+        <strong>Condition</strong> — a node that evaluates a logical expression tree and routes the run
+        down its <code>true</code> or <code>false</code> output port. It has a dedicated full-screen
+        editor rather than a text field, because a condition is a structured tree and not a string. See
+        <a href="conditions.html">Conditions and branching</a>.
+      </p>
+      <p>
+        <strong>Correlation token</strong> — a per-run, hashed, single-use, expiring token issued when a
+        run parks waiting for an external event. Presenting it is what authorises resumption, which is
+        why the resume endpoint is otherwise anonymous — the token <em>is</em> the authentication.
+      </p>
+      <p>
+        <strong>Credential</strong> — a named secret stored encrypted in the database and referenced by
+        nodes rather than embedded in them. The key that decrypts it lives beside the database in
+        <code>.credential-key</code>; the two must be backed up together. See
+        <a href="security.html">Security model</a>.
+      </p>
+      <p>
+        <strong>Credential slot</strong> — a symbolic, secret-free placeholder for a credential
+        requirement inside a portable artifact, written as <code>slot:&lt;key&gt;</code>. Exporting a
+        <a href="templates.html">template</a> or <a href="bundles.html">bundle</a> rewrites real
+        credential references into slots and installing rebinds them; a slot left unbound blocks both
+        publishing and running.
+      </p>
+
+      <h2>D</h2>
+      <p>
+        <strong>Dead letter</strong> — the triage view listing every run that ended in failure, so that
+        failures are worked through deliberately rather than scrolled past. Discarding a run from it
+        marks it handled; it is not a deletion. See <a href="dead-letter.html">Dead letter queue</a>.
+      </p>
+      <p>
+        <strong>Diagnostics</strong> — the compiler's findings about the graph you are currently
+        drawing: missing sub-flow references, unreachable nodes, incomplete conditions and the like.
+        These are design-time messages about the workflow, not run-time errors and not application
+        logs. See <a href="diagnostics.html">Diagnostics</a>.
+      </p>
+      <p>
+        <strong>Discarded</strong> — the state a failed run moves to when you triage it away in the dead
+        letter view. The run and its journal are kept in full; it simply stops being counted as
+        actionable.
+      </p>
+      <p>
+        <strong>Draft</strong> — the single mutable copy of a workflow that the canvas edits. It lives
+        in the database, not in a file, and it is the one thing in the system that never executes:
+        publishing snapshots it into a version, and versions are what run. See
+        <a href="versioning.html">Versions and publishing</a>.
+      </p>
+
+      <h2>E</h2>
+      <p>
+        <strong>Edge</strong> — a connection from a named output port on one node to a named input port
+        on another. Edges carry the flow of control and the data together, which is why deleting a node
+        also deletes every edge touching it. See <a href="concepts.html">Core concepts</a>.
+      </p>
+      <p>
+        <strong>Egress policy</strong> — the rules governing what the instance may connect out to,
+        applied to every outbound request the engine makes and re-checked on every physical connection
+        including each redirect. By default it refuses private, loopback and link-local destinations.
+        See <a href="security.html">Security model</a>.
+      </p>
+      <p>
+        <strong>Error workflow</strong> — a workflow nominated to run whenever any other workflow fails,
+        seeded with context about what failed. It bypasses the execution queue limits, and it is a
+        silent no-op if the workflow you nominated has no active version. See
+        <a href="error-handling.html">Error handling and alerts</a>.
+      </p>
+      <p>
+        <strong>Execution</strong> — the internal and REST-API name for a <strong>run</strong>. The
+        interface says "run" and the code says "execution"; they are the same thing, and you will see
+        <code>/api/executions</code> in any API work.
+      </p>
+      <p>
+        <strong>Expression</strong> — a <code>{{ … }}</code> placeholder evaluated when a node runs. It
+        can read an upstream node's output as <code>{{ $node.&lt;id&gt;.output.&lt;port&gt; }}</code> or
+        a variable as <code>{{ $variables.&lt;name&gt; }}</code>, with nested paths, indexing, operators
+        and a small function library. A field that is a single placeholder returns the typed value;
+        anything else interpolates to a string. See <a href="expressions.html">Expressions and data</a>.
+      </p>
+
+      <h2>F</h2>
+      <p>
+        <strong>Failure alert</strong> — the per-workflow routing of failure notifications, which can
+        inherit the instance default, be switched off, or name its own channel. See
+        <a href="error-handling.html">Error handling and alerts</a>.
+      </p>
+      <p>
+        <strong>File access policy</strong> — the allow-list governing the File Read and File Write
+        nodes. It is deny-by-default and empty on a fresh instance; grants are made one directory at a
+        time, apply recursively to everything beneath, and are scoped to reading, writing or both. See
+        <a href="file-access.html">File access</a>.
+      </p>
+
+      <h2>G</h2>
+      <p>
+        <strong>Group</strong> — two unrelated things share this word. On the dashboard a group is a
+        folder that organises workflows; on the canvas a Group node is an inert visual container that
+        frames a region of the graph and moves its members with it. See
+        <a href="canvas.html">The canvas editor</a>.
+      </p>
+
+      <h2>J</h2>
+      <p>
+        <strong>Journal</strong> — the append-only event log of a single run, recording what each node
+        received, what it produced and what the variables looked like at each point. It is the system of
+        record from which a run's status is reconstructed, and it is what makes replay, time travel and
+        crash recovery possible. See <a href="runs.html">Runs and the inspector</a>.
+      </p>
+
+      <h2>M</h2>
+      <p>
+        <strong>Manual decision</strong> — the resolution a person supplies when a run was interrupted
+        part way through an external effect and the system cannot safely determine whether that effect
+        happened. Until it is answered, the node holds the run rather than guessing.
+      </p>
+
+      <h2>N</h2>
+      <p>
+        <strong>Node</strong> — one step in a workflow: an HTTP request, a branch, a database query, a
+        log line. Every node is an instance of a node type whose behaviour, parameters and ports are
+        declared by a manifest. See <a href="nodes-overview.html">How to read this reference</a>.
+      </p>
+      <p>
+        <strong>Node package</strong> — the registry entry for a node type: a manifest declaring its
+        parameters, ports, capabilities, timeout and retry policy, plus optionally a compiled assembly
+        implementing it. Around thirty-five first-party types are built in; further ones are installed
+        or published into the database. See <a href="custom-packages.html">Custom node packages</a>.
+      </p>
+      <p>
+        <strong>Node tier</strong> — how a node type's behaviour is supplied: declarative, compiled, or
+        interpreted. It is a property of the type, not something you choose per node.
+      </p>
+      <p>
+        <strong>Notification channel</strong> — a configured destination for failure alerts, one of
+        which may be marked as the instance default. See
+        <a href="error-handling.html">Error handling and alerts</a>.
+      </p>
+
+      <h2>O</h2>
+      <p>
+        <strong>OpenAPI spec</strong> — an imported API description whose operations become callable
+        nodes. Importing one is a distinct feature from the workflow importer, and lives under its own
+        nav entry. See <a href="openapi.html">Importing OpenAPI</a>.
+      </p>
+      <p>
+        <strong>Output port</strong> — a named socket a node emits from. Ports are semantic rather than
+        positional: a Condition has <code>true</code> and <code>false</code>, an HTTP Request has
+        <code>success</code> and <code>error</code>, and a plain data node has <code>result</code>. Some
+        node types generate their ports from their configuration instead of declaring them in a
+        manifest.
+      </p>
+
+      <h2>P</h2>
+      <p>
+        <strong>Pinned output</strong> — a sample payload frozen onto a node so that downstream nodes can
+        be built and tested without re-executing what precedes them. A pin travels with the draft into
+        the published version but is honoured only on manual runs; automatic runs ignore it. See
+        <a href="canvas.html">The canvas editor</a>.
+      </p>
+      <p>
+        <strong>Polling trigger</strong> — a trigger that fetches a source on an interval and starts a
+        run only when something has changed, using an ETag, a last-modified header, a content hash or a
+        cursor in the response. See <a href="nodes-triggers.html">Trigger nodes</a>.
+      </p>
+      <p>
+        <strong>Publishing</strong> — compiling the draft and, if it compiles, snapshotting it as a new
+        immutable numbered version. The toolbar's <strong>Save &amp; Publish</strong> button also makes
+        that new version active, so publishing and going live are one action in the common case. See
+        <a href="versioning.html">Versions and publishing</a>.
+      </p>
+
+      <h2>R</h2>
+      <p>
+        <strong>Recovery mode</strong> — whether a node type retries automatically after a failure or
+        fails immediately. It is declared per node type and follows from the side-effect kind: nodes
+        whose effects are safe to repeat retry, and nodes whose effects are not do not.
+      </p>
+      <p>
+        <strong>Replay</strong> — starting a new run seeded from a finished run's state at a chosen node,
+        so that everything upstream is reused and that node onward re-executes. It is not a re-run from
+        the start. You choose which version to replay against and whether to mock side effects. See
+        <a href="runs.html">Runs and the inspector</a>.
+      </p>
+      <p>
+        <strong>Resource locator</strong> — a parameter whose choices are loaded live from the server at
+        design time rather than typed, optionally cascading from another field, with a manual-entry
+        fallback when the list cannot be loaded.
+      </p>
+      <p>
+        <strong>Retention</strong> — the ageing-out of finished runs, journals, version history and audit
+        entries. Left unlimited the database grows without bound. See
+        <a href="retention.html">Retention and disk space</a>.
+      </p>
+      <p>
+        <strong>Retry policy</strong> — the exponential backoff with jitter applied between attempts at a
+        node that is eligible to retry. It is declared by the node type's manifest, not configured per
+        node instance, and a run waiting between attempts is visibly in a waiting-for-retry state.
+      </p>
+      <p>
+        <strong>Run</strong> — one execution of one workflow version, recorded step by step in a journal.
+        This is the interface's word; the code and the REST API call the same thing an execution. See
+        <a href="runs.html">Runs and the inspector</a>.
+      </p>
+
+      <h2>S</h2>
+      <p>
+        <strong>Sandbox</strong> — the isolation applied to user-authored C#, meaning the Inline Code node
+        and compiled custom packages. It runs that code either inside the main process or in pooled
+        worker processes with memory, CPU and lifetime limits imposed by the operating system. See
+        <a href="sandbox.html">Sandbox</a>.
+      </p>
+      <p>
+        <strong>Schedule</strong> — a persisted cron trigger attached to a workflow. Each individual
+        firing is recorded separately as it is claimed, which is what stops two firings of the same
+        occurrence from producing two runs. See <a href="triggers.html">Triggers</a>.
+      </p>
+      <p>
+        <strong>Side-effect kind</strong> — whether a node's effect is safe to repeat. This single
+        property drives two visible behaviours: whether the node retries automatically, and whether
+        replaying a run warns you that it is about to fire for real.
+      </p>
+      <p>
+        <strong>Sub-flow</strong> — a workflow embedded as a single node inside another. It does not
+        produce a separate run: the compiler splices the child's nodes into the parent's plan with
+        namespaced identifiers, recursively and with cycle detection, so one sub-flow call is still one
+        run. The child must be published before the parent will compile. See
+        <a href="subflows.html">Sub-flows and grouping</a>.
+      </p>
+      <p>
+        <strong>Suspended run</strong> — a run parked rather than executing, either waiting on a named
+        external event or serving a delay. Suspension frees the worker, which is why long delays do not
+        consume a concurrency slot. See <a href="runs.html">Runs and the inspector</a>.
+      </p>
+
+      <h2>T</h2>
+      <p>
+        <strong>Template</strong> — a shareable archive of one workflow, extension <code>.kgtpl</code>,
+        stripped of secrets and carrying authoring metadata, declared credential slots and install-time
+        parameters. Templates come either from a read-only built-in gallery or from the library of ones
+        saved on this instance. See <a href="templates.html">Templates</a>.
+      </p>
+      <p>
+        <strong>Template parameter</strong> — a non-secret blank the template's author deliberately left
+        for whoever installs it, referenced inside the workflow as <code>{{ param:&lt;Key&gt; }}</code>.
+      </p>
+      <p>
+        <strong>Time travel</strong> — stepping backwards and forwards through a finished run, one node
+        at a time, seeing that node's inputs, outputs and the variable state as it stood when the node
+        began. It reads the journal, so it works on a run that finished days ago. See
+        <a href="runs.html">Runs and the inspector</a>.
+      </p>
+      <p>
+        <strong>Trigger</strong> — what starts a run. The implemented kinds are manual, cron schedule,
+        inbound webhook, polling, an external device signal, and the error trigger that begins an error
+        workflow. See <a href="triggers.html">Triggers</a>.
+      </p>
+      <p>
+        <strong>Trigger origin</strong> — the recorded reason a particular run started, one of manual,
+        schedule, webhook, poll, error, device event, replay or agent. Be aware that the dashboard
+        collapses these into four labels and shows anything it does not recognise as "Manual", so the
+        badge is less precise than the stored value.
+      </p>
+
+      <h2>V</h2>
+      <p>
+        <strong>Variable</strong> — a named value scoped to a run, written by the Set Variable nodes and
+        read through <code>{{ $variables.… }}</code>. The editor's Workflow variables panel additionally
+        tracks which node produces each one and which nodes consume it, so an unresolved variable is
+        visible before you run anything. Credentials are a separate, encrypted store and are not
+        variables. See <a href="variables.html">Variables</a>.
+      </p>
+      <p>
+        <strong>Version</strong> — an immutable numbered snapshot of a workflow, created by publishing,
+        by restoring an older version, or by importing one. A version that fails to compile is never
+        created. See <a href="versioning.html">Versions and publishing</a>.
+      </p>
+
+      <h2>W</h2>
+      <p>
+        <strong>Webhook secret</strong> — an optional per-workflow shared secret sent in a request header
+        by an inbound caller. It is checked before anything else about the request, so that an
+        unauthorised caller cannot learn even whether the runtime is armed. A workflow with no secret
+        configured accepts anonymous calls. See <a href="triggers.html">Triggers</a>.
+      </p>
+      <p>
+        <strong>Work item</strong> — a durable queue row that brings a parked run back to life: resuming
+        it after a delay or an event, retrying a failed node, or delivering a manual decision. It is the
+        reason a suspended run survives a restart.
+      </p>
+      <p>
+        <strong>Workflow</strong> — the graph you draw, and the unit you save, publish, share, activate
+        and enable. Enabling is per workflow and separate from instance-wide arming; a disabled workflow
+        fires no triggers and has its in-flight runs cancelled, but can still be run by hand. See
+        <a href="concepts.html">Core concepts</a>.
+      </p>
+      <p>
+        <strong>Workflow importer</strong> — the wizard that reads another vendor's configuration file
+        through a provider plugin and generates whole workflows from it, complete with a coverage report
+        showing what mapped cleanly and what needs attention. Imported workflows install as inactive
+        versions, so nothing goes live until you activate it. This is a different feature from the
+        OpenAPI import. See <a href="importer.html">Importing configurations</a>.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="concepts.html">
+          <div class="kg-card-title">Core concepts</div>
+          <div class="kg-card-desc">How workflows, nodes, edges, triggers and runs actually fit together.</div>
+        </a>
+        <a class="kg-card" href="troubleshooting.html">
+          <div class="kg-card-title">Troubleshooting</div>
+          <div class="kg-card-desc">What each of these mechanisms looks like when it refuses to cooperate.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

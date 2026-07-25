@@ -1,0 +1,658 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Logic (manifest category "Control") node reference. Parameters and ports come from
+  InMemoryNodePackageManifestProvider.cs; runtime behaviour and defaults from ConditionNodeTask,
+  DelayNodeTask, ForLoopNodeTask, JoinNodeTask, ParallelForEachNodeRunner and WorkflowCompiler.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic nodes · Knotarium Help</title>
+<meta name="description" content="Branching, waiting, looping and composition: Condition, Delay, Switch, For Loop, Parallel For-Each, Join and Subflow, with every parameter and port.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="nodes-logic.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Logic nodes</h1>
+      <p class="kg-lead">
+        The seven nodes that decide what runs, when, and how many times. They share a manifest
+        category — <code>Control</code> — which the palette shows as <strong>Logic</strong>. Two of
+        them are containers that hold a body subgraph rather than passing work along a wire, and that
+        distinction changes how you draw the graph.
+      </p>
+
+      <h2>Branch ports and container ports</h2>
+      <p>
+        Most nodes hand the run to whatever is wired downstream. A <strong>branch</strong> node
+        instead picks exactly one of its ports and suppresses every edge leaving the others. Only six
+        node types route this way, and three of them are on this page: Condition, For Loop and
+        Parallel For-Each. That restriction is deliberate — a node such as HTTP Request has several
+        data sockets that must <em>all</em> deliver, so routing has to be opt-in rather than triggered
+        by any node that happens to name a port.
+      </p>
+      <p>
+        <strong>Container</strong> nodes — For Loop and Parallel For-Each — are drawn as a resizable
+        box you drop other nodes into, and they have three wiring points rather than two:
+      </p>
+      <ul>
+        <li><code>start</code> is an <em>output</em>. It fires once per iteration and must be wired to
+            the first node of the body.</li>
+        <li><code>end</code> is an <em>input</em>, and the loop-back. The last node of the body wires
+            into it, which both closes the iteration and supplies that iteration's result. It appears
+            in the manifest as a parameter, but the properties panel always hides it, because it is
+            wired with an edge and never typed in.</li>
+        <li><code>success</code> is the <em>exit</em>. It fires once, after the last iteration, and is
+            where the rest of the workflow continues.</li>
+      </ul>
+      <p>
+        Wiring the body to <code>success</code> instead of <code>start</code> is the classic mistake:
+        the loop completes immediately having done nothing, and the "body" runs exactly once
+        afterwards.
+      </p>
+
+      <h2>Condition</h2>
+      <p>
+        <code>condition</code> · Control · timeout <code>10</code> · branch node
+      </p>
+      <p>
+        The workhorse of branching: evaluate a test and send the run down <code>true</code> or
+        <code>false</code>. Reach for it for anything that is genuinely a yes-or-no question — an
+        HTTP status worth continuing on, a field that must be present, a threshold being crossed.
+      </p>
+      <p>
+        Its properties panel is not a generic form. Selecting a Condition node replaces the parameter
+        fields with a compact summary and an <span class="kg-path">Edit logic</span> launcher that
+        opens a full-screen editor for building the test out of comparators, groups and negations. The
+        four parameters below are what that editor persists; you do not normally type into them
+        directly.
+      </p>
+
+      <h3>The <code>logic</code> parameter</h3>
+      <p>
+        <code>logic</code> holds the whole test as a JSON tree — the modern form, and the one the
+        editor writes. It is versioned: a flat version 1 document is accepted and normalised into a
+        version 2 tree in memory, so older workflows keep working without being rewritten on disk.
+      </p>
+      <p>
+        Comparators are named by short operator ids grouped into five families:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Family</th><th>Operators</th><th>Arity</th></tr></thead>
+          <tbody>
+            <tr><td>Comparison</td><td><code>eq</code>, <code>ne</code>, <code>gt</code>, <code>gte</code>, <code>lt</code>, <code>lte</code></td><td>Binary</td></tr>
+            <tr><td>Text</td><td><code>contains</code>, <code>ncontains</code>, <code>starts</code>, <code>ends</code>, <code>regex</code></td><td>Binary</td></tr>
+            <tr><td>Membership</td><td><code>in</code>, <code>nin</code></td><td>Binary</td></tr>
+            <tr><td>Existence</td><td><code>empty</code>, <code>nempty</code>, <code>exists</code>, <code>nexists</code></td><td>Unary</td></tr>
+            <tr><td>Boolean</td><td><code>true</code>, <code>false</code></td><td>Unary</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The tree is bounded, and the bounds are enforced when it is parsed rather than when it is
+        drawn: at most 50 comparators, 50 children per group, 20 levels of depth and 200 nodes in
+        total, with a literal capped at 10,000 characters, a reference at 2,000 and a regular
+        expression at 512. Every violation is reported as invalid logic.
+      </p>
+      <p>
+        <code>logic</code> is deliberately <strong>not</strong> expression-enabled. The engine hands
+        the tree over untouched so the node can resolve each operand itself and distinguish a
+        reference that was <em>not found</em> from one that resolved to <code>null</code>. That
+        distinction is the point: a missing reference is a configuration error and
+        <strong>fails the node</strong>, rather than quietly evaluating false and sending the run down
+        a path you did not intend.
+      </p>
+
+      <h3>The legacy operands</h3>
+      <p>
+        <code>left</code>, <code>operator</code> and <code>right</code> are the original single-comparison
+        form, retained so a workflow authored before the logic editor still runs untouched. Precedence
+        is strict: <strong>a usable <code>logic</code> value always wins</strong>; the legacy operands
+        are consulted only when <code>logic</code> is absent, empty or whitespace. Opening the node in
+        the logic editor and saving migrates it.
+      </p>
+      <p>
+        The legacy vocabulary is seven names — <code>Equal</code>, <code>NotEqual</code>,
+        <code>GreaterThan</code>, <code>LessThan</code>, <code>GreaterThanOrEqual</code>,
+        <code>LessThanOrEqual</code>, <code>Contains</code> — each mapped onto a modern operator id.
+        A name outside that list is treated as corrupt data and fails the node rather than defaulting
+        to equality. Unlike <code>logic</code>, <code>left</code> and <code>right</code>
+        <em>are</em> expression-enabled, so they are resolved before the node sees them and their
+        types are inferred from the resulting values.
+      </p>
+      <p>
+        A Condition with neither form configured routes <code>false</code>. That is the only
+        remaining silent fallback, and the publish gate is what stops such a node from shipping.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>logic</code></td><td>json</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>The comparator tree. Written by the logic editor. Takes precedence over the legacy operands.</td>
+            </tr>
+            <tr>
+              <td><code>left</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>Legacy left operand. Resolved before evaluation.</td>
+            </tr>
+            <tr>
+              <td><code>operator</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>Legacy operator name. An unknown name fails the node.</td>
+            </tr>
+            <tr>
+              <td><code>right</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>Legacy right operand. Ignored by unary operators.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><code>true</code></td><td>any</td><td>The test evaluated true.</td></tr>
+            <tr><td><code>false</code></td><td>any</td><td>The test evaluated false, or the node is entirely unconfigured.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">An error is not a false</span>
+        <p>
+          An unresolvable reference, an unknown operator or a malformed tree makes the node
+          <strong>fail</strong>, carrying a bracketed error code plus the comparator and operand that
+          caused it. Nothing ambiguous is routed to <code>false</code>. If you want "missing counts as
+          false", say so explicitly with an <code>exists</code> or <code>empty</code> comparator.
+        </p>
+      </div>
+
+      <h2>Delay</h2>
+      <p>
+        <code>delay</code> · Control · timeout <code>60</code>
+      </p>
+      <p>
+        Waits, then continues. Reach for it to pace a loop against a rate-limited API, to leave a
+        remote system time to settle before polling it back, or to stagger a fan-out.
+      </p>
+      <p>
+        Two parameters express the same thing and only one is read. <code>delayMs</code> wins if it is
+        present at all; <code>duration</code> is consulted only when it is absent, and is parsed as a
+        time span such as <code>00:05:00</code>. Neither has a default — an empty node waits zero
+        milliseconds and continues immediately.
+      </p>
+      <p>
+        The threshold worth knowing is <strong>one second</strong>. A wait of 1000 milliseconds or
+        more <em>suspends</em> the run: the engine schedules a timed resume and releases the worker,
+        so a ten-minute delay in one workflow does not hold up every other workflow on the instance.
+        Shorter waits simply block inline, because a suspend-and-resume round trip to the database
+        costs more than the wait itself.
+      </p>
+      <p>
+        The manifest's 60-second timeout would otherwise cap the wait, so the engine raises the
+        timeout for a Delay node to the configured duration plus two seconds. A deliberate wait can
+        never trip a limit whose job is to catch a hung node.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>delayMs</code></td><td>number</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>Milliseconds to wait. Checked first; if present, <code>duration</code> is ignored entirely.</td>
+            </tr>
+            <tr>
+              <td><code>duration</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>A time span, for example <code>00:00:30</code>. Read only when <code>delayMs</code> is absent; an unparsable value silently becomes no wait at all.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>any</td><td>Nothing of its own; the run simply continues.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Switch</h2>
+      <p>
+        <code>switch</code> · Control · timeout <code>10</code>
+      </p>
+      <p>
+        A multi-way branch: compare one value against a list of case labels and take the matching
+        branch, or <code>default</code> when nothing matches. The catalog registers it, the palette
+        offers it and the compiler recognises it.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Switch has no executor in this build</span>
+        <p>
+          No task implementation is registered for the <code>switch</code> type, so a run that reaches
+          one <strong>fails the node</strong> with <code>No task implementation registered for type
+          'switch'.</code> and hands control to the workflow's error path. The failure is loud and
+          appears in the run journal, but it happens at run time — publishing and validation both
+          pass.
+        </p>
+        <p>
+          The node is also not on the engine's branch-routing list, and its manifest declares only the
+          <code>default</code> port, so the editor draws a single output handle with no way to wire a
+          per-case branch. Until that changes, express multi-way branching as a chain of
+          <strong>Condition</strong> nodes, or — when the decision is over natural-language text
+          rather than an exact value — with <strong>AI Router</strong>, whose category branches are
+          real, wirable ports.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>value</code></td><td>string</td>
+              <td><span class="kg-pill is-danger">Yes</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The value to match.</td>
+            </tr>
+            <tr>
+              <td><code>cases</code></td><td>string</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td>Case labels, separated by commas, semicolons or newlines.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><code>default</code></td><td>any</td><td>The only declared port. No per-case ports exist.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>For Loop</h2>
+      <p>
+        <code>forLoop</code> · Control · timeout <code>60</code> · container · branch node
+      </p>
+      <p>
+        Runs a body repeatedly, one pass at a time, in the order the items arrive. Reach for it when
+        the iterations must not overlap — writing rows to a file, calling an API that will not
+        tolerate concurrency, or accumulating into a variable where order matters. When the
+        iterations are independent, Parallel For-Each is faster.
+      </p>
+      <p>
+        Loop state lives in the run's global variables under keys derived from the node's id, and the
+        presence of the count key is what tells the loop it is on a later pass. That is why the
+        <code>end</code> loop-back is a port and not a value you set: a stray value in an
+        <code>end</code> field would once have made the very first pass look like a loop-back, skip
+        initialisation and exit with zero iterations.
+      </p>
+      <p>
+        Each iteration emits its <code>index</code> and the current <code>item</code> on the
+        <code>start</code> port, so the body can reference them. When the collection is exhausted the
+        loop clears its own state and fires <code>success</code> once.
+      </p>
+
+      <h3>Modes</h3>
+      <p>
+        <code>mode</code> drives which other fields the properties panel shows, so the form changes as
+        you change it. The manifest declares four values:
+      </p>
+      <ul>
+        <li><code>count</code> — repeat a fixed number of times, taken from <code>count</code>. The
+            body's <code>item</code> is the index.</li>
+        <li><code>foreach</code> — iterate a collection from <code>collection</code>. A JSON array is
+            parsed as one; a value that will not parse is split on commas and each piece trimmed,
+            which makes a plain comma-separated string work without ceremony.</li>
+        <li><code>while</code> — advertised as repeating while <code>condition</code> holds.</li>
+        <li><code>batch</code> — advertised as iterating <code>collection</code> in chunks of
+            <code>batchSize</code>.</li>
+      </ul>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Only <code>count</code> and <code>foreach</code> are implemented</span>
+        <p>
+          The executor branches on <code>count</code> and treats <strong>every other value</strong> —
+          including <code>while</code> and <code>batch</code> — as <code>foreach</code>. The
+          <code>condition</code> and <code>batchSize</code> parameters are never read by anything.
+          Selecting <code>while</code> therefore does not loop on a condition; it iterates whatever is
+          in <code>collection</code>, which is usually empty, so the body never runs and the loop
+          exits at once. It fails silently. Build a conditional loop as a <code>foreach</code> over a
+          pre-computed collection, or as a Condition node wired back into the graph.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>mode</code></td><td>enum</td>
+              <td><span class="kg-pill is-danger">Yes</span></td><td>—</td>
+              <td><code>count</code>, <code>foreach</code>, <code>while</code>, <code>batch</code>. Anything other than <code>count</code> behaves as <code>foreach</code>. Always shown first in the form.</td>
+            </tr>
+            <tr>
+              <td><code>collection</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>What to iterate. Shown in <code>foreach</code> and <code>batch</code> modes.</td>
+            </tr>
+            <tr>
+              <td><code>count</code></td><td>number</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>How many passes. Shown in <code>count</code> mode. Absent means zero passes.</td>
+            </tr>
+            <tr>
+              <td><code>condition</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>Shown in <code>while</code> mode. Not read by the executor.</td>
+            </tr>
+            <tr>
+              <td><code>batchSize</code></td><td>number</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>Shown in <code>batch</code> mode. Not read by the executor.</td>
+            </tr>
+            <tr>
+              <td><code>end</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The loop-back input port. Always hidden from the form — wire an edge into it instead.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><code>start</code></td><td>any</td><td>Once per iteration, carrying <code>index</code> and <code>item</code>. Wire the body here.</td></tr>
+            <tr><td><code>success</code></td><td>any</td><td>Once, after the last iteration. Wire the continuation here.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Parallel For-Each</h2>
+      <p>
+        <code>parallelForEach</code> · Control · timeout <code>300</code> · container · branch node
+      </p>
+      <p>
+        Runs the same body once per collection item, concurrently. Reach for it when the items are
+        independent and the work is dominated by waiting — enriching a hundred records from an API,
+        fetching a batch of documents, sending a set of notifications. On latency-bound work the
+        difference against For Loop is not marginal.
+      </p>
+      <p>
+        Each item runs in its own in-memory mini-executor with a private copy of the global variables
+        and its own node-state map, so iterations cannot interfere with one another. The consequence
+        is that <strong>a body node writing a workflow variable writes it into that item's private
+        copy</strong>, which is discarded when the item finishes. Accumulate through the results array
+        instead. Only after every item has finished does the node commit its aggregate.
+      </p>
+      <p>
+        The per-item result is whatever the body sends back into the <code>end</code> input, exactly
+        as with For Loop. The node then reports <code>results</code> (in item order),
+        <code>count</code> and <code>failedCount</code>, and continues through <code>success</code>.
+      </p>
+
+      <h3>Bounds and failure</h3>
+      <p>
+        <code>maxParallelism</code> defaults to <strong>8</strong> and is clamped to between 1 and 64.
+        <code>continueOnError</code> defaults to <strong>false</strong>. With it off, one failed item
+        fails the whole node, reporting how many items failed and quoting the first error. With it on,
+        every item is attempted and a failed one contributes an object carrying its <code>error</code>
+        in place of a result — so a partial success is distinguishable from a clean one by inspecting
+        <code>failedCount</code>.
+      </p>
+      <p>
+        Body nodes are timed individually: each body node's manifest timeout is clamped to between 1
+        and 600 seconds, and a body node declaring no timeout gets 30 seconds rather than the usual
+        5-second fallback.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">What the body may not contain</span>
+        <p>
+          The body must be wired to <code>start</code> and must not be empty; either mistake fails the
+          node before any item runs, with a message saying which. It also may not contain a nested
+          <strong>For Loop</strong>, <strong>Parallel For-Each</strong> or <strong>Join</strong> —
+          wrap that logic in a subflow instead. A body node that asks to wait for an external event
+          fails its item, because a single parallel branch cannot suspend the whole run. Inside the
+          body, only Condition performs port selection.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>collection</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The items to map over. An empty collection completes immediately with an empty results array.</td>
+            </tr>
+            <tr>
+              <td><code>maxParallelism</code></td><td>number</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>Concurrent items. Defaults to 8; clamped to 1–64. The form shows it blank.</td>
+            </tr>
+            <tr>
+              <td><code>continueOnError</code></td><td>boolean</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>Defaults to false. When true, failed items become error objects in <code>results</code> and the node still succeeds.</td>
+            </tr>
+            <tr>
+              <td><code>end</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td>
+              <td><span class="kg-pill is-info">Yes</span></td>
+              <td>The per-item loop-back input port. Always hidden from the form.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><code>start</code></td><td>any</td><td>Once per item, in its own isolated body run. Wire the body here.</td></tr>
+            <tr><td><code>success</code></td><td>array</td><td>Once, after every item has finished. Carries <code>results</code>, <code>count</code> and <code>failedCount</code>.</td></tr>
+            <tr><td><code>error</code></td><td>string</td><td>Declared, but the node does not route here — a failure goes through the normal node-failure path instead.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The inspector shows one iteration, not all of them</span>
+        <p>
+          Persisting a node state per item would explode the state table on a large collection, so the
+          body nodes are recorded once, holding the <em>last</em> iteration's outputs and an execution
+          count equal to the number of items. Treat the body's entry in the inspector as a sample.
+        </p>
+      </div>
+
+      <h2>Join</h2>
+      <p>
+        <code>join</code> · Control · timeout <code>10</code>
+      </p>
+      <p>
+        Fan-in. It waits until every branch wired into it has completed, then emits their outputs as a
+        single ordered array. Reach for it after a deliberate fan-out where all branches are
+        guaranteed to run — several independent calls made in parallel, or the branches downstream of
+        a Parallel For-Each.
+      </p>
+      <p>
+        The waiting is done by the engine, not the node: a Join is simply not scheduled until each of
+        its incoming-edge predecessors has completed. By the time the node itself runs, the branch
+        values have already been collected in incoming-edge order, and the node is a thin pass-through
+        that exposes them. It has no parameters, because there is nothing to configure.
+      </p>
+      <p>
+        Both of its ports carry the same array. <code>results</code> is the descriptive name;
+        <code>result</code> mirrors it so a downstream node that just wants "the joined value" can
+        wire to the generic port like any other node.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Never join mutually exclusive branches</span>
+        <p>
+          Do not place a Join after a Condition — or any other branch node — whose branches are
+          alternatives. The branch that was not taken never completes, the Join's precondition is
+          never satisfied, and it waits forever. The run does not fail with a useful message; it
+          simply stops making progress. A Join belongs only where every incoming branch is certain to
+          run.
+        </p>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th></tr></thead>
+          <tbody>
+            <tr><td colspan="4"><em>None.</em></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>array</td><td>The collected branch outputs. Mirrors <code>results</code>.</td></tr>
+            <tr><td><code>results</code></td><td>array</td><td>The collected branch outputs, in incoming-edge order.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Subflow</h2>
+      <p>
+        <code>subflow</code> · Control · timeout <code>300</code>
+      </p>
+      <p>
+        Calls another workflow as a step. Reach for it to factor out something you repeat — a
+        notification format, an authentication dance, a validation routine — and to get around the
+        Parallel For-Each restriction on nested control flow, which a subflow satisfies by definition.
+      </p>
+      <p>
+        A subflow is <strong>inlined at compile time</strong>, not invoked as a separate run. The
+        compiler splices the referenced workflow's nodes and edges into one flat execution plan,
+        prefixing every inlined id with the subflow node's own id — a node called
+        <code>inline-1</code> inside a subflow node called <code>subflow-a</code> becomes
+        <code>subflow-a/inline-1</code> — so names stay unique at any nesting depth. The consequence
+        is that a subflow shares the caller's run, its journal and its variable scope, and appears in
+        the inspector as ordinary nodes with compound ids. <strong>There is no child run to look
+        up.</strong>
+      </p>
+      <p>
+        This is worth holding on to, because a neighbouring feature works the opposite way: the
+        workflows an <strong>AI Agent</strong> calls as tools really do execute as separate, separately
+        journaled child runs. Same intuition, different mechanics — if you are looking for a child run
+        in the run list, a subflow will never produce one and an agent tool always will.
+      </p>
+      <p>
+        Because inlining happens at compile time, three failures are compile errors rather than
+        run-time ones, each naming the offending node: a missing <code>subflowId</code>
+        (<code>ERR_MISSING_SUBFLOW_ID</code>), a referenced workflow that does not exist
+        (<code>ERR_SUBFLOW_NOT_FOUND</code>), and a <strong>recursive reference</strong> — a subflow
+        that reaches itself, directly or through a chain — reported as
+        <code>ERR_RECURSIVE_SUBFLOW</code>. The recursion diagnostic prints the whole path, which is
+        usually enough to spot the cycle. None of these can become a run-time stack overflow, because
+        the plan is finite before anything executes.
+      </p>
+      <p>
+        The manifest declares one parameter, but the properties panel writes several. Selecting the
+        node gives you a searchable list of the other workflows, a button that creates and links a new
+        one, and — once a workflow is chosen — slots for binding a variable to each of its declared
+        inputs and outputs. Those bindings are stored alongside <code>subflowId</code> and are applied
+        by the subflow's own <strong>Start</strong> node (inputs) and <strong>End</strong> node
+        (outputs). A subflow that declares neither is flagged in the panel, because it can neither
+        receive nor return anything.
+      </p>
+      <p>
+        Double-clicking the node opens the referenced workflow. A reference to a workflow that has
+        since been deleted is called out as dangling in the panel before it ever reaches the compiler.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Expr</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>subflowId</code></td><td>string</td>
+              <td><span class="kg-pill is-off">No</span></td><td>—</td>
+              <td>The workflow to inline. Not required by the manifest, but missing it is a compile error — chosen from the picker rather than typed.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Port</th><th>Type</th><th>Carries</th></tr></thead>
+          <tbody>
+            <tr><td><code>result</code></td><td>any</td><td>Continues after the inlined body. Values come back through the declared output bindings, not through this port.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="nodes-overview.html">
+          <div class="kg-card-title">How to read this reference</div>
+          <div class="kg-card-desc">Port kinds, expression flags, timeouts and retry rules explained once.</div>
+        </a>
+        <a class="kg-card" href="nodes-data.html">
+          <div class="kg-card-title">Data nodes</div>
+          <div class="kg-card-desc">Pulling a value out of a payload before you branch on it.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

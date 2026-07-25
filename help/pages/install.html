@@ -1,0 +1,563 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Install paths. Every command, port, filename and default here is taken from docker-compose.yml,
+  Dockerfile, installer/Knotarium.iss, deploy/linux/, publish.ps1, run.ps1, .github/workflows/release.yml
+  and Backend/Knotarium.Api/Program.cs — not from README.md. Discrepancies are called out in the prose.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install and run · Knotarium Help</title>
+<meta name="description" content="Every way to install Knotarium — container, Windows installer, zip, Linux service or source — plus first-run setup, upgrades and where your data lives.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="install.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Install and run</h1>
+      <p class="kg-lead">
+        Knotarium is one process with an embedded database, so installing it is mostly a question of
+        how you want it started and where you want its data. There are five paths — a container, a
+        Windows installer, a zip you unpack anywhere, a Linux service, and running from source — and
+        they all end at the same place: a browser pointed at port <code>43120</code> asking you to
+        create an administrator.
+      </p>
+
+      <h2>Choosing a path</h2>
+      <p>
+        The paths differ in who starts the process and whether anything is written outside the
+        application folder. Nothing else about them differs — the same binary, the same database
+        format, the same features.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Path</th><th>Started by</th><th>Best for</th></tr></thead>
+          <tbody>
+            <tr><td>Container image</td><td>The container runtime</td><td>Linux hosts, NAS boxes, anything you already run in Docker.</td></tr>
+            <tr><td>Windows installer</td><td>The Windows service manager, at boot</td><td>A machine that should run Knotarium whether or not anyone is signed in.</td></tr>
+            <tr><td>Zip, zero-install</td><td>You, by double-clicking</td><td>Trying it out, or a machine where you cannot install software.</td></tr>
+            <tr><td>Linux folder build plus systemd</td><td><code>systemd</code>, at boot</td><td>A Linux server without a container runtime.</td></tr>
+            <tr><td>From source</td><td>You, from two terminals</td><td>Development and contributing.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">One port to remember</span>
+        <p>
+          <code>43120</code> is the default everywhere — the Dockerfile's <code>EXPOSE</code>, the
+          installer's service registration, the systemd unit, the launcher script written into the zip,
+          and the development launcher all use it. When something is not reachable, the port is rarely
+          the reason.
+        </p>
+      </div>
+
+      <h2>Container</h2>
+      <p>
+        The published image is multi-architecture — <code>linux/amd64</code> and
+        <code>linux/arm64</code> are both built and pushed — so the same tag works on an ordinary
+        server and on an ARM single-board machine. It is a framework-dependent build on the
+        <code>mcr.microsoft.com/dotnet/aspnet:10.0</code> base image, with the compiled React interface
+        and this help site copied into <code>wwwroot</code> so everything is served from one origin.
+      </p>
+
+      <pre><code><span class="tok-comment"># Pull and run the prebuilt image</span>
+<span class="tok-cmd">docker</span> run -d --name knotarium -p <span class="tok-num">43120</span>:43120 \
+  -v knotarium-data:/data ghcr.io/andrekfm/knotarium:latest</code></pre>
+
+      <p>
+        The left half of <code>-p 43120:43120</code> is the host side and is yours to choose. Serving
+        the interface on port 8080 is a matter of writing <code>-p 8080:43120</code>; the application's
+        own configuration does not change, and neither should it, because the container's internal port
+        is baked into the image's environment.
+      </p>
+
+      <h3>Image tags</h3>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Tag</th><th>Moves when</th></tr></thead>
+          <tbody>
+            <tr><td><code>:latest</code></td><td>A stable version is tagged — one with no hyphen in it.</td></tr>
+            <tr><td><code>:edge</code></td><td>A pre-release is tagged, meaning a version containing a hyphen such as <code>1.0.0-rc.15</code>.</td></tr>
+            <tr><td><code>:&lt;version&gt;</code></td><td>Never. Every release publishes its exact version as an immutable tag.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        While the project is in its pre-release phase, <code>:latest</code> can lag a long way behind
+        <code>:edge</code>, because it only moves on a stable tag and there has not been one. Pin an
+        exact version for anything you care about.
+      </p>
+
+      <h3>Compose</h3>
+      <p>
+        The <code>docker-compose.yml</code> in the repository root <strong>builds from source</strong>
+        rather than pulling the published image — its service declares <code>build: .</code> and tags
+        the result <code>knotarium:local</code>. That is the right thing when you have the repository
+        checked out and want your working tree running, and the wrong thing when you just want the
+        released build. Use the <code>docker run</code> above for the latter.
+      </p>
+
+      <pre><code><span class="tok-comment"># Build the working tree and run it</span>
+<span class="tok-cmd">docker</span> compose up --build</code></pre>
+
+      <p>
+        The Compose file understands three shorthand variables and translates them into real
+        configuration keys. They are described in full on the
+        <a href="configuration.html">configuration reference</a>; the point worth repeating here is
+        that the translation happens inside the Compose file, so those names mean nothing to any other
+        install path.
+      </p>
+
+      <h3>Volumes and file ownership</h3>
+      <p>
+        The image sets <code>Storage__DataDirectory=/data</code> and declares <code>/data</code> as a
+        volume, so the database and the credential key land there together. It also runs as the base
+        image's non-root user, whose numeric identifier is <strong>1654</strong>, and the image creates
+        <code>/data</code> already owned by that user.
+      </p>
+      <p>
+        That ownership is why a <em>named</em> volume works with no setup: on first initialisation a
+        named volume inherits the ownership of the mount point inside the image. A <em>bind</em> mount
+        does not — it keeps whatever the host directory already has.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A bind mount fails on permissions, not on configuration</span>
+        <p>
+          Mounting a host directory with <code>-v /srv/knotarium:/data</code> and leaving it owned by
+          root gives you a container that starts and then cannot write its database. Either
+          <code>chown</code> the host directory to <code>1654</code>, or run the container with an
+          explicit <code>--user</code>. A named volume avoids the question entirely and is the better
+          default.
+        </p>
+      </div>
+
+      <h2>Windows installer</h2>
+      <p>
+        The installer is built with Inno Setup and its job is to turn the folder build into a service.
+        It installs into <code>%ProgramFiles%\Knotarium</code>, registers an auto-starting Windows
+        service named <strong>Knotarium</strong> bound to <code>http://localhost:43120</code>, starts
+        it, and adds two Start Menu entries: <span class="kg-path">Open Knotarium</span>, which is an
+        internet shortcut to the running instance, and <span class="kg-path">Uninstall
+        Knotarium</span>. A non-silent install finishes with an optional checkbox to open the app in
+        your browser.
+      </p>
+      <p>
+        Because it writes to Program Files and installs a service, the installer requires elevation. It
+        also refuses to run on anything but 64-bit Windows, since the published build is
+        <code>win-x64</code> and there is no 32-bit build to fall back on.
+      </p>
+
+      <h3>Unattended install</h3>
+      <pre><code><span class="tok-comment"># Install with no interaction</span>
+<span class="tok-cmd">Knotarium-&lt;version&gt;-setup.exe</span> /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+
+<span class="tok-comment"># Remove it again</span>
+<span class="tok-str">"%ProgramFiles%\Knotarium\unins000.exe"</span> /VERYSILENT</code></pre>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The service account is not your account</span>
+        <p>
+          The service runs under the service control manager, not your session. Environment variables
+          you set interactively are invisible to it — this is the single most common reason a setting
+          appears to be ignored after an installer-based install. Put configuration in
+          <code>appsettings.json</code> next to the executable instead, which the application finds
+          reliably because running as a service pins its content root to the executable's own folder.
+        </p>
+      </div>
+
+      <h3>winget</h3>
+      <p>
+        A winget manifest for the identifier <code>AndreKaufmann.Knotarium</code> exists in the
+        repository under <code>installer/winget/</code>, prepared for submission. At the time of
+        writing its <code>InstallerSha256</code> is still a placeholder of zeroes and its
+        <code>InstallerUrl</code> points at a specific pre-release tag, so it has not been submitted to
+        the public index. Treat <code>winget install</code> as planned rather than available, and take
+        the installer from the releases page.
+      </p>
+
+      <h2>Zero-install zip</h2>
+      <p>
+        The zip is the same published folder as the installer uses, compressed. Nothing is registered,
+        nothing is written to Program Files, and no administrator rights are needed. Unpack it wherever
+        you like and run <code>Start.bat</code>, a small launcher the build writes into the folder that
+        pins the address, opens your browser, and then starts the executable in the foreground.
+      </p>
+
+      <pre><code><span class="tok-comment"># What Start.bat does</span>
+<span class="tok-key">set</span> ASPNETCORE_URLS=http://localhost:43120
+<span class="tok-cmd">start</span> <span class="tok-str">""</span> <span class="tok-str">"http://localhost:43120"</span>
+<span class="tok-str">"%~dp0Knotarium.Api.exe"</span></code></pre>
+
+      <p>
+        Closing the console window stops the server. This is a genuine difference from the installer
+        path rather than a limitation: the zip build is a foreground application, so nothing runs when
+        you are not running it.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The zip and the installer share their data</span>
+        <p>
+          Both resolve the same machine-wide data directory, so a zip build and an installed service on
+          one machine see the same database and the same workflows. That is usually convenient. It also
+          means running both at once is a bad idea — two processes writing one SQLite file is not a
+          configuration anyone tested.
+        </p>
+      </div>
+
+      <h2>Linux</h2>
+      <p>
+        The Linux release artifact is a <code>.tar.gz</code> rather than a zip, specifically so the
+        executable bit on <code>Knotarium.Api</code> survives extraction. It is a self-contained build:
+        the .NET runtime is inside it and there is nothing to install first.
+      </p>
+      <p>
+        The repository ships a hardened systemd unit at <code>deploy/linux/knotarium.service</code>.
+        The install it assumes is <code>/opt/knotarium</code> for the program and
+        <code>/var/lib/knotarium</code> for the state, running as a dedicated unprivileged
+        <code>knotarium</code> user with no login shell.
+      </p>
+
+      <pre><code><span class="tok-comment"># Service account, directories, then unpack the release into /opt</span>
+<span class="tok-cmd">sudo</span> useradd --system --home /var/lib/knotarium --shell /usr/sbin/nologin knotarium
+<span class="tok-cmd">sudo</span> mkdir -p /opt/knotarium /var/lib/knotarium
+<span class="tok-cmd">sudo</span> tar -xzf Knotarium-&lt;version&gt;-linux-x64.tar.gz -C /opt/knotarium --strip-components=1
+<span class="tok-cmd">sudo</span> chmod +x /opt/knotarium/Knotarium.Api
+<span class="tok-cmd">sudo</span> chown -R knotarium:knotarium /opt/knotarium /var/lib/knotarium
+
+<span class="tok-comment"># Install and start the unit</span>
+<span class="tok-cmd">sudo</span> cp deploy/linux/knotarium.service /etc/systemd/system/
+<span class="tok-cmd">sudo</span> systemctl daemon-reload
+<span class="tok-cmd">sudo</span> systemctl enable --now knotarium</code></pre>
+
+      <p>
+        The unit sets <code>Storage__DataDirectory=/var/lib/knotarium</code> deliberately, because the
+        platform default on Linux resolves to <code>/usr/share</code> — a directory a hardened service
+        has no business writing to. Logs go to the journal, so <code>journalctl -u knotarium -f</code>
+        is where you watch a run go wrong.
+      </p>
+
+      <h3>The hardening, and the one exception</h3>
+      <p>
+        The unit applies a broad set of systemd protections: <code>NoNewPrivileges</code>,
+        <code>ProtectSystem=strict</code> with a single writable path for the state directory,
+        <code>ProtectHome</code>, <code>PrivateTmp</code>, <code>PrivateDevices</code>, the kernel and
+        control-group protections, and an address-family restriction that allows only IPv4, IPv6 and
+        Unix sockets.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">MemoryDenyWriteExecute must stay false</span>
+        <p>
+          The unit sets <code>MemoryDenyWriteExecute=false</code> on purpose and the comment beside it
+          says so. The engine compiles inline code and dynamic node packages with Roslyn while it runs,
+          which needs memory that is writable and then executable. Turning this protection on looks
+          like good hardening and silently breaks every workflow that contains an Inline Code node.
+        </p>
+      </div>
+
+      <p>
+        If you enable the process-isolated node sandbox, confining worker processes by CPU percentage
+        on Linux needs a delegated control-group hierarchy. Grant it with <code>Delegate=yes</code> in
+        a drop-in override; without delegation the sandbox falls back to a resource limit on address
+        space and the CPU cap does not apply.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">A stale caveat in the Linux notes</span>
+        <p>
+          <code>deploy/linux/README.md</code> warns that the automated release publishes Windows
+          artifacts only and tells you to build from source. That is no longer true — the release
+          workflow has a Linux job that produces
+          <code>Knotarium-&lt;version&gt;-linux-x64.tar.gz</code> with a checksum sidecar and attaches
+          it to the same release. Prefer the published tarball.
+        </p>
+      </div>
+
+      <h2>From source</h2>
+      <p>
+        Two prerequisites: the <strong>.NET 10 SDK</strong> and <strong>Node 22 or newer</strong>. In
+        development the backend and the interface run as two processes, because the Vite dev server
+        provides hot reloading and proxies API calls to the backend.
+      </p>
+
+      <pre><code><span class="tok-comment"># Terminal 1 — the API, on http://localhost:43120</span>
+<span class="tok-cmd">dotnet</span> run --project Backend/Knotarium.Api
+
+<span class="tok-comment"># Terminal 2 — the interface, on http://localhost:5273</span>
+<span class="tok-cmd">cd</span> Frontend &amp;&amp; npm install &amp;&amp; npm run dev</code></pre>
+
+      <p>
+        Open <strong>http://localhost:5273</strong>, not 43120, when running this way: the dev server
+        is what serves the interface, and it forwards <code>/api</code> to the backend. On Windows,
+        <code>./run.ps1</code> does both in separate windows, first stopping anything already listening
+        on either port and elevating if it must. It takes <code>-Clean</code> to wipe build output
+        first and <code>-MockApi</code> to also start a small local REST server used for testing
+        resource lookups.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Development mode stores data somewhere else</span>
+        <p>
+          When <code>ASPNETCORE_ENVIRONMENT</code> is <code>Development</code>, the machine-wide data
+          directory is <strong>not used</strong>: the database falls back to a relative path and drafts
+          go to the historical per-user location. Development mode also relaxes the HTTPS-only session
+          cookie and refuses to auto-generate a credential key. A source run and an installed instance
+          on the same machine therefore do <em>not</em> share data, which is exactly what you want
+          while developing and a nasty surprise if you assumed otherwise.
+        </p>
+      </div>
+
+      <h3>Building a distributable</h3>
+      <p>
+        <code>publish.ps1</code> produces the folder build that every Windows artifact is made from.
+        It builds the interface with Vite, publishes the backend self-contained, copies the interface
+        into <code>wwwroot</code> and this help site into <code>wwwroot/help</code>, and writes the
+        launcher.
+      </p>
+
+      <pre><code><span class="tok-comment"># Folder build into ./publish/app</span>
+<span class="tok-cmd">./publish.ps1</span>
+
+<span class="tok-comment"># Stamped version, plus the zip and the installer</span>
+<span class="tok-cmd">./publish.ps1</span> -Version <span class="tok-str">1.0.0-rc.1</span> -Zip -Installer
+
+<span class="tok-comment"># A different target platform</span>
+<span class="tok-cmd">./publish.ps1</span> -Runtime <span class="tok-str">linux-x64</span></code></pre>
+
+      <p>
+        Building the installer needs Inno Setup 6 on the machine; the script looks for
+        <code>ISCC.exe</code> in the usual locations and fails with a clear message if it is missing.
+        The <code>-SingleFile</code> switch exists but the script warns against it in red, and the
+        warning is worth heeding: a self-extracting build unpacks to a temporary folder at launch,
+        which antivirus products flag as a false positive far more readily than the folder build.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">One stale line in the build output</span>
+        <p>
+          When <code>publish.ps1</code> finishes it prints that the SQLite database is created next to
+          the executable on first run. That has not been true since persistence moved to the
+          machine-wide data directory. The database is created in the data directory described below,
+          not in the application folder.
+        </p>
+      </div>
+
+      <h2>Verifying what you downloaded</h2>
+      <p>
+        Every release artifact ships with a <code>.sha256</code> sidecar next to it, generated from the
+        final bytes of the file. The sidecar holds the hash and the filename separated by two spaces,
+        which is the format the standard Unix tool expects.
+      </p>
+
+      <pre><code><span class="tok-comment"># Windows — compare the output against the .sha256 file</span>
+<span class="tok-cmd">Get-FileHash</span> .\Knotarium-&lt;version&gt;-win-x64.zip
+
+<span class="tok-comment"># Linux — verify against the sidecar directly</span>
+<span class="tok-cmd">sha256sum</span> -c Knotarium-&lt;version&gt;-linux-x64.tar.gz.sha256</code></pre>
+
+      <p>
+        When the release pipeline signs artifacts, it regenerates the checksums afterwards, because
+        signing changes the file's bytes and the pre-signing hash would be stale. The published
+        checksum always describes the file you can actually download.
+      </p>
+
+      <h3>SmartScreen and code signing</h3>
+      <p>
+        Windows releases are <strong>not code-signed today</strong>. The build pipeline has two
+        optional signing routes wired in — an Authenticode step in <code>publish.ps1</code> driven by a
+        certificate supplied through secrets, and an alternative server-side signing service — but both
+        are opt-in and inert unless the corresponding secrets are configured. With neither configured
+        the output is an ordinary unsigned build.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">What an unsigned build looks like</span>
+        <p>
+          Windows SmartScreen will report an unknown publisher, and heuristic antivirus scanners
+          sometimes flag the installer outright. This is a reputation problem, not a detection of
+          anything. The zip is affected noticeably less than the installer, because it does not
+          self-extract. Verify the published SHA-256 before running either, and check the multi-engine
+          scan links that the release notes carry when that scan is enabled.
+        </p>
+      </div>
+
+      <h2>First run</h2>
+      <p>
+        Open <code>http://localhost:43120</code>. The interface asks the backend whether the instance
+        needs setting up, and the answer is yes exactly when sign-in is enabled and no accounts exist
+        yet. In that state it presents a screen to create the first account.
+      </p>
+      <p>
+        That first account is created with the <strong>admin</strong> role and you are signed in
+        immediately. The rules the server enforces are short:
+      </p>
+      <ul>
+        <li>The password must be <strong>at least 8 characters</strong>. There is no complexity rule
+            beyond length, and no maximum.</li>
+        <li>The username is trimmed and lower-cased before it is stored, so sign-in is
+            case-insensitive.</li>
+        <li>Setup is refused once any account exists. It is not a screen you can return to.</li>
+      </ul>
+      <p>
+        Passwords are stored only as salted hashes, and a hash written by an older algorithm is
+        transparently upgraded the next time that user signs in successfully.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Unattended first admin</span>
+        <p>
+          For an install with no browser in the loop, set
+          <code>Auth__InitialAdmin__Username</code> and <code>Auth__InitialAdmin__Password</code>. They
+          seed the first administrator at startup and are applied only while no accounts exist, so
+          leaving them set does nothing on later starts. Supply the password from a secret store rather
+          than a checked-in file.
+        </p>
+      </div>
+
+      <p>
+        If sign-in is turned off entirely there is no setup screen and no login, because every endpoint
+        is already anonymous. Note that this configuration refuses to start when the instance is bound
+        to anything other than loopback — see the
+        <a href="configuration.html">configuration reference</a> for why that check exists.
+      </p>
+
+      <h2>Where your data lives</h2>
+      <p>
+        One machine-wide directory holds everything that must outlive an upgrade: the SQLite database,
+        the credential-encryption key, unpublished workflow drafts, and the export folder.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Install path</th><th>Data directory</th></tr></thead>
+          <tbody>
+            <tr><td>Windows installer or zip</td><td><code>%ProgramData%\Knotarium</code></td></tr>
+            <tr><td>Container</td><td><code>/data</code>, set explicitly by the image</td></tr>
+            <tr><td>Linux with the shipped unit</td><td><code>/var/lib/knotarium</code>, set explicitly by the unit</td></tr>
+            <tr><td>Other platforms, unconfigured</td><td>The platform's shared application-data folder, plus <code>Knotarium</code></td></tr>
+            <tr><td>Development</td><td>Relative paths beside the project; the setting is ignored</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The reason this directory is machine-wide rather than per-user is that a Windows service and an
+        interactive run start from different accounts and, without a fixed home, would each anchor
+        their own database and never see each other's work.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Back up the key with the database</span>
+        <p>
+          The <code>.credential-key</code> file in the data directory decrypts every stored password,
+          token and API key. A backup of the database without it leaves you with credentials that can
+          never be read again. Back up the directory as a unit, or not at all.
+        </p>
+      </div>
+
+      <h2>Upgrading</h2>
+      <p>
+        The database schema is created and migrated on startup, so no upgrade path has a manual
+        migration step. What differs is how the old files are replaced.
+      </p>
+
+      <h3>Windows installer</h3>
+      <p>
+        Run the new installer over the old one. The application identifier is deliberately stable
+        across versions, so an upgrade replaces the installation rather than sitting beside it. Before
+        copying any file the installer stops the service and polls until it genuinely reports
+        <em>stopped</em> — up to 45 seconds, because <code>sc stop</code> returns immediately while the
+        application is still draining in-flight runs. It then deletes the service, force-terminates any
+        surviving process including the sandbox worker child, replaces the files, and recreates and
+        starts the service.
+      </p>
+      <p>
+        That polling exists because a fixed short wait let the file copy begin while the executable was
+        still locked, which aborted the install with a file-in-use error.
+      </p>
+
+      <h3>Container</h3>
+      <pre><code><span class="tok-cmd">docker</span> pull ghcr.io/andrekfm/knotarium:latest
+<span class="tok-cmd">docker</span> rm -f knotarium
+<span class="tok-cmd">docker</span> run -d --name knotarium -p <span class="tok-num">43120</span>:43120 \
+  -v knotarium-data:/data ghcr.io/andrekfm/knotarium:latest</code></pre>
+      <p>
+        Removing and recreating the container is the upgrade. The volume is untouched by both
+        operations, which is where all of your state lives.
+      </p>
+
+      <h3>Linux</h3>
+      <p>
+        Stop the service, replace the contents of <code>/opt/knotarium</code> with the new release,
+        restore the executable bit and the ownership, and start it again. Leave
+        <code>/var/lib/knotarium</code> alone — that is the data, and nothing about an upgrade should
+        touch it.
+      </p>
+
+      <h3>Uninstalling</h3>
+      <p>
+        The Windows uninstaller stops and deletes the service and removes the program files, but
+        <strong>leaves <code>%ProgramData%\Knotarium</code> in place</strong> so that reinstalling
+        keeps your workflows. If you want a genuinely clean machine, delete that directory yourself
+        afterwards. The same principle applies on Linux: removing the unit and
+        <code>/opt/knotarium</code> leaves <code>/var/lib/knotarium</code> untouched.
+      </p>
+
+      <h2>Confirming it works</h2>
+      <p>
+        A running instance answers <code>GET /api/version</code> with the version stamped into the
+        assembly at build time, which is the quickest way to tell a freshly upgraded instance from a
+        stale one that never restarted. The version is also shown on the dashboard. A plain
+        <code>docker build</code> or an unstamped local publish reports <code>0.0.0</code>, because the
+        version is passed in by the release pipeline rather than derived.
+      </p>
+      <p>
+        If the page does not load at all, work through it in this order: is the process running, is it
+        bound where you think, and is anything else holding the port. On Windows the service manager
+        shows the first; on Linux <code>systemctl status knotarium</code> does. Container logs and the
+        systemd journal both carry the startup errors, and startup failures in this application are
+        deliberately loud — a misconfiguration that would be unsafe to run through, such as disabling
+        sign-in on a non-loopback address, stops the process rather than warning.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="first-workflow.html">
+          <div class="kg-card-title">Your first workflow</div>
+          <div class="kg-card-desc">From a fresh instance to a workflow that calls an API and shows you what it did.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Every setting the application reads, what it defaults to, and what breaks when it is wrong.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

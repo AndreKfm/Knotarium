@@ -78,7 +78,7 @@ Open **http://localhost:43120**. On first run you create an admin account. The S
 
 > Want to skip login for a throwaway local try? `KG_AUTH_ENABLED=false docker compose up --build`.
 
-**New here?** The [Getting Started guide](docs/getting-started.md) walks you from install to your first API-calling workflow in about five minutes.
+**New here?** Every instance ships with the full documentation built in — open **http://localhost:43120/help/**, or click **Help** in the application header. It covers installation, a five-minute first workflow, a reference for every node, administration and security, and troubleshooting. You can also read it straight from this repository: [`help/index.html`](help/index.html).
 
 ## Run from source
 

@@ -1,0 +1,529 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Bundles. Trust levels, verification statuses and the install gate are taken from
+  Knotarium.Features/Bundles (BundleTrust, BundleVerifier, BundleInstallService), not from the README.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bundles · Knotarium Help</title>
+<meta name="description" content="Package workflows together with the node packages they need as a signed .kgbundle, and understand the verification gate that runs before anything is installed.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="bundles.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Bundles</h1>
+      <p class="kg-lead">
+        A bundle is an integration shipped as one file: several workflows, the custom node packages they
+        depend on, a lock recording exactly which package bytes were meant, and a declaration of the
+        credentials the recipient must supply. Where a template is a convenience, a bundle is a supply
+        chain — which is why installing one runs a verification gate that can refuse the whole thing.
+        <span class="kg-path">Bundles</span> has two tabs, Install and Export.
+      </p>
+
+      <h2>Bundle or template?</h2>
+      <p>
+        Both formats carry workflows and both use the same <code>slot:</code> credential placeholders, so
+        the choice comes down to what else needs to travel:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th></th><th>Template (<code>.kgtpl</code>)</th><th>Bundle (<code>.kgbundle</code>)</th></tr></thead>
+          <tbody>
+            <tr><td>Workflows</td><td>Exactly one</td><td>Any number</td></tr>
+            <tr><td>Node packages</td><td>None</td><td>Every non-built-in package the workflows use</td></tr>
+            <tr><td>Dependency lock</td><td>None</td><td><code>bundle.lock</code>, with a hash per package</td></tr>
+            <tr><td>Signatures</td><td>None</td><td>Per package, verified on install</td></tr>
+            <tr><td>Credential handling</td><td>Credentials are stripped into slots automatically on export</td><td>Slots are declared by hand; export does <strong>not</strong> rewrite credential ids</td></tr>
+            <tr><td>Install parameters</td><td>Typed <code>{{param:…}}</code> values</td><td>None</td></tr>
+            <tr><td>Failure mode</td><td>Imports as a draft even when not runnable</td><td>All-or-nothing; a rejected install writes nothing</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        If you are sharing one workflow built from stock nodes, reach for a
+        <a href="templates.html">template</a>. If your workflow depends on a custom node package you wrote
+        in the node editor, only a bundle can carry that package with it.
+      </p>
+
+      <h2>What is inside a .kgbundle</h2>
+      <p>
+        A <code>.kgbundle</code> is a zip written deterministically — entries in a stable order with a fixed
+        timestamp — so identical contents always produce identical bytes and therefore an identical hash.
+        Its layout is:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Entry</th><th>Contents</th></tr></thead>
+          <tbody>
+            <tr><td><code>bundle.json</code></td><td>The manifest: authoring intent. Bundle id, version, name, publisher, tags, category, schema version, minimum engine version, the package references, the declared credential slots, the workflow references, and the claimed provenance. Deliberately carries no hashes.</td></tr>
+            <tr><td><code>bundle.lock</code></td><td>The resolved record: for every package, its resolved version, its SHA-256, the source it resolved from, and its trust level, plus the resolution timestamp and resolver version. This is what the installer verifies against.</td></tr>
+            <tr><td><code>packages/&lt;id&gt;.json</code></td><td>One file per package — the signed payload (id, version, display name, category, manifest, source and capabilities) plus its detached signature, if it has one.</td></tr>
+            <tr><td><code>workflows/&lt;key&gt;.json</code></td><td>One exported workflow document per bundled workflow.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The split between manifest and lock mirrors <code>package.json</code> and
+        <code>package-lock.json</code>. The manifest is what a human wrote; the lock is what the machine
+        resolved, and it is the only half the installer trusts. Anything verifiable — hashes, resolved
+        source, trust level — lives in the lock and never in the manifest.
+      </p>
+      <p>
+        Entry names are checked when the archive is read: an entry that is neither
+        <code>bundle.json</code>, <code>bundle.lock</code>, nor a direct child of <code>packages/</code> or
+        <code>workflows/</code> is rejected rather than ignored, as is a nested path or a name containing a
+        path separator. A bundle may hold up to 1024 entries.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The upload hint overstates the size limit</span>
+        <p>
+          The Install tab describes the drop zone as accepting an archive "up to 200 MB". The limit the
+          reader actually enforces is much smaller: <strong>5 MB</strong> for the compressed archive,
+          25 MB total uncompressed, 10 MB for any single entry, and a 100:1 compression ratio. A larger
+          file is refused with an archive error rather than being accepted and truncated, so the failure is
+          loud — but it will not be the failure the interface led you to expect. Bundles carry JSON, not
+          binaries, so a real bundle is far below either number.
+        </p>
+      </div>
+
+      <h2>Export — assembling a bundle</h2>
+      <p>
+        The Export tab builds the manifest from four sections, then asks the server to resolve and pack it.
+      </p>
+
+      <h3>Metadata</h3>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Bundle id</strong></td><td>Required; the export is refused without one. A reverse-domain name such as <code>com.example.integration</code> is the convention the placeholder suggests. It also becomes the file name stem.</td></tr>
+            <tr><td><strong>Version</strong></td><td>Defaults to <code>1.0.0</code>; an empty value is packed as <code>0.0.0</code>.</td></tr>
+            <tr><td><strong>Name</strong></td><td>Falls back to the bundle id when left blank.</td></tr>
+            <tr><td><strong>Publisher</strong></td><td>Free text. Recorded in the manifest and in the claimed provenance.</td></tr>
+            <tr><td><strong>Category</strong></td><td>Free text.</td></tr>
+            <tr><td><strong>Tags</strong></td><td>Comma-separated.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The download is named from the id and the version, so <code>com.example.integration</code> at
+        <code>2.1.0</code> arrives as <code>com.example.integration-2.1.0.kgbundle</code>.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Publisher and provenance are claims, not evidence</span>
+        <p>
+          Both the publisher field and the manifest's provenance block record what the exporter typed.
+          Nothing verifies them, and the manifest is not covered by any signature. The only statement in a
+          bundle that carries cryptographic weight is a package's own signature, checked against your
+          trusted keys — everything in <code>bundle.json</code> is a label.
+        </p>
+      </div>
+
+      <h3>Workflows</h3>
+      <p>
+        A checklist of every workflow on the instance, with <strong>Select all</strong> and
+        <strong>Clear all</strong>. At least one must be selected or the export is refused. Each selected
+        workflow becomes a manifest entry with the role <code>primary</code>, and its exported document is
+        written into the archive under its own id.
+      </p>
+
+      <h3>Packages — derived, not chosen</h3>
+      <p>
+        There is no package picker. Every node's type <em>is</em> a package id, so the bundle's package set
+        is computed from the node types used by the workflows you selected, and the panel updates as you
+        tick workflows on and off. Two filters apply:
+      </p>
+      <ul>
+        <li>Built-in node types drop out. They ship with the engine, carry no installable registry version,
+            and cannot be bundled — if your workflows use only built-in nodes, the panel says so and the
+            bundle contains no packages at all.</li>
+        <li>Each remaining package is pinned to an installed version whose source is not a built-in one —
+            the panel describes this as its latest installed version.</li>
+      </ul>
+      <p>
+        A bundle with no packages is perfectly valid: it is a multi-workflow archive, and its verification
+        gate has nothing to gate, so it passes trivially.
+      </p>
+
+      <h3>Credential slots</h3>
+      <p>
+        <strong>Add credential slot</strong> appends a row with two fields: the slot key — the
+        <code>slot:&lt;name&gt;</code> placeholder the bundled workflows are expected to use — and a
+        human-readable label shown to whoever installs the bundle. A row with an empty key is dropped when
+        the manifest is built, and the label defaults to the key when left blank.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Bundle export does not remove your credentials</span>
+        <p>
+          This is the single most important difference from a template. Template export walks every node
+          property and rewrites credential references into slots automatically. <strong>Bundle export does
+          not.</strong> Workflows are packed exactly as they are, so a workflow referencing a real
+          credential id ships that id inside the bundle, and declaring a slot here does not cause any
+          rewriting to happen. For a portable bundle, the workflows themselves must already reference
+          credentials as <code>slot:&lt;name&gt;</code> placeholders matching the slots you declare. The
+          only thing stopping you from shipping host-specific credential references is remembering to.
+        </p>
+      </div>
+
+      <p>
+        A practical route to a portable bundle is to prepare the workflow first — export it as a template
+        and reinstall it with the slots deliberately left unbound, which leaves the placeholders in place —
+        and only then bundle it. The alternative is to edit the credential fields to
+        <code>slot:</code> values by hand before exporting.
+      </p>
+
+      <p>
+        A sticky action bar at the bottom summarises the selection as a count of workflows, packages and
+        slots, next to the <strong>Export .kgbundle</strong> button. Export fails loudly rather than
+        producing a partial archive: a package reference that cannot be resolved against the installed
+        registry, or a selected workflow with nothing to export, aborts the whole operation with a message
+        naming the package or workflow at fault.
+      </p>
+
+      <h2>Signing</h2>
+      <p>
+        Bundle trust rests entirely on the signatures carried by the individual node packages inside it.
+        Two configuration settings govern the two directions.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Setting</th><th>Direction</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Security__PackageSigning__HostPrivateKeyBase64</code></td>
+              <td>Outbound</td>
+              <td>The Ed25519 private key this host signs node packages with. It must be valid base64 decoding to exactly 32 bytes; a key that is missing, not base64, or the wrong length makes publishing fail with a server error naming which of the three it was.</td>
+            </tr>
+            <tr>
+              <td><code>Security__PackageSigning__TrustedPublicKeys</code></td>
+              <td>Inbound</td>
+              <td>The list of public keys whose signatures this host accepts. Empty by default, which means no signature can verify and every signed package is treated as untrusted.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">The signature is applied when a package is published, not when a bundle is exported</span>
+        <p>
+          Exporting a bundle never invokes the private key. A package is signed at the moment it is
+          published to this instance's registry, and the signature is stored with it; bundle export copies
+          that stored signature into the archive and records the resulting trust verdict in the lock. So
+          the host private key affects what your bundles contain, but only indirectly — via the packages
+          you published with it. A package installed rather than published arrives with a signature
+          someone else produced, which must already verify against your trusted keys or the install is
+          refused.
+        </p>
+      </div>
+
+      <p>
+        Signing covers a canonical serialization of the package's identity and content — id, version,
+        display name, category, manifest JSON, source and capabilities — hashed with SHA-256 and signed
+        with Ed25519. Because the serialization sorts keys recursively, two logically identical manifests
+        that differ only in key order produce the same digest.
+      </p>
+      <p>
+        Verification asks one question: does this signature verify against <em>any</em> key in
+        <code>TrustedPublicKeys</code>? A consequence worth knowing is that a cryptographically broken
+        signature and a perfectly valid signature from a publisher you have not trusted are currently
+        indistinguishable in the report — both appear as <strong>Untrusted signature</strong>. Telling them
+        apart would require the package to carry its signer's public key, which the format does not yet do.
+      </p>
+
+      <h2>Install — the verification gate</h2>
+      <p>
+        The Install tab takes a <code>.kgbundle</code> by click or drag-and-drop, offers an
+        <strong>Allow provisional installs</strong> toggle, and installs on the button. What happens next
+        is a sequence of gates, each of which must pass before the next runs, with every database write
+        held until the end:
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 330" role="img" aria-labelledby="gate-title">
+          <title id="gate-title">The bundle install gate: verify, acknowledge, check for conflicts, then commit</title>
+          <defs>
+            <marker id="barw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+            <marker id="barw-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#ef4444"/>
+            </marker>
+          </defs>
+
+          <rect x="10" y="14" width="300" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="38" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13" font-weight="700">1 · Verify signature and lock</text>
+          <text x="28" y="56" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Re-hash every package, re-check every signature.</text>
+          <path d="M160 70 L160 88" stroke="#6366f1" stroke-width="1.6" marker-end="url(#barw)"/>
+          <path d="M316 40 L392 40" stroke="#ef4444" stroke-width="1.6" marker-end="url(#barw-r)"/>
+          <text x="404" y="37" fill="#ef4444" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">422 — nothing installed</text>
+          <text x="404" y="53" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Tampered or untrusted package</text>
+
+          <rect x="10" y="94" width="300" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="118" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13" font-weight="700">2 · Privileged-node scan</text>
+          <text x="28" y="136" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Filesystem, code and database capabilities.</text>
+          <path d="M160 150 L160 168" stroke="#6366f1" stroke-width="1.6" marker-end="url(#barw)"/>
+          <path d="M316 120 L392 120" stroke="#f59e0b" stroke-width="1.6" marker-end="url(#barw)"/>
+          <text x="404" y="117" fill="#f59e0b" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Held — acknowledge, then re-install</text>
+          <text x="404" y="133" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Nothing installed yet</text>
+
+          <rect x="10" y="174" width="300" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="198" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13" font-weight="700">3 · Version-conflict pre-flight</text>
+          <text x="28" y="216" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Same version already installed, different bytes.</text>
+          <path d="M160 230 L160 248" stroke="#6366f1" stroke-width="1.6" marker-end="url(#barw)"/>
+          <path d="M316 200 L392 200" stroke="#ef4444" stroke-width="1.6" marker-end="url(#barw-r)"/>
+          <text x="404" y="197" fill="#ef4444" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">409 — nothing installed</text>
+          <text x="404" y="213" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Registry disagrees with the lock</text>
+
+          <rect x="10" y="254" width="300" height="62" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="28" y="278" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="13" font-weight="700">4 · Install and import, then commit</text>
+          <text x="28" y="296" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Packages added at locked versions, workflows</text>
+          <text x="28" y="311" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">imported as inactive versions, one transaction.</text>
+        </svg>
+        <figcaption>Every gate runs before any write. A rejected install leaves the registry exactly as it was.</figcaption>
+      </figure>
+
+      <h3>What verification actually re-derives</h3>
+      <p>
+        The installer does not take the lock's word for anything. For each package listed in the lock it
+        finds the matching file under <code>packages/</code>, recomputes the hash from the carried payload,
+        compares it against the lock, re-checks the signature against <em>your</em> trusted keys — which
+        may differ entirely from the exporter's — and re-derives the trust level from that result. The lock
+        is a claim to be checked, not a verdict to be accepted.
+      </p>
+      <p>
+        Trust is derived from two inputs, the signature verdict and the package's resolved source:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Trust level</th><th>How a package earns it</th><th>Installable?</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="kg-pill is-on">Verified</span></td>
+              <td>Its signature verified against one of your trusted public keys. The source is irrelevant.</td>
+              <td>Always.</td>
+            </tr>
+            <tr>
+              <td><span class="kg-pill is-warning">Provisional</span></td>
+              <td>No verified signature, but the package's source is <code>local</code> — it was authored on a Knotarium instance rather than claiming a remote origin.</td>
+              <td>Only with <strong>Allow provisional installs</strong> ticked.</td>
+            </tr>
+            <tr>
+              <td><span class="kg-pill is-danger">Untrusted</span></td>
+              <td>No verified signature and a non-local source. This is a package claiming an origin it cannot prove.</td>
+              <td>Never — there is no override.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The verification report</h3>
+      <p>
+        Whatever the outcome, a table appears listing every locked package with six columns — Package,
+        Trust, Signature, Hash, Status and Installable — and the rows that blocked the install are
+        highlighted. Signature and Status are kept as separate axes on purpose, because they answer
+        different questions:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Signature column</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>No signature</td><td>The package file carries no signature at all.</td></tr>
+            <tr><td>Untrusted signature</td><td>A signature is present but did not verify against any of your trusted keys. As noted above, this covers both an invalid signature and a valid one from an untrusted signer.</td></tr>
+            <tr><td>Verified signature</td><td>The signature verified against a trusted key.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Status column</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Missing</td><td>The lock names a package with no matching file under <code>packages/</code>. A file that fails to parse is also reported this way rather than crashing the gate.</td></tr>
+            <tr><td>Tampered (hash mismatch)</td><td>The file is present but its recomputed hash does not match the lock. The bytes changed after the bundle was locked.</td></tr>
+            <tr><td>Untrusted</td><td>Intact bytes, but this host will not trust their origin.</td></tr>
+            <tr><td>Provisional</td><td>Intact bytes, locally authored, unsigned.</td></tr>
+            <tr><td>Verified</td><td>Intact bytes with a signature verified against a trusted key.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A hash mismatch always wins over the trust verdict: if the bytes changed, the lock no longer
+        describes what would be installed, so re-derived trust is beside the point. This is why a tampered
+        package and a merely untrusted one are never conflated — collapsing them would let tampering hide
+        behind a trust note.
+      </p>
+
+      <h3>Unsigned, or signed by a key you do not trust</h3>
+      <p>
+        These are the two cases you will actually meet, and they behave differently:
+      </p>
+      <ul>
+        <li><strong>Unsigned and locally authored.</strong> Trust is Provisional. The install is rejected
+            with 422 and nothing is written until you tick <strong>Allow provisional installs</strong> and
+            install again. This is the normal path for a package a colleague built in their own node
+            editor.</li>
+        <li><strong>Unsigned but claiming a non-local source.</strong> Trust is Untrusted, and the
+            provisional toggle does not help — there is no configuration that makes it installable. To
+            install it you must obtain a properly signed build, or add the publisher's public key to
+            <code>TrustedPublicKeys</code> and use a copy that is actually signed.</li>
+        <li><strong>Signed by an untrusted key.</strong> Also Untrusted, for the same reason and with the
+            same absence of an override. The fix is to add that publisher's public key to
+            <code>TrustedPublicKeys</code> and restart, which turns the same file into a Verified
+            install — a signature is re-evaluated on every install attempt, so nothing about the bundle
+            needs to change.</li>
+      </ul>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Provisional installs bypass signature verification by design</span>
+        <p>
+          The toggle's own description says so. A compiled node package runs code inside the engine, so
+          allowing provisional installs is a decision about whether you trust the person who handed you
+          the file — the software cannot help you there. Enable it deliberately, for one install, rather
+          than leaving it on.
+        </p>
+      </div>
+
+      <h3>The privileged-node acknowledgement</h3>
+      <p>
+        Once verification passes, every node across every bundled workflow is resolved against its package
+        manifest and any privileged capability — filesystem, code execution, database — is collected. If
+        anything is found and you have not acknowledged it, the install stops there and writes nothing.
+      </p>
+      <p>
+        Because the scan happens server-side, the warning appears <em>after</em> your first install attempt
+        rather than on upload: an amber panel lists each privileged node with its capabilities and offers
+        <strong>I understand and want to install this bundle</strong>, and the primary button changes to
+        <strong>Re-install</strong>. Tick the box and press it again. Nothing was installed by the first
+        attempt.
+      </p>
+
+      <h3>Version conflicts</h3>
+      <p>
+        The last check before any write compares each locked package against what is already in the
+        registry. If a package at that exact version is installed but its bytes hash differently from the
+        lock, the whole install is rejected with a conflict banner naming the packages, and nothing is
+        written.
+      </p>
+      <p>
+        This refusal is the point. Skipping such a package as "already installed" would quietly bind the
+        bundle's workflows to a <em>different</em> build of the same version number, which is the sort of
+        failure that surfaces weeks later as behaviour nobody can reproduce. A package version that is
+        already installed with <em>identical</em> bytes is skipped, and the success banner lists it under
+        "Skipped (already present)" — that skip is genuine idempotence, since the pre-flight has just
+        proved the bytes match.
+      </p>
+
+      <h3>Credential slots</h3>
+      <p>
+        Slot binding for bundles happens after an install attempt rather than before it. The result carries
+        the slots the manifest declares, and a <strong>Credential slots</strong> card appears with one
+        dropdown per slot, defaulting to <em>leave unbound</em>. Choose credentials and install again.
+      </p>
+      <p>
+        Leaving a slot unbound is allowed. The imported workflows keep the literal
+        <code>slot:&lt;name&gt;</code> placeholder, the success banner lists the unbound slots in amber, and
+        you can either re-install with bindings or set the credentials on the workflows directly. Rebinding
+        walks node properties at any depth, so a placeholder nested inside an object or an array is
+        rewritten along with the top-level ones.
+      </p>
+
+      <h2>What a successful install did</h2>
+      <p>The success banner enumerates exactly what changed:</p>
+      <ul>
+        <li><strong>Installed packages</strong> — added to the registry at their locked versions.</li>
+        <li><strong>Skipped (already present)</strong> — that version was already installed with identical
+            bytes.</li>
+        <li><strong>Imported workflows</strong> — each with the version number that was created for it.</li>
+        <li><strong>Bound credential slots</strong>, and separately any left unbound.</li>
+      </ul>
+      <p>
+        Workflows are imported as new <strong>inactive</strong> versions. As with templates, installing a
+        bundle never causes anything to run: publishing, enabling and arming remain your decisions.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">One known gap in the all-or-nothing guarantee</span>
+        <p>
+          Package rows, package versions and workflow versions are written inside a single database
+          transaction, so a failure part-way through rolls all of them back. The workflow <em>draft</em>
+          file that importing writes is not covered by that transaction, because it goes through the
+          file-based workflow store rather than the database. A failure at exactly the wrong moment can
+          therefore leave a draft file behind while the database rolls back. The residue is a stray draft
+          you can delete — no package is half-installed — but the guarantee is not quite absolute.
+        </p>
+      </div>
+
+      <h2>Configuring the two keys</h2>
+      <p>
+        Both settings follow the usual configuration precedence, and both are read at startup, so changing
+        either means restarting. The private key is a secret and belongs in a secret store or an
+        environment variable, never in a checked-in <code>appsettings.json</code>.
+      </p>
+
+      <pre><code><span class="tok-comment"># Accept packages signed by two publishers (PowerShell)</span>
+<span class="tok-key">$env:Security__PackageSigning__TrustedPublicKeys__0</span> = <span class="tok-str">'&lt;base64 public key&gt;'</span>
+<span class="tok-key">$env:Security__PackageSigning__TrustedPublicKeys__1</span> = <span class="tok-str">'&lt;base64 public key&gt;'</span>
+
+<span class="tok-comment"># Sign the packages this host publishes — 32 raw bytes, base64-encoded</span>
+<span class="tok-key">$env:Security__PackageSigning__HostPrivateKeyBase64</span> = <span class="tok-str">'&lt;base64 private key&gt;'</span></code></pre>
+
+      <p>
+        Under Docker Compose the shorthand <code>KG_SIGNING_KEY</code> maps to the host private key. That
+        translation lives in the Compose file, not in the application, so the shorthand does nothing on a
+        zip install, a Windows service or a plain <code>docker run</code> — see the
+        <a href="configuration.html">configuration reference</a>.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">An empty trusted-key list is the default</span>
+        <p>
+          Out of the box, <code>TrustedPublicKeys</code> is empty, which means <em>no</em> signature can
+          verify. Every signed package is then Untrusted and blocked, and only locally sourced packages get
+          as far as Provisional. That is the correct fail-closed behaviour, but it does mean the first
+          signed bundle you are given will be refused until you have added the publisher's key — and the
+          report will say "Untrusted signature", which reads like an accusation when the real answer is
+          that you have not told the instance whom to trust.
+        </p>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="templates.html">
+          <div class="kg-card-title">Templates</div>
+          <div class="kg-card-desc">The single-workflow format, with automatic credential stripping and install-time parameters.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The package-signing settings in full, alongside every other setting read at startup.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

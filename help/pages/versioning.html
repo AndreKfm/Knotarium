@@ -1,0 +1,402 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Draft / published version / active version. Verified against VersionHistoryPanel.tsx,
+  VersionDiffView.tsx, versionDiff.ts, RestoreVersionDialog.tsx, VersionRuntimeSelect.tsx,
+  PreviewBanner.tsx, canvas/useVersioning.ts, WorkflowVersionEndpoints.cs and
+  JournalRetentionWorker.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Versions and publishing · Knotarium Help</title>
+<meta name="description" content="How a draft becomes an immutable published version, what activation changes, and how to preview, diff and restore earlier versions.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="versioning.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Versions and publishing</h1>
+      <p class="kg-lead">
+        Three things share a name in casual conversation and must not be confused: the <strong>draft</strong>
+        you are editing, the <strong>published versions</strong> that have been frozen from it, and the one
+        version that is currently <strong>active</strong> and therefore actually runs. Almost every "my
+        change did not take effect" report is a mismatch between those three, and this page is about
+        keeping them straight.
+      </p>
+
+      <h2>The three states</h2>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>State</th><th>What it is</th><th>Can it run?</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Draft</strong></td>
+              <td>The mutable graph in the canvas editor. One per workflow. Autosaves as you work.</td>
+              <td>Never directly.</td>
+            </tr>
+            <tr>
+              <td><strong>Published version</strong></td>
+              <td>An immutable snapshot of the nodes and edges, numbered and dated, kept forever unless retention prunes it.</td>
+              <td>Only once activated.</td>
+            </tr>
+            <tr>
+              <td><strong>Active version</strong></td>
+              <td>The single published version currently designated live. Recorded in an append-only activation log.</td>
+              <td>Yes — this is what every trigger executes.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 300" role="img" aria-labelledby="lifecycle-title">
+          <title id="lifecycle-title">Lifecycle of a workflow from draft through publish to activation</title>
+          <defs>
+            <marker id="vlarw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+            <marker id="vlarwg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#10b981"/>
+            </marker>
+          </defs>
+
+          <rect x="10" y="30" width="180" height="86" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="55" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">MUTABLE</text>
+          <text x="28" y="79" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="15" font-weight="700">Draft</text>
+          <text x="28" y="100" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">The canvas you edit</text>
+
+          <path d="M196 73 L250 73" stroke="#6366f1" stroke-width="1.6" marker-end="url(#vlarw)"/>
+          <text x="200" y="64" fill="#c7d2fe" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700">Save &amp; Publish</text>
+
+          <rect x="258" y="14" width="180" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="276" y="35" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="13">v1</text>
+          <text x="276" y="53" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">immutable</text>
+
+          <rect x="258" y="76" width="180" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="276" y="97" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="13">v2</text>
+          <text x="276" y="115" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">immutable</text>
+
+          <rect x="258" y="138" width="180" height="52" rx="10" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="276" y="159" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="13">v3</text>
+          <text x="276" y="177" fill="#6ee7b7" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700">ACTIVE</text>
+
+          <path d="M444 164 L500 164" stroke="#10b981" stroke-width="1.6" marker-end="url(#vlarwg)"/>
+          <text x="446" y="155" fill="#6ee7b7" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700">Activate</text>
+
+          <rect x="508" y="122" width="182" height="86" rx="10" fill="#17212f" stroke="#10b981" stroke-width="1.5"/>
+          <text x="526" y="147" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">RUNS</text>
+          <text x="526" y="171" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="14" font-weight="700">Every trigger</text>
+          <text x="526" y="192" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">webhook · cron · poll · signal</text>
+
+          <path d="M348 200 L348 240 L100 240 L100 122" stroke="#f59e0b" stroke-width="1.6" stroke-dasharray="6 5" fill="none" marker-end="url(#vlarw)"/>
+          <text x="120" y="258" fill="#f59e0b" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5" font-weight="700">Restore copies an old version forward as a new one</text>
+
+          <rect x="10" y="146" width="180" height="62" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="28" y="168" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">READ-ONLY</text>
+          <text x="28" y="190" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5">Preview · Diff</text>
+        </svg>
+        <figcaption>Publishing freezes a version; activating chooses which frozen version runs. Nothing is ever overwritten.</figcaption>
+      </figure>
+
+      <h2>Publishing</h2>
+      <p>
+        <strong>Save &amp; Publish</strong> in the canvas toolbar freezes the current draft into a new,
+        numbered, immutable version. The button reports what it will do: it reads <em>Saved</em> when there
+        is nothing new to publish, and when the graph has blocking diagnostics it turns amber and counts
+        them, so you cannot publish a broken graph without noticing.
+      </p>
+      <p>
+        Publishing runs a compile and a runnability gate before writing anything. Three conditions block
+        it outright, each with an explicit message rather than a cryptic runtime failure later:
+      </p>
+      <ul>
+        <li><strong>Unbound credential slots.</strong> The version references a credential placeholder that
+            is not bound to a stored credential.</li>
+        <li><strong>Incomplete condition nodes.</strong> A Condition node was left half-configured.</li>
+        <li><strong>Misconfigured device blocks.</strong> A reactive graph has wired-but-untargeted blocks
+            or dead-end wires.</li>
+      </ul>
+      <p>
+        A version that fails to compile is refused with the compiler diagnostics attached, which the editor
+        shows in its diagnostics panel. A version that publishes but still contains pinned test outputs
+        succeeds with a warning naming those nodes — see the caution on the triggers page about what pins
+        do on automatic runs.
+      </p>
+      <p>
+        Published versions carry an <strong>origin</strong> that says how they came to exist:
+        <span class="kg-pill is-info">Published</span> from Save &amp; Publish,
+        <span class="kg-pill is-warning">Restored</span> from a restore, and
+        <span class="kg-pill is-info">Imported</span> from a bundle or template import. Imported versions
+        are never activated automatically.
+      </p>
+
+      <h2>Activation</h2>
+      <p>
+        Publishing alone changes nothing about what runs. Activation is the separate act of designating
+        one published version as live, and it is recorded in an append-only activation log with who did
+        it, when, why, which version was active before, and — for a restore — which version it was copied
+        from. That log is what lets the instance answer "what was live at 3 a.m. last Tuesday?" after the
+        fact.
+      </p>
+      <p>
+        There are three ways to activate a version:
+      </p>
+      <ul>
+        <li><strong>Pressing Run</strong> in the editor. Run activates the version selected in the toolbar
+            dropdown and then triggers it, every time, so the selection is always what executes.</li>
+        <li><strong>Set active</strong> on a row of the runtime-version dropdown. This promotes an existing
+            version in place without running it and without creating a copy.</li>
+        <li><strong>Restore this version</strong> from a preview, which copies an old version forward and
+            activates the copy.</li>
+      </ul>
+      <p>
+        Activation applies the same runnability gate as publishing, so a version that was fine when it was
+        published but references a credential that has since been unbound is refused with the reasons
+        listed. If the version's triggers themselves are invalid — a cron expression that no longer parses,
+        for example — activation is rolled back and reported. Two people activating at once produce a
+        conflict rather than a silent last-writer-wins; the message asks you to reopen and retry.
+      </p>
+
+      <h3>The runtime-version dropdown</h3>
+      <p>
+        The toolbar's version control is a custom list rather than a plain dropdown, because the states it
+        needs to show cannot be expressed by one. Its trigger button shows the selected version number and
+        whether it is <strong>ACTIVE</strong> or merely being <strong>VIEWING</strong>ed. Inside, each row
+        shows the version number, a relative timestamp, a dot indicating whether it has ever produced runs,
+        and a badge marking the <strong>Active</strong> version or, failing that, the <strong>Latest</strong>
+        one.
+      </p>
+      <p>
+        The hint at the top of the list names the two distinct actions, because conflating them is the
+        classic mistake: <strong>clicking a row previews</strong> the version read-only and is completely
+        reversible, while <strong>Set active</strong> is the commit that changes what runs. Lingering on a
+        row for about a third of a second previews it automatically; closing the list without committing
+        reverts to what you had selected. Selecting the active version simply returns you to the live
+        editable draft.
+      </p>
+
+      <h2>Version history</h2>
+      <p>
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd> — <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd> on a
+        Mac — opens the version-history drawer on the right edge of the editor. It fetches only while it is
+        open, so it costs nothing in the background, and it lists metadata rather than whole graphs.
+      </p>
+      <p>
+        Each row shows the version number, an <strong>ACTIVE</strong> badge where applicable, the origin
+        badge, the label if one was given, the creation timestamp and author, the node count, and the
+        number of runs that version has produced. Clicking a row opens a read-only preview; hovering it for
+        a moment does the same automatically. A <strong>Diff</strong> button on each row compares that
+        version directly against your working draft without previewing it first. At the foot of the drawer,
+        <strong>Diff draft vs active</strong> answers the most common question of all — what have I changed
+        since the version that is currently live? — in one click.
+      </p>
+      <p>
+        The drawer and a preview are treated as one "version overview": closing the drawer also leaves the
+        preview and returns you to the draft in a single action.
+      </p>
+
+      <h2>Read-only preview</h2>
+      <p>
+        Previewing a version renders it on the canvas behind a sticky banner reading
+        <strong>Previewing version N</strong> with a <strong>READ-ONLY</strong> tag. Editing, autosave and
+        publishing are all disabled while it is up; the live draft is untouched behind it and is never
+        mutated by anything you do in preview.
+      </p>
+      <p>
+        The banner carries the actions that belong to the mode. <strong>Diff</strong> compares this version
+        against the working draft. <strong>Restore this version</strong> makes it the current, live one —
+        hidden when you are already previewing the active version, since there would be nothing to restore.
+        <strong>Exit preview</strong>, or <kbd>Esc</kbd>, returns to the draft. The banner's subtitle
+        changes accordingly: on the active version it just tells you how to leave.
+      </p>
+      <p>
+        Switching to a different workflow drops any preview or diff in progress, so a read-only snapshot
+        can never leak onto the wrong canvas.
+      </p>
+
+      <h2>Diffing</h2>
+      <p>
+        The diff panel opens on the right and is titled with its two sides — for example
+        <em>active v3 → working draft</em>. It is computed in the browser from the two payloads, using the
+        same mapper that save and publish use, so the comparison is genuinely apples to apples.
+      </p>
+
+      <h3>Behavioural changes versus cosmetic ones</h3>
+      <p>
+        The diff enforces one hard rule: <strong>behavioural changes are shown, cosmetic layout changes are
+        collapsed</strong>. A node that was only moved or resized is not a change to what the workflow does,
+        and letting a tidy-up session drown out one edited field makes the diff useless.
+      </p>
+      <p>
+        Behavioural changes are nodes added or removed, a node's type changing, any configuration field
+        changing, and connections added or removed. These are listed immediately, each with an
+        <em>added</em>, <em>removed</em> or <em>changed</em> badge, the node identifier, and for a changed
+        node the individual field paths with their before and after values struck through and highlighted.
+        Connection changes name the source node and output port and the target node and input port.
+      </p>
+      <p>
+        Layout-only changes — position and size — are counted behind a collapsed disclosure reading
+        <em>N layout-only changes (cosmetic)</em>, each shown as a <em>moved</em> row. When nothing at all
+        differs, the panel says so explicitly: <em>"No differences — these two are identical (ignoring
+        cosmetic layout)."</em>
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The comparison is normalised, and secrets are masked</span>
+        <p>
+          Before comparing, both sides are canonicalised: object keys are sorted, the visual metadata blob
+          is split out, and empty defaults — null, empty string, empty array, empty object — are dropped, so
+          <code>{ retries: 0 }</code> and <code>{ retries: 0, note: "" }</code> do not read as a change.
+          Connections are identified by source, output, target and input rather than by generated edge
+          identifiers, so reordering wires reports nothing. Any field whose name looks like a credential,
+          secret, token, API key, password or connection identifier has its <em>value</em> replaced with
+          dots before it is ever rendered — you can see that a credential changed without the diff
+          displaying it.
+        </p>
+      </div>
+
+      <h2>Restoring an old version</h2>
+      <p>
+        Restore is <strong>fork-forward</strong>, not rewind. It copies the chosen version's graph into a
+        brand-new version at the top of the history and makes that copy live. Nothing is overwritten and
+        no version is deleted — the history stays append-only, and the version you restored from remains
+        exactly where it was.
+      </p>
+      <p>
+        The confirmation dialog states this plainly and adds the warning that matters most: a restore
+        <strong>affects future executions only</strong>. It does not undo side effects already caused by
+        runs of the newer version. Mail that was sent stays sent; rows that were written stay written.
+        Restoring is a way to change what happens next, never a rollback of what already happened.
+      </p>
+      <p>
+        Confirming produces one of three outcomes:
+      </p>
+      <ul>
+        <li><strong>Created version vN — now active.</strong> The copy compiled, passed the gate, and is
+            live.</li>
+        <li><strong>Created version vN — inactive forward copy.</strong> The copy was created but could not
+            be activated, so it sits in the history as something you can open and fix first rather than
+            leaving you with nothing.</li>
+        <li><strong>An error.</strong> A compatibility or compile failure lists the diagnostics to fix; a
+            concurrent activation by someone else reports that and asks you to reopen and try again.</li>
+      </ul>
+      <p>
+        A successful restore may also carry <strong>compatibility warnings</strong>, listed in the success
+        view. These are the cases where the old graph still compiles against the current node catalog but
+        something about it has drifted, and they are worth reading before you walk away.
+      </p>
+      <p>
+        After a restore the editor brings the restored graph into the draft as well, so what you are
+        editing matches what is now live rather than silently diverging from it.
+      </p>
+
+      <h2>How many versions are kept</h2>
+      <p>
+        By default, all of them. <code>Retention__MaxWorkflowVersionsPerWorkflow</code> defaults to
+        <code>0</code>, which disables the cap; the setting is also editable at
+        <span class="kg-path">Settings &rsaquo; Retention</span>, and the stored value wins over the
+        configuration file. Setting it to a positive number lets the retention sweep keep the newest N
+        versions per workflow and delete older ones.
+      </p>
+      <p>
+        The cap is deliberately not absolute. Three classes of version are preserved no matter how far past
+        the limit they fall:
+      </p>
+      <ul>
+        <li>The <strong>active version</strong> of every workflow.</li>
+        <li>Anything referenced by the <strong>activation log</strong> — including the version a restore was
+            copied from and the version that was previously active. These are foreign keys with no cascade,
+            so deleting them would fail rather than corrupt the log.</li>
+        <li>Any version that a <strong>retained run</strong> executed, which is what keeps replay lineage
+            working.</li>
+      </ul>
+      <p>
+        The practical consequence is that setting the cap to 5 on a busy workflow will not necessarily
+        leave you with five versions. It leaves you with five plus everything still referenced, and the
+        number falls as run history is pruned by <code>Retention__RunHistoryDays</code>. This is a feature:
+        the cap can never delete a version you would need to explain a run you can still see.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Version history survives archiving</span>
+        <p>
+          Archiving a workflow removes its draft but retains its versions, and the history, detail and
+          active-version reads all keep working afterwards. Permanently deleting an archived workflow is
+          what purges the version history and the activation log, and that is irreversible.
+        </p>
+      </div>
+
+      <h2>Common mismatches</h2>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Symptom</th><th>Cause</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>An edit has no effect on scheduled runs.</td>
+              <td>The draft was saved but never published, or published but never activated. Use <strong>Diff draft vs active</strong> to see exactly what is missing.</td>
+            </tr>
+            <tr>
+              <td>Run is disabled and the tooltip mentions publishing.</td>
+              <td>The workflow has no published versions yet.</td>
+            </tr>
+            <tr>
+              <td>A trigger answers 409 about a missing active version.</td>
+              <td>Versions exist but none has been activated. Use <strong>Set active</strong>, or press Run once.</td>
+            </tr>
+            <tr>
+              <td>The graph in a run does not match the editor.</td>
+              <td>Correct behaviour — the run renders the version it executed, not the current draft.</td>
+            </tr>
+            <tr>
+              <td>The diff looks empty after obvious edits.</td>
+              <td>The edits were positional. Expand the layout-only disclosure to confirm.</td>
+            </tr>
+            <tr>
+              <td>Restoring did not undo the damage.</td>
+              <td>Restore affects future runs only. Side effects of past runs need their own compensation.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="triggers.html">
+          <div class="kg-card-title">Triggers</div>
+          <div class="kg-card-desc">Why every start path resolves the active version.</div>
+        </a>
+        <a class="kg-card" href="runs.html">
+          <div class="kg-card-title">Runs and the inspector</div>
+          <div class="kg-card-desc">Replaying a failed run against a different version to test a fix.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The retention keys that bound version history.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

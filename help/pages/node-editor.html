@@ -1,0 +1,488 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The in-app node package IDE. Written from Frontend/src/node-editor/NodeEditorShell.tsx,
+  Frontend/src/node-editor/Templates.ts, Frontend/src/components/shared/ManifestForm.tsx and the
+  backend it talks to (HostEndpoints.cs, NodePackageEndpoints.cs, Knotarium.Features.NodeEditor).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The node editor · Knotarium Help</title>
+<meta name="description" content="The in-app authoring IDE for custom node packages: the package list, the manifest and C# editors, the live property-form preview, and the sandboxed test runner that gates publishing.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="node-editor.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>The node editor</h1>
+      <p class="kg-lead">
+        Knotarium ships a small authoring IDE for node packages, reached from
+        <span class="kg-path">Node Editor</span> in the top navigation. It gives you a YAML manifest
+        editor, a C# executor editor, a live rendering of the property form your manifest generates,
+        and a sandboxed test runner whose result is a hard precondition for publishing. This page
+        describes what each surface actually does — including several places where the editor is
+        narrower than the manifest format it edits.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Read the package format alongside this page</span>
+        <p>
+          The node editor writes a <em>subset</em> of the node package manifest. The full schema —
+          outputs, typed inputs, capabilities, retry policy, the <code>secondary</code> palette flag —
+          is on <a href="custom-packages.html">Custom node packages</a>, and several fields you can
+          legitimately write in a manifest do not survive a round trip through this editor. The
+          limitation is spelled out under <em>What Publish actually sends</em> below.
+        </p>
+      </div>
+
+      <h2>Opening it</h2>
+      <p>
+        The editor is a full-screen view, not a modal: choosing
+        <span class="kg-path">Node Editor</span> replaces the canvas, and the <strong>Back</strong>
+        button in its header returns you to whatever view you came from. There is no address you can
+        bookmark — the view lives in React state like every other screen.
+      </p>
+      <p>
+        Testing and publishing are <strong>administrator-only</strong> actions. Both
+        <code>POST /api/node-editor/test</code> and <code>POST /api/node-packages/publish</code> check
+        the caller's admin role before doing anything, because both end in compiling and running C# on
+        the host. When sign-in is disabled entirely the check is a no-op, which is one more reason an
+        instance without authentication belongs on loopback only.
+      </p>
+
+      <h2>The package list</h2>
+      <p>
+        The left rail lists everything <code>GET /api/node-packages</code> returns, which is the whole
+        merged catalog rather than just your own work: the built-in nodes compiled into the product,
+        any binary packages loaded from the watch folder on disk, and the custom packages stored in
+        the database. Where two of those share an id you see one row — the merge resolves duplicates
+        with custom beating binary beating built-in.
+      </p>
+      <p>
+        Each row carries four facts: the display name, the version of the newest version record, the
+        package id in small type, and a tier pill reading <strong>declarative</strong> or
+        <strong>compiled</strong>. Clicking a row loads its newest version into the three editors.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The list does not mark built-ins as locked</span>
+        <p>
+          Nothing in the list is read-only, and there is no "Locked" badge on a package row — the only
+          <span class="kg-pill is-off">Locked</span> marker in the editor sits on the
+          <code>Executor.cs</code> tab, and it means "this manifest is declarative", not "this package
+          is a built-in". You can select a built-in node, edit its manifest and publish it. That does
+          not modify the built-in: it writes a <em>database</em> package with the same id, and because
+          custom packages win the catalog merge, your copy shadows the original everywhere — palette,
+          compiler and runtime. Use a fresh id unless shadowing is exactly what you intend.
+        </p>
+      </div>
+
+      <p>
+        The tier pill is computed with a case-sensitive comparison against the literal string
+        <code>compiled</code>. The catalog serializes a built-in or binary package's tier from the C#
+        enum, which produces <code>"Compiled"</code> with a capital C, so <strong>a compiled built-in
+        shows as declarative in this list</strong> and its <code>Executor.cs</code> tab stays locked.
+        The same rule applies to your own drafts: write <code>tier: compiled</code> in lower case or
+        the editor will treat the package as declarative even though the backend, which parses the
+        tier case-insensitively, will happily compile it.
+      </p>
+
+      <h2>Creating a package</h2>
+      <p>
+        The <strong>+</strong> button beside the <span class="kg-path">Node Packages</span> heading
+        opens the <strong>Create Node Package</strong> dialog. It is a scaffolder: it produces a draft
+        from one of the built-in templates and nothing else.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Required</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Package id</strong></td>
+              <td>yes</td>
+              <td>Lower-cased and with runs of whitespace replaced by dots, so <code>System Alert</code> becomes <code>system.alert</code>. Rejected with a browser alert if a package with the resulting id is already in the list.</td>
+            </tr>
+            <tr>
+              <td><strong>Display name</strong></td>
+              <td>yes</td>
+              <td>The palette label. Substituted into the template's <code>displayName</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Category</strong></td>
+              <td>defaults to Utility</td>
+              <td>One of Utility, Network, Data, Logic, Trigger — the five palette sections the dialog offers. The manifest format itself accepts any string; the dialog just does not let you type one.</td>
+            </tr>
+            <tr>
+              <td><strong>Tier level</strong></td>
+              <td>defaults to Declarative</td>
+              <td><strong>Declarative (Tier 1)</strong> scaffolds a manifest only. <strong>Compiled C# (Tier 2)</strong> scaffolds a manifest plus a working <code>INodeExecutor</code> implementation and unlocks the executor editor.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Pressing <strong>Create package</strong> inserts the draft at the top of the list with the
+        placeholder version <code>1.0.0-draft</code> and selects it. Nothing has been sent to the
+        server at this point — the draft exists only in the browser tab. Reloading the page before you
+        publish loses it, and so does navigating away and back, because the list is re-fetched from
+        the API on mount.
+      </p>
+
+      <h2>The three editors</h2>
+      <p>
+        The centre pane is a Monaco editor with three tabs. All three share the same configuration:
+        the dark theme, no minimap, and a monospaced face at 13 px.
+      </p>
+      <ul>
+        <li><strong><code>manifest.yaml</code></strong> — YAML mode. The package definition. This is the
+            tab that drives everything else on screen.</li>
+        <li><strong><code>Executor.cs</code></strong> — C# mode. Enabled only while the parsed manifest's
+            tier is <code>compiled</code>; otherwise it is disabled, tagged
+            <span class="kg-pill is-off">Locked</span>, and its tooltip reads "Only enabled for Compiled
+            (Tier 2) packages".</li>
+        <li><strong><code>tests/cases.yaml</code></strong> — YAML mode. The cases the sandbox runs.</li>
+      </ul>
+      <p>
+        There is no file system behind these names. The three buffers are held in component state and
+        submitted together as three strings when you press <strong>Run Tests</strong>.
+      </p>
+
+      <h3>What the templates start you with</h3>
+      <p>
+        A declarative draft opens with a manifest declaring one <code>string</code> parameter named
+        <code>inputMessage</code>, the <code>logging</code> capability, and <code>success</code> and
+        <code>error</code> outputs. A compiled draft adds the <code>http</code> capability, renames the
+        parameter to <code>targetUrl</code>, and fills <code>Executor.cs</code> with a complete
+        <code>INodeExecutor</code> that reads the parameter, logs, and returns a
+        <code>NodeResult</code> on the <code>success</code> output. Both templates set
+        <code>defaultTimeoutSeconds: 30</code>.
+      </p>
+
+      <h3>How parse errors surface</h3>
+      <p>
+        The manifest is re-parsed on every keystroke, and the result is not shown in the editor
+        gutter. Monaco here has no schema and no diagnostics — <strong>the error appears in the Live
+        UI Preview panel on the right</strong>, which replaces the preview with a red
+        <em>YAML Parse Error</em> box containing the parser's own message, including the line and
+        column. If the document parses but is not a mapping — a bare list, or a single scalar — the
+        message is instead "Parsed content is not a valid YAML object".
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">A broken manifest also locks the executor tab</span>
+        <p>
+          While the manifest fails to parse there is no parsed tier, so the tier test falls through to
+          "not compiled" and the <code>Executor.cs</code> tab greys out mid-edit. It is disconcerting
+          the first time; it is not data loss. The executor buffer is untouched and the tab returns
+          the moment the manifest parses again with <code>tier: compiled</code>.
+        </p>
+      </div>
+
+      <h2>The Live UI Preview</h2>
+      <p>
+        The right-hand panel answers the question a manifest author actually has: <em>what will
+        someone configuring this node see?</em> It renders two things.
+      </p>
+      <p>
+        At the top, a small card imitating the canvas node: the display name, the category, and a dot
+        coloured by tier. Below it, the <strong>real property form</strong> — the same
+        <code>ManifestForm</code> component the canvas properties panel uses, given your parsed
+        parameters. It is not a mock-up of the form; a field that renders wrongly here renders wrongly
+        on the canvas too.
+      </p>
+      <p>
+        Because the preview passes only <code>id</code>, <code>displayName</code> and
+        <code>parameters</code> into the form, it shows the field list and nothing else: no output
+        sockets, no input sockets, no capability summary. Parameter types the form knows how to render
+        include <code>string</code> (an expression-aware field that becomes multi-line for long or
+        multi-line values), <code>number</code>, <code>boolean</code> (a toggle), <code>enum</code> (a
+        select populated from <code>values</code>), <code>credentialRef</code> and
+        <code>notificationChannelRef</code> (selects populated by live API calls),
+        <code>code</code> (an embedded Monaco with an expand-and-test button), <code>keyValue</code>,
+        and the dynamic loader types. The editor's own manifest parser, however, only recognises five
+        of those — see the next section.
+      </p>
+      <p>
+        Values you type into the preview form are kept, and the same store backs the
+        <strong>Mock Inputs</strong> tab of the test runner, so filling in the form is a reasonable way
+        to set up a test case's inputs by hand.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The preview understands five parameter types</span>
+        <p>
+          The editor's YAML reader keeps a parameter only if its <code>type</code> is one of
+          <code>string</code>, <code>number</code>, <code>boolean</code>, <code>enum</code> or
+          <code>credentialRef</code>. A parameter of any other type — including perfectly valid ones
+          such as <code>code</code> or <code>keyValue</code> — is <strong>silently dropped</strong>
+          from the parsed manifest. It vanishes from the preview form and from the mock-input grid,
+          with no error anywhere. The manifest text is unaffected, but everything the editor derives
+          from it is now incomplete.
+        </p>
+      </div>
+
+      <h2>The sandboxed test runner</h2>
+      <p>
+        The bottom panel is the test runner. It has two tabs and one button.
+      </p>
+      <p>
+        <strong>Mock inputs</strong> lists one text box per parameter the editor parsed, labelled with
+        the parameter name and type, seeded from the parameter's default. With no parsed parameters it
+        says so. <strong>Run console</strong> shows the last result: a pass/fail banner, one line per
+        case, and the sandbox log journal, colour-coded on the <code>[ERROR]</code>,
+        <code>[RUNNER]</code> and <code>[EXECUTOR]</code> prefixes.
+      </p>
+      <p>
+        <strong>Run Tests</strong> switches to the console, waits about 1.2 seconds — a deliberate
+        pause in the interface, not work being done — and then posts the package id and all three
+        buffers to <code>POST /api/node-editor/test</code>. The package id sent is the
+        <em>selected package's</em> id, not the <code>id:</code> in your manifest, so renaming a
+        package by editing the manifest does not rename what is tested.
+      </p>
+
+      <h3>What the sandbox does with them</h3>
+      <ol>
+        <li>Rejects the request outright if the package id or the manifest is empty.</li>
+        <li>Parses the manifest with a YAML deserializer that <strong>ignores unmatched
+            properties</strong>. A key it does not recognise is discarded without comment.</li>
+        <li>If the tier is anything other than declarative, checks the <strong>code execution</strong>
+            capability. It is off by default; the failure message points at
+            <span class="kg-path">Settings &rsaquo; Capabilities</span>. The check is on
+            "not declarative" rather than "is compiled", so an unknown future tier fails closed.</li>
+        <li>Parses the test cases. Both a <code>{ cases: [...] }</code> document and a bare list of
+            cases are accepted. An empty file produces one default case rather than nothing to run.</li>
+        <li>For a compiled draft, runs the banned-API analyzer, then compiles with Roslyn into memory,
+            loads the assembly into a throwaway collectible context, and finds the first concrete type
+            implementing <code>INodeExecutor</code>. A missing implementation is reported as an
+            "Executor Discovery" failure.</li>
+        <li>Runs every case against a recording context whose logger, HTTP client, credential accessor
+            and workflow state are inert fakes. The whole run is bounded at <strong>15 seconds</strong>;
+            exceeding it aborts with a "Timeout" case.</li>
+        <li>Unloads the assembly context.</li>
+      </ol>
+
+      <p>
+        A case fails for four distinct reasons, and the message tells you which: the executor returned
+        null; it invoked a capability the manifest never declared; the result came out on a different
+        output than <code>expectedOutput</code> named; or it threw, in which case the exception message
+        is the case message.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Undeclared capability use is the interesting failure</span>
+        <p>
+          The recording context notes every capability the draft actually touches — writing a log line
+          records <code>logging</code>, sending a request records <code>http</code>, resolving a secret
+          records <code>credentials</code> — and compares that set case-insensitively against your
+          manifest's <code>capabilities</code> list. Code that reaches for something it did not declare
+          fails the case with the exact capability named. This is the mechanism that keeps a
+          package's declared privileges honest, and it is worth running even for a declarative package.
+        </p>
+      </div>
+
+      <h3>Which C# the analyzer refuses</h3>
+      <p>
+        Before compilation, a semantic analyzer rejects any use of these namespaces:
+        <code>System.IO</code>, <code>System.Diagnostics</code>, <code>System.Reflection.Emit</code>,
+        <code>System.Net.Sockets</code>, <code>System.Runtime.InteropServices</code>,
+        <code>System.Runtime.Loader</code> and <code>Microsoft.Win32</code>. It resolves symbols rather
+        than matching text, so aliasing a namespace or changing its casing does not slip past it. It
+        also flags mutable static state. Sources over 500,000 characters are refused unread.
+      </p>
+      <p>
+        The compilation itself references a deliberately small set of assemblies: the core library, the
+        Knotarium contracts, the collectible load context, <code>HttpClient</code>, the logging
+        abstractions, <code>System.Text.Json</code>, collections, tasks and URIs. Anything outside that
+        set is a compile error rather than a runtime surprise. If your source does not look like a
+        class implementing <code>INodeExecutor</code>, the compiler wraps it as a bare script body
+        inside a generated executor with an <code>Input.Get&lt;T&gt;(name)</code> helper.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">This runs in the main process</span>
+        <p>
+          The banned-API analyzer is authoring assistance, not a containment boundary, and the draft
+          test path compiles and executes your C# <strong>in the Knotarium process</strong> — not in
+          the worker-process sandbox that <code>Security__Sandbox__Mode</code> governs at run time.
+          Cancellation is cooperative, so a CPU-bound loop that never observes the cancellation token
+          will run past the 15-second limit and can only be stopped by restarting the application.
+          Do not paste untrusted code into this editor to "see what it does".
+        </p>
+      </div>
+
+      <h2>Publishing</h2>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 210" role="img" aria-labelledby="publish-flow-title">
+          <title id="publish-flow-title">Draft, test run, session gate and publish, ending in the package catalog</title>
+          <defs>
+            <marker id="ne-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6366f1"/>
+            </marker>
+          </defs>
+
+          <rect x="8" y="18" width="150" height="62" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="24" y="42" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">IN THE BROWSER</text>
+          <text x="24" y="63" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Draft buffers</text>
+
+          <path d="M162 49 L204 49" stroke="#6366f1" stroke-width="1.6" marker-end="url(#ne-arrow)"/>
+
+          <rect x="210" y="18" width="196" height="62" rx="10" fill="rgba(99,102,241,0.12)" stroke="#6366f1" stroke-width="1.5"/>
+          <text x="226" y="42" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">POST /api/node-editor/test</text>
+          <text x="226" y="63" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Compile and run cases</text>
+
+          <path d="M410 49 L452 49" stroke="#6366f1" stroke-width="1.6" marker-end="url(#ne-arrow)"/>
+
+          <rect x="458" y="18" width="234" height="62" rx="10" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1.5"/>
+          <text x="474" y="42" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">ALL CASES PASSED</text>
+          <text x="474" y="63" fill="#f3f4f6" font-family="'JetBrains Mono',monospace" font-size="11.5">gate[packageId::version]</text>
+
+          <path d="M575 84 L575 116" stroke="#6366f1" stroke-width="1.6" marker-end="url(#ne-arrow)"/>
+
+          <rect x="458" y="122" width="234" height="70" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="474" y="146" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">POST /api/node-packages/publish</text>
+          <text x="474" y="167" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Gate checked, then signed</text>
+          <text x="474" y="184" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Ed25519, host private key</text>
+
+          <path d="M452 157 L410 157" stroke="#6366f1" stroke-width="1.6" marker-end="url(#ne-arrow)"/>
+
+          <rect x="210" y="122" width="196" height="70" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="226" y="146" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">DATABASE</text>
+          <text x="226" y="167" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">New package version</text>
+          <text x="226" y="184" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">Wins the catalog merge</text>
+        </svg>
+        <figcaption>A passing test run is the only thing that opens the publish path, and it is remembered in memory.</figcaption>
+      </figure>
+
+      <p>
+        <strong>Publish Node</strong> refuses before it sends anything if the current session has no
+        passing test result, with the message "Mandatory Gate Violated". That client-side check is
+        courtesy; the server enforces the same rule independently. On a successful test run the backend
+        records a pass keyed by package id and version, and the publish endpoint refuses with a 400
+        unless a matching pass exists.
+      </p>
+      <p>
+        The version half of that key is read out of your manifest text by the server, which scans for
+        the first line whose trimmed text begins with <code>version:</code> and takes the rest of it.
+        Keep <code>version</code> at the top level of the document and near the top of the file; a
+        <code>version:</code> nested inside another block earlier in the file would be picked up
+        instead.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The gate is in memory and is not persisted</span>
+        <p>
+          Passing results live in a dictionary in the running process. Restarting Knotarium clears
+          them, and you must re-run the tests before you can publish again. Changing the manifest's
+          version also invalidates the gate, because the key includes the version — bump the version
+          and press Publish without re-testing and you get the gate error, which reads like a bug and
+          is not one.
+        </p>
+      </div>
+
+      <h3>Signing is mandatory on publish</h3>
+      <p>
+        Publishing signs the package with the host's private key, so
+        <code>Security__PackageSigning__HostPrivateKeyBase64</code> must be configured and must decode
+        to exactly 32 bytes. If it is missing, not valid base64, or the wrong length, the endpoint
+        answers <strong>500</strong> with a message naming the setting. This is the single most common
+        reason a first publish fails on a fresh instance — the key is optional for everything else, but
+        not for this. See the <a href="configuration.html">Configuration reference</a>.
+      </p>
+
+      <h3>What Publish actually sends</h3>
+      <p>
+        This is the sharpest edge in the editor, and it is worth stating plainly. The manifest that
+        gets stored is not your YAML. It is a JSON rebuild of the <em>parsed</em> manifest, and the
+        parser keeps only six things:
+      </p>
+      <ul>
+        <li><code>id</code>, <code>displayName</code>, <code>category</code>, <code>version</code></li>
+        <li><code>tier</code>, normalised to <code>compiled</code> or <code>declarative</code></li>
+        <li><code>parameters</code>, reduced to <code>name</code>, <code>type</code> and
+            <code>default</code> per entry</li>
+      </ul>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Outputs and capabilities do not survive the round trip</span>
+        <p>
+          <code>outputs</code>, <code>inputs</code>, <code>capabilities</code>,
+          <code>sideEffectKind</code>, <code>recoveryMode</code>, <code>defaultTimeoutSeconds</code>,
+          <code>retryPolicy</code>, <code>secondary</code>, <code>description</code>, and the
+          <code>required</code> / <code>expression</code> / <code>values</code> flags on each
+          parameter are all dropped before the manifest is stored. A node published from this editor
+          therefore reaches the palette with <strong>no declared output sockets</strong> and no
+          declared capabilities, whatever your YAML said — and the stored version row is always tagged
+          with the single capability <code>logging</code> regardless. Selecting the package again
+          re-serializes that reduced manifest back into the YAML editor, so the detail is gone from
+          your buffer too.
+        </p>
+        <p>
+          For anything beyond a quick declarative experiment, author the manifest as JSON and install
+          it through <code>POST /api/node-packages/install</code>, or ship it as a binary package in
+          the watch folder. Both paths store the manifest verbatim.
+        </p>
+      </div>
+
+      <p>
+        On success the status line in the runner header confirms the package and version, and the
+        package list is re-fetched so the newly stored version appears. On failure the same line shows
+        the backend's message.
+      </p>
+
+      <h2>A workable order of operations</h2>
+      <ol>
+        <li>Create the package with a fresh, dotted, lower-case id.</li>
+        <li>Write the manifest. Watch the preview panel — it is your only syntax check.</li>
+        <li>For a compiled package, enable code execution under
+            <span class="kg-path">Settings &rsaquo; Capabilities</span> first, or the test run fails
+            before it compiles anything.</li>
+        <li>Write cases that assert an <code>expectedOutput</code>, not just that nothing threw.</li>
+        <li>Run the tests. Read the log journal even when everything is green — it lists the
+            capabilities the sandbox saw you declare.</li>
+        <li>Publish, then confirm the node appears in the canvas palette under the category you named.</li>
+      </ol>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="custom-packages.html">
+          <div class="kg-card-title">Custom node packages</div>
+          <div class="kg-card-desc">The full manifest schema, writing the executor, installing, signing, and the binary watch folder.</div>
+        </a>
+        <a class="kg-card" href="capabilities.html">
+          <div class="kg-card-title">Capabilities</div>
+          <div class="kg-card-desc">The code-execution switch a compiled package needs before its tests will even compile.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The signing key, the sandbox settings and the node runtime paths this page refers to.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

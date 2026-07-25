@@ -1,0 +1,336 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Error ports, the global error workflow, failure-alert channels and lineage navigation. Verified
+  against WorkflowExecutor.cs (HandleNodeFailureAsync), ExecutionJournalPublisher.cs,
+  ErrorWorkflowWorker.cs, ErrorWorkflowRunEnqueuer.cs, FailureAlertWorker.cs,
+  FailureAlertChannelResolver.cs, ErrorWorkflowSetting.tsx, NotificationChannelManager.tsx and
+  ExecutionDetail/ErrorLineageBanner.tsx.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error handling and alerts · Knotarium Help</title>
+<meta name="description" content="Catching failures on a node's error port, routing them to a global error workflow, sending failure alerts over webhook, Slack or email, and navigating between a failed run and its handler.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="error-handling.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Error handling and alerts</h1>
+      <p class="kg-lead">
+        A failure can be handled at three levels, and they compose rather than compete: the node itself
+        can retry, the graph can route the failure down an error port, and the instance can start a
+        dedicated error workflow and notify you. This page covers what happens at each level, in the
+        order the engine tries them.
+      </p>
+
+      <h2>What happens when a node fails</h2>
+      <p>
+        When a node throws, the engine works through a fixed sequence:
+      </p>
+      <ol>
+        <li><strong>Automatic retry, if the node opts in.</strong> A node whose catalog entry declares the
+            retry recovery mode <em>and</em> an idempotent side-effect kind is retried according to its
+            retry policy. The run parks in a waiting-for-retry state and a delayed work item is enqueued
+            per the backoff. Both conditions are required — a node that causes a non-idempotent side
+            effect is never retried automatically, because repeating it is not safe.</li>
+        <li><strong>An error port, if one is wired.</strong> Once retries are exhausted or not applicable,
+            the engine looks for outgoing edges from the failed node named <code>error</code> or
+            <code>failure</code>. Every such edge is followed and the run <strong>continues</strong>. The
+            run does not fail.</li>
+        <li><strong>Otherwise the run fails.</strong> With no error path, the run is marked failed and a
+            workflow-failed entry is journaled naming the node.</li>
+      </ol>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A caught failure is a successful run</span>
+        <p>
+          Because an error edge lets the run continue, a workflow that catches everything never reports a
+          failure — which also means it never triggers the global error workflow and never sends a failure
+          alert, since both hang off the run-failed event. If you want a caught branch to still be visible
+          as a problem, end it in something that surfaces it: a notification, a record written somewhere,
+          or a node that deliberately fails after doing the cleanup.
+        </p>
+      </div>
+
+      <h2>Per-node error ports</h2>
+      <p>
+        An error port is just an output socket named <code>error</code> or <code>failure</code>, and the
+        engine treats both names identically and case-insensitively. Nodes that expose one — the Inline
+        Code node, for example, carries <code>result</code> and <code>error</code> — let you wire the
+        failure path on the canvas exactly like the success path. Everything downstream of that edge runs
+        with the failure already in hand.
+      </p>
+      <p>
+        Loop and iteration nodes reserve their own port names, so <code>success</code>, <code>failure</code>
+        and <code>error</code> are all recognised as exit paths out of a loop rather than as part of the
+        loop body. A parallel iteration collects a per-item error into that item's result instead of
+        failing the whole batch.
+      </p>
+
+      <h2>The global error workflow</h2>
+      <p>
+        One workflow per instance can be nominated as the error handler. It is chosen from the
+        <strong>Error Workflow</strong> card at <span class="kg-path">Settings &rsaquo; Notifications</span>,
+        a single dropdown listing every workflow with <em>— None (disabled) —</em> as the default. The
+        choice saves immediately and confirms with "Saved." or "Cleared."
+      </p>
+      <p>
+        Whenever any run fails, the failed run's identifier is handed off — as a non-blocking in-memory
+        hand-off, so it can never slow down or break the run that failed — to a background worker that
+        starts the error workflow. Every path that marks a run failed flows through the same chokepoint, so
+        there is no category of failure that quietly bypasses this.
+      </p>
+
+      <h3>Loop prevention</h3>
+      <p>
+        Two guards stop an error handler from triggering itself, and <strong>both</strong> must pass before
+        a handler run is started:
+      </p>
+      <ul>
+        <li>The failed workflow is not itself the configured error workflow.</li>
+        <li>The failed run was not itself started as an error handler — that is, its origin is not
+            <code>error</code>.</li>
+      </ul>
+      <p>
+        The second guard is the one that matters in practice: it means a handler that fails while handling
+        someone else's failure does not spawn another handler. When either guard blocks the dispatch it is
+        logged at debug level and nothing else happens — so a broken error workflow fails silently as far
+        as the interface is concerned, which is worth knowing when yours seems not to run.
+      </p>
+
+      <h3>What the handler receives</h3>
+      <p>
+        The handler is started with the origin <code>error</code> and a link back to the run it is
+        handling. The failure context arrives twice, in two shapes, so you can use whichever suits the
+        node you are wiring.
+      </p>
+      <p>
+        As a bundled object on the Error Trigger node's <code>result</code> port:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Contains</th></tr></thead>
+          <tbody>
+            <tr><td><code>workflowId</code></td><td>Identifier of the workflow that failed.</td></tr>
+            <tr><td><code>workflowName</code></td><td>Its display name.</td></tr>
+            <tr><td><code>executionId</code></td><td>Identifier of the failed run.</td></tr>
+            <tr><td><code>failedNodeId</code></td><td>The node that failed.</td></tr>
+            <tr><td><code>failedNodeType</code></td><td>That node's type, resolved from the failed workflow's definition.</td></tr>
+            <tr><td><code>errorMessage</code></td><td>The failure message.</td></tr>
+            <tr><td><code>triggerOrigin</code></td><td>How the failed run had been started.</td></tr>
+            <tr><td><code>timestampUtc</code></td><td>When the failure occurred.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        And flattened into individual global variables, each prefixed so it cannot collide with the
+        handler's own state: <code>errorWorkflowId</code>, <code>errorWorkflowName</code>,
+        <code>errorExecutionId</code>, <code>errorFailedNodeId</code>, <code>errorFailedNodeType</code>,
+        <code>errorMessage</code>, <code>errorTriggerOrigin</code> and <code>errorTimestampUtc</code>. The
+        flattened form exists so simple handlers need no unpacking — a Log node message such as
+        <code>"{errorMessage} in {errorFailedNodeType}"</code> substitutes them directly, and an Inline
+        Code node can read them straight off the run state.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The error workflow must be published and activated</span>
+        <p>
+          Like every other trigger path, the handler runs its <em>active version</em>. A nominated error
+          workflow that has never been published, or has versions but none activated, starts no run at all;
+          the only trace is a warning in the log saying the error workflow is not published or active. Since
+          this only surfaces the first time something actually fails — usually at the worst possible moment
+          — publish, activate and test the handler deliberately rather than assuming it works.
+        </p>
+      </div>
+
+      <h2>Failure-alert channels</h2>
+      <p>
+        Alerts are separate from the error workflow and fire from the same run-failed event. Destinations
+        are managed as <strong>Notification Channels</strong> at
+        <span class="kg-path">Settings &rsaquo; Notifications</span>. Each channel has a name, a type, and
+        type-specific configuration.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Type</th><th>Configuration</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Webhook</strong> (generic JSON POST)</td>
+              <td>A single <strong>Webhook URL</strong>. The failure message is posted to it as JSON.</td>
+            </tr>
+            <tr>
+              <td><strong>Slack</strong> (incoming webhook)</td>
+              <td>A <strong>Slack Incoming Webhook URL</strong> of the usual <code>hooks.slack.com/services/…</code> form.</td>
+            </tr>
+            <tr>
+              <td><strong>E-Mail</strong> (SMTP)</td>
+              <td><strong>SMTP Host</strong>, <strong>Port</strong> (default 587), a <strong>Use SSL/TLS</strong> switch (on by default), <strong>Username</strong> and <strong>Password</strong>, a <strong>From Address</strong> — which falls back to the username when blank — and comma- or semicolon-separated <strong>Recipients</strong>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A channel's type is fixed once created: the type selector is disabled when editing, so changing
+        from Slack to email means creating a new channel. Secrets are never returned by the API, so the
+        configuration fields open blank when editing, with a note explaining that leaving them empty keeps
+        the stored value and filling them in replaces it.
+      </p>
+
+      <h3>Test send</h3>
+      <p>
+        Every channel card has a <strong>Test</strong> button that sends a message through the real sender
+        with the real stored configuration. The result appears on the card itself: <em>Sending…</em>, then
+        <em>✓ Test sent</em> or <em>✗</em> followed by the actual error. This is the only way to find out
+        that an SMTP password is wrong or a Slack webhook has been revoked before a genuine failure needs
+        it, and it costs nothing — use it after every edit.
+      </p>
+
+      <h3>Which channels a workflow alerts</h3>
+      <p>
+        Routing is per workflow, chosen from the alerts chip on the workflow's card in the dashboard. There
+        are three modes, and the resolution is deliberately simple:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Mode</th><th>Chip reads</th><th>Resolves to</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Default channels</strong> (Inherit)</td>
+              <td>Alerts: Default, green</td>
+              <td>Every channel marked as a default failure-alert channel. This is the mode a workflow has until you change it.</td>
+            </tr>
+            <tr>
+              <td><strong>Off</strong></td>
+              <td>Alerts: Off, red</td>
+              <td>No channels. This workflow never alerts.</td>
+            </tr>
+            <tr>
+              <td><strong>Custom channels</strong></td>
+              <td>Alerts: Custom, violet</td>
+              <td>Exactly the channels you tick, ignoring the default flag entirely.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A channel is marked as a default with the <em>Use as default failure-alert channel</em> checkbox in
+        its form, and shows a star badge on its card. If no channel is marked as default and the workflow
+        inherits, the resolved set is empty and nothing is sent — which is the usual explanation for a
+        failure that produced no alert.
+      </p>
+
+      <h3>Delivery and its failures</h3>
+      <p>
+        Alerting can never affect a workflow run. Dispatch happens on a background worker, and every send
+        is wrapped so a delivery failure is recorded but never propagates back into execution.
+      </p>
+      <p>
+        Each channel's outcome is journaled onto the failed run itself, with the channel's identifier, name
+        and type attached — so the run timeline of a failure also tells you whether the alert about it went
+        out, and to where. A send that throws is journaled as a notification failure with the exception
+        message. That is where to look first when someone says the alert never arrived: if there is no
+        notification entry at all, the channel was never resolved; if there is a failed one, the message is
+        the reason.
+      </p>
+      <p>
+        Beneath that, the worker retries a transient dispatch failure — a momentary database read error,
+        say — up to <strong>three total attempts</strong> with a backoff of five seconds times the attempt
+        number, capped at thirty seconds. After three attempts it logs that it is giving up, so a poison
+        item cannot loop forever.
+      </p>
+
+      <h2>Navigating between a failure and its handler</h2>
+      <p>
+        A failed run and the handler run it spawned are linked in both directions, and the visualizer makes
+        both directions one click.
+      </p>
+      <p>
+        A pill floats at the top-centre of the run canvas. On a <strong>failed run</strong> it is a solid
+        amber <strong>Error handler ran →</strong> button that opens the handler. On the
+        <strong>handler run</strong> it is a coral-outlined <strong>Triggered by failed run →</strong>
+        button that navigates back to the failure. When a run is both — a handler that itself failed and
+        was handled — both pills appear side by side.
+      </p>
+      <p>
+        There are three further entry points to the same handler run, so it is discoverable wherever you
+        happen to be reading:
+      </p>
+      <ul>
+        <li>A synthetic amber card is drawn on the canvas below the failed node, connected to it by a dashed
+            amber edge, so the cause-to-handler relationship is visible on the graph itself. Clicking the
+            card opens the handler run.</li>
+        <li>Inside the expanded failed group in the timeline, a button reading <em>⚡ Error handler caught
+            this — view run →</em>.</li>
+        <li>Under the timeline, <em>⚡ An error handler caught it and ran — view handler run →</em>.</li>
+      </ul>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Give the handler a moment to appear</span>
+        <p>
+          The handler run is created asynchronously after the failure, so it does not exist at the instant
+          the failure is rendered. The visualizer polls for it roughly every one and a half seconds for
+          about fifteen seconds, then stops. If no pill has appeared after that, no handler run was
+          created — check that an error workflow is configured, that it is published and activated, and
+          that neither loop guard blocked it.
+        </p>
+      </div>
+      <p>
+        The links are also written into the journals themselves, so they survive independently of the
+        interface. The failed run gains an <code>ErrorWorkflowStarted</code> entry naming the handler
+        workflow and the new run identifier, and the handler run opens with an
+        <code>ErrorWorkflowLink</code> entry reading <em>"Handling failure of run …"</em>.
+      </p>
+
+      <h2>Putting the layers together</h2>
+      <p>
+        A sensible default arrangement for a production instance is all four layers at once. Let idempotent
+        nodes retry themselves. Wire an error port only where the graph genuinely has a fallback, and
+        deliberately leave it unwired where it does not, so the run fails and the rest of the machinery
+        engages. Configure one default notification channel and test it, so a human hears about it.
+        Nominate one error workflow — published, activated and tested — so the failure gets recorded or
+        escalated consistently regardless of which workflow produced it. What is left over lands in the
+        dead letter queue for triage.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="dead-letter.html">
+          <div class="kg-card-title">Dead letter queue</div>
+          <div class="kg-card-desc">Where uncaught failures wait for a human.</div>
+        </a>
+        <a class="kg-card" href="runs.html">
+          <div class="kg-card-title">Runs and the inspector</div>
+          <div class="kg-card-desc">Reading a failure in the timeline and replaying it against a fix.</div>
+        </a>
+        <a class="kg-card" href="triggers.html">
+          <div class="kg-card-title">Triggers</div>
+          <div class="kg-card-desc">The Error Trigger node and the other five ways a run starts.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

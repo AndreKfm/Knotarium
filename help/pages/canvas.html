@@ -1,0 +1,479 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The canvas editor. Behaviour here is taken from Frontend/src/components/Canvas.tsx and its
+  canvas/* hooks, not from the README — including the auto-disarm on entering the editor, which
+  is implemented in App.tsx and is documented nowhere else.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The canvas editor · Knotarium Help</title>
+<meta name="description" content="The workflow editor: the node palette, wiring, the property inspector, layout tools, groups and notes, undo, preview mode, and Save &amp; Publish.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="canvas.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>The canvas editor</h1>
+      <p class="kg-lead">
+        The canvas is where a workflow is drawn: nodes on the left, the graph in the middle, the
+        selected node's properties on the right. This page covers the parts of that screen that are
+        not obvious from looking at it — how wiring actually behaves, which gestures are destructive,
+        what the layout tools do to your positions, and the one side effect of opening the editor that
+        surprises everybody.
+      </p>
+
+      <h2>Opening the editor</h2>
+      <p>
+        There are two ways in, and they do different things. Opening a workflow from the dashboard
+        loads that workflow. Clicking <span class="kg-path">Canvas Editor</span> in the header always
+        starts a <strong>new, empty workflow</strong> containing a single Start node — it does not
+        return you to whatever you had open. Coming back to a workflow you were editing means going
+        through the dashboard again.
+      </p>
+      <p>
+        The editor remembers where you were looking. The viewport (pan and zoom) is stored per
+        workflow in browser storage, so re-entering a graph lands where you left it rather than
+        re-centring. If the stored viewport would leave the graph off screen — which happens with
+        graphs at negative coordinates — it is discarded and the graph is framed instead.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Entering the editor disarms the runtime</span>
+        <p>
+          The moment the canvas editor opens, Knotarium switches the global runtime arming switch to
+          <strong>Disarmed</strong>. This is deliberate — editing is treated as design time, and a
+          half-wired graph should not be firing on a schedule — but it is silent apart from the header
+          badge changing from <span class="kg-pill is-on">Armed</span> to
+          <span class="kg-pill is-warning">Disarmed</span>.
+        </p>
+        <p>
+          It does not re-arm when you leave. Schedules, webhooks, pollers and device events stay
+          paused until you click the switch in the header yourself. If a scheduled workflow "stopped
+          working" shortly after somebody opened the editor, this is almost always why.
+        </p>
+      </div>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 300" role="img" aria-labelledby="editor-layout-title">
+          <title id="editor-layout-title">Layout of the canvas editor: palette, canvas and the right-hand panels</title>
+
+          <rect x="8" y="8" width="684" height="36" rx="8" fill="#17212f" stroke="#2e3f56" stroke-width="1.4"/>
+          <text x="24" y="31" fill="#9ca3af" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">TOOLBAR</text>
+          <text x="126" y="31" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Back · name · runtime version · Save &amp; Publish · Run</text>
+
+          <rect x="8" y="54" width="168" height="238" rx="10" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="24" y="78" fill="#6366f1" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">NODE PALETTE</text>
+          <text x="24" y="100" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Search</text>
+          <text x="24" y="122" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Recent / Pinned</text>
+          <text x="24" y="142" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Trigger · Logic · Data</text>
+          <text x="24" y="162" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Network · AI · Utility</text>
+          <text x="24" y="182" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Templates</text>
+          <text x="24" y="202" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Advanced (collapsed)</text>
+
+          <rect x="186" y="54" width="316" height="238" rx="10" fill="rgba(99,102,241,0.08)" stroke="#6366f1" stroke-width="1.5"/>
+          <text x="202" y="78" fill="#6366f1" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">CANVAS</text>
+          <text x="202" y="100" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">layout toolbar, top right</text>
+          <text x="202" y="196" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">minimap, bottom left</text>
+          <text x="202" y="216" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">diagnostics panel, bottom left</text>
+          <text x="202" y="236" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">zoom controls, bottom right</text>
+
+          <rect x="512" y="54" width="180" height="132" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="528" y="78" fill="#06b6d4" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">PROPERTY INSPECTOR</text>
+          <text x="528" y="100" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Selected node or edge</text>
+          <text x="528" y="122" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Node I/O inspector</text>
+          <text x="528" y="142" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Pinned output</text>
+          <text x="528" y="168" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">drag the left edge to resize</text>
+
+          <rect x="512" y="194" width="180" height="98" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.5"/>
+          <text x="528" y="218" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em">WORKFLOW VARIABLES</text>
+          <text x="528" y="240" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">The global store</text>
+          <text x="528" y="262" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11.5">Drop an output pill here</text>
+        </svg>
+        <figcaption>Four regions. Only the right-hand column is resizable; the palette is a fixed width.</figcaption>
+      </figure>
+
+      <h2>The node palette</h2>
+      <p>
+        Nodes are grouped into six categories — Trigger, Logic, Data, Network, AI and Utility — derived
+        from each node package's declared category. Above them sits a <strong>Recent / Pinned</strong>
+        panel, and below them a <strong>Templates</strong> panel and a collapsed <strong>Advanced</strong>
+        panel. Advanced holds nodes whose manifest marks them as escape hatches; it starts collapsed so
+        the ordinary building blocks are the obvious choice.
+      </p>
+      <p>
+        The search box filters on what you can actually read on the card: the node's display name, its
+        description and its category. It deliberately does <em>not</em> match the internal node id,
+        because matching ids produced results nobody could explain. Several words are combined with
+        AND, and while a search is active panels with no hits disappear entirely rather than stacking
+        up empty headers.
+      </p>
+      <p>
+        The pin button beside each node adds it to Recent / Pinned permanently; nodes you have recently
+        placed appear there on their own. Panels themselves can be reordered by dragging the grip at
+        the left of a panel header, and that order is remembered in browser storage per browser, not
+        per workflow.
+      </p>
+      <div class="kg-note">
+        <span class="kg-note-label">Three node types are registered but not offered</span>
+        <p>
+          Sticky notes and groups are inserted from the canvas toolbar rather than dragged from the
+          palette, so they are hidden here. The old <code>manualTrigger</code> node is hidden too: it
+          duplicates what <code>Start</code> already does. Existing workflows that contain one still
+          render and still run — only the palette stops offering it.
+        </p>
+      </div>
+
+      <h2>Placing nodes</h2>
+      <p>
+        Clicking a palette entry drops the node at an automatically chosen position. Dragging it onto
+        the canvas places it exactly where you release, which is almost always what you want, because
+        several placement behaviours key off where the node lands:
+      </p>
+      <ul>
+        <li><strong>Dropped on an existing wire</strong>, the node is spliced into that connection: the
+            wire is cut and re-routed through the new node, as a single undo step.</li>
+        <li><strong>Dropped into a loop or parallel container</strong>, the node becomes a child of that
+            container and moves with it. If the container was empty and the node is not a trigger, it is
+            auto-wired from the container's start to the node and back to the container's end, giving an
+            immediately runnable single-step body. Once a container has children, nothing is auto-wired.</li>
+        <li><strong>Dropped in open space</strong>, a proximity check runs: a free output port close to a
+            free input port on a neighbouring node connects automatically. Ports that would connect glow
+            while you drag.</li>
+      </ul>
+      <p>
+        Dragging a node out of a container detaches it again. Containers, group boxes, sticky notes,
+        Start and Scheduler nodes are never reparented by a drag.
+      </p>
+      <p>
+        Templates are dragged from the palette the same way and stamp a whole subgraph at the cursor.
+        A template with a required parameter that has no default cannot be satisfied mid-drop, so it
+        opens the Insert panel instead and says so in the status bar.
+      </p>
+
+      <h2>Connecting nodes</h2>
+      <p>
+        A connection always runs from an <em>output</em> port on the left-hand node to an <em>input</em>
+        port on the right-hand one. There are three ways to make one, and they exist because dragging
+        precisely onto a small dot is hard on a trackpad and impossible on a touch screen.
+      </p>
+      <ul>
+        <li><strong>Drag between ports.</strong> The drop is magnetic within roughly seventy pixels, so
+            you do not have to hit the dot exactly.</li>
+        <li><strong>Drag onto the node.</strong> Releasing anywhere over a target node connects to that
+            node's first input port.</li>
+        <li><strong>Click, then click.</strong> Click an output port, then click either an input port or
+            anywhere on the target node. Clicking empty canvas or pressing <kbd>Esc</kbd> cancels.</li>
+      </ul>
+      <p>
+        <strong>An input accepts one incoming wire.</strong> Connecting a second one silently replaces
+        the first rather than stacking them — this is the single most common source of "my edge
+        disappeared". Two places break that rule on purpose: a container's <code>end</code> handle,
+        where the branches of a loop body converge back, and the Join node's input, which waits for all
+        of them.
+      </p>
+      <p>
+        An existing wire can be re-routed by dragging either of its endpoints onto another handle.
+        <strong>Dropping an endpoint in empty space deletes the wire.</strong> Separately, starting a
+        drag on an input port that already has a wire lifts that wire off and lets it follow the
+        cursor; dropping it on another node moves its destination there, and dropping it on nothing at
+        all puts it back where it was.
+      </p>
+      <p>
+        A drop that cannot connect explains itself in a toast at the bottom of the canvas rather than
+        doing nothing. The messages are short and literal: <em>Start the connection from an output
+        port</em>, <em>A node can't connect to itself</em>, <em>Drop onto a node inside the container,
+        not the container itself</em>, and <em>That node has no input port to connect to</em>. Releasing
+        over empty canvas is treated as an ordinary cancel and stays quiet.
+      </p>
+
+      <h3>Selecting and moving</h3>
+      <p>
+        Left-dragging on empty canvas draws a selection box, and a node only has to be touched by that
+        box to be selected. Panning is on the middle and right mouse buttons. <kbd>Shift</kbd> or
+        <kbd>Ctrl</kbd> adds to a selection, and <kbd>Ctrl</kbd>+<kbd>A</kbd> selects every node.
+      </p>
+      <p>
+        Clicking a node also pins its data wires on (see the density control below), which is why a
+        single click makes dashed lines appear. Double-clicking has a per-type meaning: a Sub-flow node
+        drills into the workflow it calls, an Inline Code node opens the code editor, and a Condition
+        node opens the full-screen logic editor. Double-clicking anywhere else zooms.
+      </p>
+
+      <h2>The property inspector</h2>
+      <p>
+        The upper right panel configures whatever is selected. Its header shows the node's display name
+        and its node id — worth noting, because that id is what expressions reference — plus a delete
+        button. The form itself is generated from the node package's manifest, so the fields you see are
+        the fields that node actually declares; a few node types (HTTP Request, Scheduler, Polling
+        Trigger, Resource Picker, imported OpenAPI operations, Sub-flow) render a purpose-built form
+        instead.
+      </p>
+      <p>
+        Above the form, two sections appear when they have something to offer. <strong>Insert data
+        reference</strong> lists the outputs of every upstream node as clickable chips that copy a
+        ready-made <code>{{ … }}</code> expression to the clipboard. <strong>Signal fields</strong>
+        appears on graphs started by an external device or an event or action trigger, and offers the
+        fields that signal carries. Below the form sit the Node I/O inspector and the Pin Output editor,
+        both described in <a href="expressions.html">Expressions and data</a>.
+      </p>
+      <p>
+        Selecting an <em>edge</em> instead of a node swaps the panel for a connection summary: the
+        source node and output handle, the target node and input handle, and a delete button. If a
+        node's type has no active package manifest the panel says so plainly and shows no fields, which
+        is the signal that the workflow references a node package that is not installed.
+      </p>
+      <p>
+        The whole right-hand column is resized by dragging its left edge, between 300 and 820 pixels
+        wide, and the width is remembered.
+      </p>
+
+      <h2>Align, distribute and Tidy</h2>
+      <p>
+        The floating toolbar at the top right of the canvas holds the layout tools. Alignment buttons
+        appear once <strong>two</strong> nodes are selected (left, horizontal centres, right, top,
+        vertical centres, bottom); distribution buttons appear at <strong>three</strong> (horizontal,
+        vertical). Both apply as a single undo step.
+      </p>
+      <p>
+        <strong>Tidy</strong> re-lays the entire graph left to right and then re-frames the view. It is
+        container-aware: the body of each loop or parallel container is arranged inside its container,
+        and a container is never shrunk below its current size. Because it moves every node it is one
+        undo step, and undo puts every position back.
+      </p>
+      <p>
+        A workflow loaded without saved coordinates — a gallery example, a fresh import, an
+        AI-generated graph — is tidied automatically once the browser has measured the nodes. That
+        automatic pass is not an edit: it records no undo step and does not mark the workflow as
+        changed.
+      </p>
+      <p>
+        <strong>Center</strong> frames all nodes. <strong>Grid</strong> toggles snap-to-grid, which is
+        <span class="kg-pill is-off">Off by default</span> and uses a 24-pixel step matching the dot
+        pattern in the background, so a snapped node's top-left corner lands on a dot. Snapping applies
+        to dragging, dropping, pasting and Tidy alike.
+      </p>
+
+      <h2>The data-wire density control</h2>
+      <p>
+        Reading a variable does not draw a normal edge, because the value does not travel along the
+        control flow — it is fetched from the workflow's variable store. The editor still shows those
+        reads, as dashed wires between the node that produced a variable and each node that consumes
+        it. Because a busy graph can have a great many of them, the eye button at the bottom right of
+        the canvas chooses how much is drawn.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Mode</th><th>What is drawn</th></tr></thead>
+          <tbody>
+            <tr><td>Reveal on demand <span class="kg-pill is-on">Default</span></td><td>Only the execution flow. Data wires appear when you hover or click a node or a variable.</td></tr>
+            <tr><td>Compact dots</td><td>Dashed data wires always visible, each collapsed to a small diamond at its midpoint.</td></tr>
+            <tr><td>Always-on value boxes</td><td>Dashed wires plus the full value token on every one.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Clicking a node or a variable pill pins its wires so they stay visible in any mode; clicking
+        empty canvas or pressing <kbd>Esc</kbd> clears every pin. The chosen mode is remembered across
+        sessions and applies to every workflow, not just the open one.
+      </p>
+
+      <h2>Sticky notes and groups</h2>
+      <p>
+        Both are editor-only annotations. They have no ports, are registered on the backend as no-ops so
+        they survive save, publish, versioning and restore like any other node, and they never execute.
+      </p>
+      <p>
+        <strong>Note</strong> on the toolbar drops a sticky note at the centre of the current view,
+        selected and ready to type into. A selected note can be resized (down to 140 by 90 pixels) and
+        recoloured from five swatches. In a read-only view the text is shown but cannot be edited.
+      </p>
+      <p>
+        <strong>Group</strong> appears once two or more nodes are selected and wraps them in a tinted
+        frame. A group is purely visual — it does not change execution — but it does own its members:
+        moving the frame moves everything inside it, and membership is stored on each child, so it
+        survives a save. Groups can be renamed by double-clicking the title or using the pencil, tinted
+        with one of five colours for categorisation, and collapsed to a compact chip that shows the
+        name and a live child count. <strong>Ungroup</strong> returns the children to the top level.
+      </p>
+      <p>
+        Resizing an expanded group from its top or left handle moves the frame's origin; the children
+        are shifted back by the same amount so they stay exactly where they were on the canvas.
+      </p>
+
+      <h2>Finding a node</h2>
+      <p>
+        <kbd>Ctrl</kbd>+<kbd>F</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>⌘</kbd> on macOS) opens a
+        jump palette that filters the nodes on the canvas by title. Arrow keys move through the
+        results, <kbd>Enter</kbd> jumps to the highlighted one, and <kbd>Esc</kbd> closes. Picking a
+        result centres the canvas on that node at a fixed zoom and selects it, which also brings its
+        properties up on the right.
+      </p>
+      <p>
+        This shortcut is allowed even while a text field has focus, so it can always be summoned; once
+        open, the palette owns the keyboard.
+      </p>
+
+      <h2>Undo and redo</h2>
+      <p>
+        Every structural edit records a snapshot before it happens, and compound gestures collapse into
+        one step: a drag that moves a node, a drop that also auto-connects, a Tidy that moves fifty
+        nodes, an extraction that rewrites the graph. A drag that does not actually move anything
+        records nothing.
+      </p>
+      <p>
+        The history keeps up to <strong>100</strong> steps in each direction and is <strong>reset when a
+        different workflow is loaded</strong> — it is not a cross-workflow timeline. Undo and redo are
+        ignored while the cursor is in a text field, so typing in a property field and pressing
+        <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes your typing, not your last wire.
+      </p>
+
+      <h2>Leaving with unsaved changes</h2>
+      <p>
+        The editor compares the current graph against the last saved state, ignoring things that do not
+        affect the definition. Pressing Back with pending edits opens a dialog offering
+        <strong>Cancel</strong>, <strong>Discard &amp; leave</strong> and <strong>Save &amp; leave</strong>.
+        Closing or reloading the browser tab instead gets the browser's own native "leave site?" prompt.
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Only the canvas Back button is guarded</span>
+        <p>
+          The dialog is wired to the editor's own Back button. Navigating away with the header tabs —
+          to the dashboard, settings, or anywhere else — leaves the editor without asking, and unsaved
+          canvas edits are lost. Save before switching screens.
+        </p>
+      </div>
+      <p>
+        Editing a sub-flow behaves differently: leaving a sub-flow always saves and publishes it first,
+        so the caller picks up its current interface. See
+        <a href="subflows.html">Sub-flows and grouping</a>.
+      </p>
+
+      <h2>Read-only version preview</h2>
+      <p>
+        Picking an older version in the <strong>Runtime version</strong> dropdown does not activate it.
+        It opens a read-only preview of that version's graph: an amber banner appears, the canvas is
+        rendered at reduced opacity, and dragging, connecting and selecting are all disabled. Your
+        working draft is untouched underneath and returns when you exit.
+      </p>
+      <p>
+        From the banner you can <strong>Diff</strong> the previewed version against your draft, or
+        <strong>Restore this version</strong>, which makes it the current live version and brings its
+        content back into the draft. Restore is hidden when the version you are previewing is already
+        the active one. <kbd>Esc</kbd> exits the preview, unless a dialog or overlay is open, in which
+        case that overlay gets the key first.
+      </p>
+      <p>
+        Run is still available while previewing — it targets the version you are looking at — but is
+        disabled while a diff is open. Save &amp; Publish is disabled throughout.
+      </p>
+
+      <h2>Save &amp; Publish and Run</h2>
+      <p>
+        <strong>Save &amp; Publish</strong> is one action with two effects: it persists the draft, then
+        snapshots it as a runtime version and activates that version, so the workflow is immediately
+        runnable. Identical content is de-duplicated on the backend, so re-saving an unchanged graph
+        does not spawn a new version. The button reads <em>Saved</em> and is disabled when there is
+        nothing new to publish; a workflow that has never been published can always publish its first
+        version.
+      </p>
+      <p>
+        When the graph has blocking errors the button turns amber and reads <em>Save &amp; Publish
+        (2 errors)</em>. It stays clickable on purpose — saving still keeps your draft — but publishing
+        will be refused and the failure is written into the diagnostics panel rather than an alert box.
+        See <a href="diagnostics.html">Diagnostics</a>.
+      </p>
+      <p>
+        <strong>Run</strong> activates whichever version is selected in the dropdown and then triggers
+        it, so what executes is always what the dropdown says. It needs at least one published version;
+        until then it tells you to publish first. Starting a run does not navigate away: a small
+        <em>Run started</em> toast appears with a link to the execution view, node status is painted
+        onto the cards on the canvas as the run progresses, and the variable pills fill in with real
+        values in place.
+      </p>
+      <p>
+        Painted run status is cleared whenever the graph's behaviour changes — nodes, edges or
+        properties — but survives a pure move, because repositioning a node does not invalidate what
+        the last run did. It is also cleared on save and at the start of a new run.
+      </p>
+      <div class="kg-note">
+        <span class="kg-note-label">Event-driven graphs have no Run button</span>
+        <p>
+          A workflow built from external device blocks with no Start or manual trigger has nothing for
+          a manual Run to start. The Run button is replaced by an <em>Event-driven</em> badge, a
+          <strong>Watch live runs</strong> link into the execution viewer, and a <strong>Simulate
+          signal</strong> button that fires one of the wired device pins with sample values. Remember
+          that live event runs need the runtime armed — and opening the editor disarmed it.
+        </p>
+      </div>
+
+      <h2>Keyboard shortcuts</h2>
+      <p>
+        The full list is also available in the editor by pressing <kbd>?</kbd>. On macOS
+        <kbd>Ctrl</kbd> is <kbd>⌘</kbd> throughout.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd> · <kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Search and jump to a node</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd></td><td>Toggle the version history panel</td></tr>
+            <tr><td><kbd>?</kbd></td><td>Toggle the shortcut help</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Clear pins, cancel a pending connection, exit a version preview</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> · <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Redo</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Copy and paste the selected subgraph</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Duplicate the selection</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all nodes</td></tr>
+            <tr><td><kbd>Delete</kbd> · <kbd>Backspace</kbd></td><td>Delete the selected nodes and edges</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Everything except the search palette and the history panel is ignored while a text field has
+        focus, so ordinary typing is never intercepted. Copying and pasting carries the whole selected
+        subgraph, with fresh node ids and the internal wires rebuilt.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="expressions.html">
+          <div class="kg-card-title">Expressions and data</div>
+          <div class="kg-card-desc">How a node reads what an earlier node produced, and how to pin a sample output while you build.</div>
+        </a>
+        <a class="kg-card" href="diagnostics.html">
+          <div class="kg-card-title">Diagnostics</div>
+          <div class="kg-card-desc">What the panel in the corner is telling you and which entries block Save &amp; Publish.</div>
+        </a>
+        <a class="kg-card" href="subflows.html">
+          <div class="kg-card-title">Sub-flows and grouping</div>
+          <div class="kg-card-desc">Turning part of a graph into a reusable step, and what "Extract" can and cannot handle.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,435 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Building and testing from a clone. Verified against publish.ps1, run.ps1, Dockerfile,
+  Frontend/package.json, Frontend/vite.config.ts, Frontend/playwright.config.ts,
+  Backend/Directory.Build.props and .github/workflows/*. Where README.md and the code disagree,
+  the code wins and the discrepancy is called out.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building from source · Knotarium Help</title>
+<meta name="description" content="Prerequisites, repository layout, running the backend and the Vite dev server, the single-folder publish, the Docker build, the three test suites, and what CI checks.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="build-from-source.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Building from source</h1>
+      <p class="kg-lead">
+        Knotarium builds with two toolchains and no other infrastructure: a .NET SDK for the backend
+        and Node for the user interface. There is no database to provision, no code generation step and
+        no container required. This page covers running it from a clone, producing a shippable build,
+        and the three test suites — plus the parts of the build that behave differently from what the
+        README implies.
+      </p>
+
+      <h2>Prerequisites</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Tool</th><th>Version</th><th>Needed for</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>.NET SDK</td>
+              <td><strong>10.0</strong></td>
+              <td>Everything backend. Every project targets <code>net10.0</code>, and the solution is an
+                  <code>.slnx</code> file, so an older SDK cannot even restore it.</td>
+            </tr>
+            <tr>
+              <td>Node.js</td>
+              <td><strong>22 or newer</strong></td>
+              <td>The interface. Node is a build-time dependency only — the shipped product contains no
+                  JavaScript runtime.</td>
+            </tr>
+            <tr>
+              <td>PowerShell 7</td>
+              <td>7.0+</td>
+              <td>Only for <code>publish.ps1</code>, which declares that requirement explicitly.
+                  <code>run.ps1</code> is Windows-oriented and uses Windows-only cmdlets.</td>
+            </tr>
+            <tr>
+              <td>Inno Setup 6</td>
+              <td>optional</td>
+              <td>Only for <code>publish.ps1 -Installer</code>.</td>
+            </tr>
+            <tr>
+              <td>Python 3</td>
+              <td>optional</td>
+              <td>Only for the mock REST API that <code>run.ps1 -MockApi</code> launches.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Warnings are errors</span>
+        <p>
+          <code>Backend/Directory.Build.props</code> sets <code>TreatWarningsAsErrors</code> for every
+          backend project, so a build that compiles on your machine and fails on someone else's is
+          usually an analyzer difference, not flaky tooling. Package-vulnerability warnings
+          (<code>NU1901</code> through <code>NU1904</code>) are deliberately exempted, because upstream
+          advisories appear without anyone touching the code and are fixed by dependency bumps rather
+          than by breaking every local build.
+        </p>
+      </div>
+
+      <h2>Repository layout</h2>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Path</th><th>Contents</th></tr></thead>
+          <tbody>
+            <tr><td><code>Backend/</code></td><td>The solution, <code>Knotarium.slnx</code>, and eighteen projects.</td></tr>
+            <tr><td><code>Backend/Knotarium.Api/</code></td><td>The host: composition root, endpoint mapping, hosted services. The only executable web project.</td></tr>
+            <tr><td><code>Backend/Knotarium.Core/</code></td><td>Domain types and contracts. Depends on nothing else in the solution.</td></tr>
+            <tr><td><code>Backend/Knotarium.Features*/</code></td><td>Feature slices — <code>Features</code>, plus <code>Ai</code>, <code>Compiler</code>, <code>Condition</code>, <code>NodeEditor</code>, <code>OpenApi</code>, <code>Options</code>, <code>Portability</code>, <code>Settings</code>.</td></tr>
+            <tr><td><code>Backend/Knotarium.Infrastructure/</code></td><td>Persistence, the SQLite database context, credential encryption, package signing.</td></tr>
+            <tr><td><code>Backend/Knotarium.NodeRuntime/</code></td><td>Executor registry, the binary package watcher, host plugin loading, the banned-API analyzer.</td></tr>
+            <tr><td><code>Backend/Knotarium.SandboxWorker/</code></td><td>The separate worker process that runs user C# when the sandbox is in process mode.</td></tr>
+            <tr><td><code>Backend/Knotarium.*.Tests/</code></td><td>Four test projects: <code>Tests</code>, <code>Tests.Api</code>, <code>NodeRuntime.Tests</code> and <code>Architecture.Tests</code>.</td></tr>
+            <tr><td><code>Frontend/</code></td><td>React 19 and Vite. <code>src/components</code> is the canvas and panels; <code>src/node-editor</code> holds both the canvas helpers and the node package IDE.</td></tr>
+            <tr><td><code>Frontend/e2e/</code></td><td>Playwright specs, run separately from the unit tests.</td></tr>
+            <tr><td><code>nodes/</code></td><td>Per-node manifest folders. <strong>Not the authoritative catalog</strong> — see the warning below.</td></tr>
+            <tr><td><code>help/</code></td><td>This documentation. Hand-written static HTML with no build step.</td></tr>
+            <tr><td><code>docs/</code></td><td>The published documentation site sources, separate from the offline help.</td></tr>
+            <tr><td><code>deploy/linux/</code></td><td>A systemd unit and its notes.</td></tr>
+            <tr><td><code>installer/</code></td><td>The Inno Setup script and the winget manifests.</td></tr>
+            <tr><td><code>scripts/</code></td><td>Repository maintenance scripts, including the two help scripts described at the end of this page.</td></tr>
+            <tr><td><code>dev/mock-api/</code></td><td>A small Python REST server used for resource-locator testing.</td></tr>
+            <tr><td><code>test-fixtures/</code></td><td>Sample files the tests read.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The <code>nodes/</code> folder is a stale copy</span>
+        <p>
+          The manifests under <code>nodes/</code> look authoritative and are not. The node catalog the
+          running product uses is
+          <code>Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs</code>. Read
+          that file when you need to know what a built-in node actually declares. The
+          <code>nodes/</code> folder also shares its name with the default binary-package
+          <em>watch</em> folder at run time, which is a separate thing entirely — see
+          <a href="custom-packages.html">Custom node packages</a>.
+        </p>
+      </div>
+
+      <h2>Running from a clone</h2>
+      <p>
+        The backend and the interface run as two processes during development. The backend serves the
+        API on <strong>43120</strong>; Vite serves the interface on <strong>5273</strong> and proxies
+        <code>/api</code> through to the backend, so the browser only ever talks to one origin and the
+        session cookie behaves exactly as it does in production.
+      </p>
+
+      <pre><code><span class="tok-comment"># Terminal 1 — backend, http://localhost:43120</span>
+<span class="tok-cmd">dotnet</span> run --project Backend/Knotarium.Api
+
+<span class="tok-comment"># Terminal 2 — interface, http://localhost:5273</span>
+<span class="tok-cmd">cd</span> Frontend
+<span class="tok-cmd">npm</span> install
+<span class="tok-cmd">npm</span> run dev</code></pre>
+
+      <p>
+        Open <strong>http://localhost:5273</strong>, not 43120 — in development there is no bundled
+        <code>wwwroot</code>, so the backend serves the API and nothing else. The Vite port honours a
+        <code>PORT</code> environment variable if you need a second instance side by side; the proxy
+        target stays 43120 either way. <code>vite preview</code>, which serves a production build
+        locally, mirrors the same proxy on port 4173.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Development mode is load-bearing</span>
+        <p>
+          Running through <code>dotnet run</code> puts the host in the Development environment, and that
+          changes far more than logging: it moves where data is stored, relaxes the HTTPS-only session
+          cookie, refuses to auto-generate a credential encryption key, skips the legacy draft
+          migration, and turns node-package hot-reload on. A development instance is not a small
+          production instance. The full list is in the
+          <a href="configuration.html">Configuration reference</a>.
+        </p>
+      </div>
+
+      <h3><code>run.ps1</code></h3>
+      <p>
+        On Windows, <code>./run.ps1</code> does the two-terminal dance for you. It is a developer
+        convenience with some opinions:
+      </p>
+      <ul>
+        <li>It <strong>kills whatever is listening</strong> on 43120 and 5273 before starting, walking up
+            the process tree through <code>cmd</code>, <code>powershell</code> and <code>pwsh</code>
+            parents to catch a shell wrapper. If a process refuses to die for want of privileges, the
+            script relaunches itself elevated.</li>
+        <li>It opens two new PowerShell windows, one per service, and starts the backend with the
+            <code>http</code> launch profile, waiting three seconds before starting Vite.</li>
+        <li><code>-Clean</code> deletes every <code>bin</code> and <code>obj</code> folder under
+            <code>Backend/</code> first, forcing a full rebuild.</li>
+        <li><code>-MockApi</code> also starts the Python mock REST server from <code>dev/mock-api</code>
+            on port 8787, serving a spec at <code>/openapi.json</code>. If Python is not on the path the
+            script says so and continues without it.</li>
+      </ul>
+      <p>
+        Stopping the environment means closing the two console windows. There is no stop switch.
+      </p>
+
+      <h2>The productive single-folder build</h2>
+      <p>
+        <code>./publish.ps1</code> produces a copy-and-run build: a self-contained .NET publish with the
+        whole runtime bundled, plus the built interface in <code>wwwroot</code> beside the executable so
+        the backend serves both from one origin. The output lands in <code>publish/app</code>.
+      </p>
+
+      <pre><code><span class="tok-cmd">./publish.ps1</span>                              <span class="tok-comment"># win-x64 Release folder build</span>
+<span class="tok-cmd">./publish.ps1</span> -Runtime linux-x64
+<span class="tok-cmd">./publish.ps1</span> -SkipFrontend                 <span class="tok-comment"># reuse an existing Frontend/dist</span>
+<span class="tok-cmd">./publish.ps1</span> -Version 1.0.0-rc.1 -Zip -Installer</code></pre>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Parameter</th><th>Default</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>-Runtime</code></td><td><code>win-x64</code></td><td>The .NET runtime identifier to publish for. <code>linux-x64</code> is what the release workflow uses for the tarball.</td></tr>
+            <tr><td><code>-Configuration</code></td><td><code>Release</code></td><td>Build configuration.</td></tr>
+            <tr><td><code>-OutputDir</code></td><td><code>./publish</code></td><td>Wiped and recreated on every run.</td></tr>
+            <tr><td><code>-Port</code></td><td><code>43120</code></td><td>Baked into the generated <code>Start.bat</code> and passed to the installer script.</td></tr>
+            <tr><td><code>-SkipFrontend</code></td><td>off</td><td>Skips the Vite build and reuses <code>Frontend/dist</code>. The script still fails if that folder has no <code>index.html</code>.</td></tr>
+            <tr><td><code>-SingleFile</code></td><td>off</td><td>One self-extracting executable instead of a folder.</td></tr>
+            <tr><td><code>-Version</code></td><td>from the csproj</td><td>Stamped into the assembly and used in artifact names. Falls back to the <code>&lt;Version&gt;</code> element in <code>Knotarium.Api.csproj</code>.</td></tr>
+            <tr><td><code>-Zip</code></td><td>off</td><td>Also compresses <code>publish/app</code> into a versioned zip with a <code>.sha256</code> beside it.</td></tr>
+            <tr><td><code>-Installer</code></td><td>off</td><td>Also compiles <code>installer/Knotarium.iss</code> with Inno Setup's ISCC, auto-detected in the usual locations or given via <code>-InnoSetupExe</code>.</td></tr>
+            <tr><td><code>-SignCertBase64</code></td><td>from <code>SIGN_CERT_BASE64</code></td><td>Enables Authenticode signing of the executables and the installer. With no certificate the step is a complete no-op and the output is an ordinary unsigned build.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Three choices in that script are deliberate and worth not "fixing":
+      </p>
+      <ul>
+        <li><strong>Not NativeAOT, not trimmed.</strong> The engine compiles inline code and custom
+            nodes with Roslyn at run time, which needs the JIT and reflection metadata. Ahead-of-time
+            compilation or trimming removes the feature.</li>
+        <li><strong>A folder, not a single file, by default.</strong> A self-extracting build unpacks to
+            a temporary directory at launch, which antivirus routinely flags, and it leaves
+            <code>Assembly.Location</code> empty — which the Roslyn compiler needs. The single-file
+            switch compensates with <code>IncludeAllContentForSelfExtract</code>, but the folder build
+            avoids the problem rather than working around it.</li>
+        <li><strong>No debug symbols.</strong> <code>DebugType=none</code> keeps <code>.pdb</code> files
+            out of the shipped folder.</li>
+      </ul>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The closing message about the database is wrong</span>
+        <p>
+          <code>publish.ps1</code> finishes by printing that "the SQLite database (Knotarium.db) is
+          created next to the exe on first run". It is not. The database and the credential key are
+          created under the machine-wide data directory —
+          <code>%ProgramData%\Knotarium</code> on Windows — unless <code>Storage__DataDirectory</code>
+          says otherwise. Back up that directory, not the application folder.
+        </p>
+      </div>
+
+      <h2>The Docker build</h2>
+      <p>
+        The <code>Dockerfile</code> is a three-stage build: Node 22 builds the interface, the .NET 10
+        SDK image publishes the backend <strong>framework-dependent</strong> (the ASP.NET runtime image
+        supplies the runtime), and the runtime stage copies both together.
+      </p>
+
+      <pre><code><span class="tok-cmd">docker</span> build -t knotarium:dev --build-arg VERSION=1.0.0-rc.1 .
+<span class="tok-cmd">docker</span> run -d -p 43120:43120 -v knotarium-data:/data knotarium:dev
+
+<span class="tok-comment"># or, from the compose file in the repository root</span>
+<span class="tok-cmd">docker</span> compose up --build</code></pre>
+
+      <p>
+        Details that matter when you change it: the image sets
+        <code>Storage__DataDirectory=/data</code> explicitly, because the cross-platform default
+        resolves to <code>/usr/share</code> inside a container and is not persisted; it binds
+        <code>http://+:43120</code> so traffic from outside the container is accepted; and it runs as
+        the non-root <code>app</code> user, with <code>/data</code> created and chowned <em>in the
+        image</em> so a named volume inherits that ownership on first use. A bind mount does not —
+        chown the host directory to UID 1654, or pass <code>--user</code>.
+      </p>
+      <p>
+        The backend copy step takes only <code>Backend/</code>, so a change under <code>Frontend/</code>
+        does not invalidate the backend layer and vice versa. <code>help/</code> is copied straight into
+        <code>./wwwroot/help/</code> in the runtime stage.
+      </p>
+
+      <h2>Running the tests</h2>
+
+      <h3>Backend</h3>
+      <pre><code><span class="tok-cmd">cd</span> Backend
+<span class="tok-cmd">dotnet</span> test</code></pre>
+      <p>
+        That runs all four test projects. The architecture project is worth running on its own while
+        you work, because it is fast and it is the one that fails when a feature slice reaches across a
+        module boundary it should not:
+      </p>
+      <pre><code><span class="tok-cmd">dotnet</span> test Backend/Knotarium.Architecture.Tests/Knotarium.Architecture.Tests.csproj</code></pre>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Why CI serializes the backend suite</span>
+        <p>
+          The sandbox tests spawn real worker processes. Running four test assemblies in parallel, each
+          with xUnit's own parallelism, exhausts memory on a 7 GB runner, and a test then blocks forever
+          waiting on a worker that never started. CI therefore runs everything single-threaded with a
+          five-minute hang timeout. If you see the suite hang locally on a small machine, the same
+          switches fix it.
+        </p>
+      </div>
+
+      <h3>Frontend</h3>
+      <pre><code><span class="tok-cmd">cd</span> Frontend
+<span class="tok-cmd">npm</span> install
+<span class="tok-cmd">npm</span> test          <span class="tok-comment"># vitest run, jsdom environment</span>
+<span class="tok-cmd">npm</span> run build     <span class="tok-comment"># tsc -b && vite build — the type check lives here</span>
+<span class="tok-cmd">npm</span> run lint      <span class="tok-comment"># eslint</span></code></pre>
+      <p>
+        <code>npm test</code> runs once and exits; <code>npm run test:watch</code> is the interactive
+        form. The type check is part of <code>npm run build</code>, not of <code>npm test</code>, so a
+        type error passes the unit tests and fails the build — run both before pushing.
+      </p>
+
+      <h3>End-to-end</h3>
+      <pre><code><span class="tok-cmd">cd</span> Frontend
+<span class="tok-cmd">npx</span> playwright install chromium   <span class="tok-comment"># once</span>
+<span class="tok-cmd">npm</span> run test:e2e</code></pre>
+      <p>
+        Playwright starts both servers itself: the backend with the <code>http</code> launch profile,
+        waiting on <code>/api/workflows</code>, and the Vite dev server. It reuses an already-running
+        backend outside CI but always starts its own dev server, so shut down a stray Vite on 5273
+        first. The specs run in Chromium only, one worker, not in parallel.
+      </p>
+      <p>
+        The backend it launches gets <code>Security__HttpEgress__DenyPrivateNetworks=false</code>,
+        because the OpenAPI importer spec drives a generated node against a mock server on loopback and
+        the egress policy blocks that by default. That relaxation applies to the test backend and
+        nothing else.
+      </p>
+      <p>
+        The e2e suite is <strong>not</strong> part of CI. It is yours to run when you touch the canvas
+        or the importer.
+      </p>
+
+      <h2>What CI checks</h2>
+      <p>
+        Two workflows gate a pull request against <code>main</code>, and both must pass.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Job</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>SPDX license headers</strong></td>
+              <td>Fails if any <code>.cs</code>, <code>.ts</code> or <code>.tsx</code> file outside
+                  <code>node_modules</code>, <code>obj</code>, <code>bin</code> and <code>dist</code>
+                  lacks an <code>SPDX-License-Identifier</code> in its first 400 bytes. Add the
+                  two-line copyright and SPDX header to every new source file.</td>
+            </tr>
+            <tr>
+              <td><strong>Architecture / drift guard</strong></td>
+              <td>Runs <code>Knotarium.Architecture.Tests</code> alone, so module-boundary drift is
+                  caught in review rather than months later.</td>
+            </tr>
+            <tr>
+              <td><strong>Frontend build + tests</strong></td>
+              <td><code>npm ci</code>, then <code>npm test</code>, then <code>npm run build</code>.
+                  <code>npm ci</code> means <code>package-lock.json</code> must be committed and in
+                  sync.</td>
+            </tr>
+            <tr>
+              <td><strong>Backend tests</strong></td>
+              <td>Restore, build the solution once, then run the whole suite serialized with a
+                  five-minute hang timeout and a thirty-minute job cap.</td>
+            </tr>
+            <tr>
+              <td><strong>DCO sign-off</strong></td>
+              <td>A separate workflow. Every non-merge commit in the pull request must carry a
+                  <code>Signed-off-by:</code> trailer — commit with <code>git commit -s</code>, or
+                  repair a branch with <code>git rebase --signoff &lt;base&gt;</code> and force-push.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A third workflow builds releases on a tag: Windows artifacts through
+        <code>publish.ps1 -Zip -Installer</code>, a Linux tarball through
+        <code>publish.ps1 -Runtime linux-x64</code>, an optional VirusTotal scan whose links are
+        appended to the release notes, and a multi-architecture container image pushed to the GitHub
+        container registry. It is not part of the pull-request gate.
+      </p>
+
+      <h2>Editing the offline help</h2>
+      <p>
+        This documentation lives in <code>help/</code> as plain HTML with <strong>no build step</strong>.
+        Both <code>publish.ps1</code> and the <code>Dockerfile</code> copy the folder verbatim into
+        <code>wwwroot/help</code>, where the existing static-file middleware serves it at
+        <code>/help</code> with no backend route involved. The one exception is the directory form
+        <code>/help/</code>, which needs a literal route so it is not swallowed by the interface's
+        catch-all fallback.
+      </p>
+      <p>
+        Two scripts belong to it, and both should be run after any edit:
+      </p>
+      <pre><code><span class="tok-cmd">node</span> scripts/build-help-index.mjs   <span class="tok-comment"># regenerates help/assets/search-index.json</span>
+<span class="tok-cmd">node</span> scripts/check-help-links.mjs   <span class="tok-comment"># verifies every link, asset and anchor resolves</span></code></pre>
+      <p>
+        The index generator reads the site map from <code>help/assets/nav.js</code> and re-derives the
+        search index from the pages, so a page added without dropping its <code>pending</code> flag is
+        reported rather than silently omitted. The link checker resolves every internal reference,
+        including in-page anchors — which it computes the same way the runtime does, from the heading
+        text — and it also validates the committed search index, because an index pointing at a
+        renamed heading is a broken link by another name.
+      </p>
+      <p>
+        The authoring rules for a page — the markup vocabulary, the tone, and the requirement that
+        every fact come from the source rather than the README — are in <code>help/AUTHORING.md</code>.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Neither script is wired into CI</span>
+        <p>
+          Nothing fails a pull request when the help index is stale or a link is dead. Offline
+          documentation has no server to report a 404, so a broken link stays broken and silent.
+          Running both scripts is a manual discipline, and it takes under a second.
+        </p>
+      </div>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Where a built instance stores its data, and what the Development environment changes.</div>
+        </a>
+        <a class="kg-card" href="rest-api.html">
+          <div class="kg-card-title">REST API</div>
+          <div class="kg-card-desc">The API your build serves, including the version probe that tells a fresh deployment from a stale one.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

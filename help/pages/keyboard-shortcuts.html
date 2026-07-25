@@ -1,0 +1,369 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Complete keyboard map. Taken from Frontend/src/components/keyboardShortcuts.ts (the data behind the
+  in-app "?" sheet), Frontend/src/components/canvas/useCanvasKeyboardShortcuts.ts, and the per-panel
+  key handlers. Where a panel binds a key the cheat sheet does not list, the code wins.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyboard shortcuts · Knotarium Help</title>
+<meta name="description" content="Every keyboard shortcut in Knotarium — canvas, panels and dialogs — with the differences between Windows, Linux and macOS.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="keyboard-shortcuts.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Keyboard shortcuts</h1>
+      <p class="kg-lead">
+        The complete keyboard map. The editor carries an abbreviated version of this list built in —
+        press <kbd>?</kbd> anywhere on the <a href="canvas.html">canvas</a> to see it — but that sheet
+        covers the canvas only. This page also documents the keys bound inside the search palette, the
+        run inspector, the code editor and the other panels, which the sheet does not list.
+      </p>
+
+      <h2>The cheat sheet built into the editor</h2>
+      <p>
+        Pressing <kbd>?</kbd> toggles a panel titled <strong>Keyboard shortcuts</strong> over the
+        canvas. It is rendered directly from the same shortcut table this page is written against, so
+        it cannot drift from the handlers. Press <kbd>?</kbd> again or <kbd>Esc</kbd> to close it, or
+        use the close button in its corner.
+      </p>
+      <p>
+        Opening the sheet is suppressed while the focus is in a text field, so typing a question mark
+        into a node's property still types a question mark. Closing it is not suppressed: once the
+        sheet is open, <kbd>?</kbd> dismisses it from anywhere.
+      </p>
+
+      <h2>Ctrl and Command are interchangeable</h2>
+      <p>
+        Every shortcut on this page that shows <kbd>Ctrl</kbd> accepts <kbd>Ctrl</kbd> or
+        <kbd>⌘</kbd>, on every platform. The handlers test for either modifier rather than branching on
+        the operating system, so <kbd>⌘</kbd><kbd>Z</kbd> works on a Mac keyboard plugged into Windows
+        and <kbd>Ctrl</kbd><kbd>Z</kbd> works on macOS.
+      </p>
+      <p>
+        The platform difference is one of <em>display</em>, not behaviour. The in-app cheat sheet
+        detects macOS and prints <kbd>⌘</kbd>; everywhere else it prints <kbd>Ctrl</kbd>. Detection
+        prefers the browser's modern platform hint and falls back to the older platform string and
+        then the user-agent, so an unusual browser may show the Windows labels on a Mac — the keys
+        themselves still work either way.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Two ways to open node search</span>
+        <p>
+          <kbd>Ctrl</kbd><kbd>F</kbd> and <kbd>Ctrl</kbd><kbd>K</kbd> do the same thing. The pair
+          exists so that the habit from a text editor and the habit from a command palette both land
+          in the right place. On macOS <kbd>⌘</kbd><kbd>K</kbd> is the one usually reached for.
+        </p>
+      </div>
+
+      <h2>Canvas: navigation</h2>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><kbd>Ctrl</kbd><kbd>F</kbd> or <kbd>Ctrl</kbd><kbd>K</kbd></td>
+              <td>Open the node search palette and jump to a node by name.</td>
+            </tr>
+            <tr>
+              <td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd></td>
+              <td>Toggle the version history panel. <kbd>Shift</kbd> is part of the combination deliberately: a bare <kbd>Ctrl</kbd><kbd>H</kbd> opens the browser's own history, and <kbd>⌘</kbd><kbd>H</kbd> hides the application on macOS.</td>
+            </tr>
+            <tr>
+              <td><kbd>?</kbd></td>
+              <td>Toggle the built-in shortcut sheet.</td>
+            </tr>
+            <tr>
+              <td><kbd>Esc</kbd></td>
+              <td>Clear pinned highlights, cancel a connection you started by clicking a port, and leave a read-only version preview.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <kbd>Esc</kbd> carries the most meanings of any key here, and it applies them in a fixed order.
+        It always clears the variable pins and abandons a half-drawn connection. Only then, and only if
+        you are looking at a read-only preview of an older <a href="versioning.html">version</a> and no
+        dialog is open above it, does it back out of that preview and return you to the live draft.
+        A dialog that is open owns <kbd>Esc</kbd> for itself, so pressing it twice — once to close the
+        dialog, once to leave the preview — is the expected rhythm.
+      </p>
+
+      <h2>Canvas: editing</h2>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>Ctrl</kbd><kbd>Z</kbd></td><td>Undo.</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd> or <kbd>Ctrl</kbd><kbd>Y</kbd></td><td>Redo. Both are bound; use whichever your other tools use.</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>C</kbd></td><td>Copy the selected nodes and the edges between them.</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>V</kbd></td><td>Paste the copied selection.</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>D</kbd></td><td>Duplicate the selection in place. This also suppresses the browser's bookmark dialog.</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>A</kbd></td><td>Select every node on the canvas.</td></tr>
+            <tr><td><kbd>Delete</kbd> or <kbd>Backspace</kbd></td><td>Delete the selected nodes and edges. Deleting a node also removes every edge attached to it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Copy and paste are handled inside the application rather than through the system clipboard, so
+        a selection copied on one canvas can be pasted onto another canvas in the same browser session
+        but not into a text editor. Deleting takes a single undo snapshot before it removes anything,
+        so one <kbd>Ctrl</kbd><kbd>Z</kbd> restores the whole deletion including the edges.
+      </p>
+
+      <h2>Canvas: selecting, panning and zooming</h2>
+      <p>
+        The canvas is built on a flow library whose default mouse and modifier conventions apply
+        unchanged, with three deliberate overrides. Nothing here is remappable.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Gesture</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td>Drag on empty canvas</td><td>Draws a selection box. The box selects anything it <em>touches</em>, not only what it fully encloses.</td></tr>
+            <tr><td>Middle-drag or right-drag</td><td>Pans the canvas. The left button is reserved for the selection box, so panning is deliberately on the other buttons.</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + click <span class="kg-pill is-info">⌘ on macOS</span></td><td>Adds a node or edge to the current selection instead of replacing it.</td></tr>
+            <tr><td><kbd>Shift</kbd> + drag</td><td>Draws an additional selection box that adds to the current selection.</td></tr>
+            <tr><td>Scroll wheel</td><td>Zooms.</td></tr>
+            <tr><td>Double-click empty canvas</td><td>Zooms in one step.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        This is the one place where the modifier genuinely differs by platform: the add-to-selection
+        modifier is <kbd>⌘</kbd> on macOS and <kbd>Ctrl</kbd> everywhere else, and unlike the
+        application's own shortcuts the two are <strong>not</strong> interchangeable here.
+      </p>
+
+      <h2>When a shortcut is ignored</h2>
+      <p>
+        Most canvas shortcuts stand down while you are typing. If the focus is in a text input, a
+        text area, a select, or any element marked as editable, then undo, redo, copy, paste,
+        duplicate, select-all, delete and <kbd>?</kbd> are all left to the field so that
+        <kbd>Ctrl</kbd><kbd>Z</kbd> undoes your typing rather than your last node placement.
+      </p>
+      <p>
+        Three shortcuts are exempt and always fire, on the reasoning that they must be summonable from
+        anywhere:
+      </p>
+      <ul>
+        <li><kbd>Ctrl</kbd><kbd>F</kbd> and <kbd>Ctrl</kbd><kbd>K</kbd> — the search palette owns its
+            own input once it opens.</li>
+        <li><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd> — the version history panel.</li>
+        <li><kbd>Esc</kbd> — always clears pins and cancels a pending connection.</li>
+      </ul>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Dialogs seal themselves off</span>
+        <p>
+          The Inline Code editor, the search palette and the node rename field stop keystrokes from
+          reaching the canvas at all rather than relying on the typing check. Without that, pressing
+          <kbd>Space</kbd> in the code editor would pan the canvas behind it and
+          <kbd>Backspace</kbd> would delete the node you were editing.
+        </p>
+      </div>
+
+      <h2>Panels, palettes and dialogs</h2>
+      <p>
+        These keys are bound by individual panels and are live only while that panel has focus. None
+        of them appear on the in-app cheat sheet.
+      </p>
+
+      <h3>Node search palette</h3>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>↓</kbd> / <kbd>↑</kbd></td><td>Move the highlight. Both wrap around the ends of the list.</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>Jump the canvas to the highlighted node and close the palette.</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close without jumping.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Version history and the version dropdown</h3>
+      <p>
+        In the version history panel, each version row is reachable by <kbd>Tab</kbd>, and
+        <kbd>Enter</kbd> or <kbd>Space</kbd> previews that version — the same as clicking it. Previewing
+        is read-only and never changes what runs.
+      </p>
+      <p>
+        The runtime version dropdown in the toolbar is a full keyboard combo box:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>↓</kbd>, <kbd>Enter</kbd> or <kbd>Space</kbd> when closed</td><td>Open the list with the current version highlighted.</td></tr>
+            <tr><td><kbd>↓</kbd> / <kbd>↑</kbd> when open</td><td>Move the highlight and immediately preview that version on the canvas. The highlight stops at the ends rather than wrapping.</td></tr>
+            <tr><td><kbd>Enter</kbd> when open</td><td>Commit the highlighted version as the selection.</td></tr>
+            <tr><td><kbd>Esc</kbd> when open</td><td>Close the list and revert the preview to what was showing before.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Run inspector</h3>
+      <p>
+        While the step-through inspector is open over a finished
+        <a href="runs.html">run</a>, the arrow keys walk the recording:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Previous and next step. Both stop at the ends of the run rather than wrapping.</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close the inspector.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        In the run timeline beside it, each journal row is focusable and <kbd>Enter</kbd> or
+        <kbd>Space</kbd> selects that step, which is what drives the highlight on the canvas.
+      </p>
+
+      <h3>Inline Code editor</h3>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>Esc</kbd></td><td>Close the editor. With unsaved changes this raises the confirmation sheet instead; a second <kbd>Esc</kbd> dismisses that sheet without closing.</td></tr>
+            <tr><td><kbd>Ctrl</kbd><kbd>Enter</kbd></td><td>In the <strong>Generate with AI</strong> description box only, submits the prompt.</td></tr>
+            <tr><td><kbd>.</kbd> or <kbd>"</kbd></td><td>Opens the C# completion list as you type.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The code surface itself is a standard Monaco editor with no custom key bindings added, so its
+        own defaults — completion on <kbd>Ctrl</kbd><kbd>Space</kbd>, comment toggling, multi-cursor,
+        find and replace — all behave as they do in any other Monaco-based editor. Because the whole
+        modal swallows keystrokes, none of them reach the canvas.
+      </p>
+
+      <h3>Condition editor</h3>
+      <p>
+        The full-screen <a href="conditions.html">condition</a> editor is opened with <kbd>Enter</kbd>
+        or <kbd>Space</kbd> on the condition card in the properties panel, or by double-clicking a
+        Condition node. Inside it, <kbd>Esc</kbd> closes the innermost thing that is open: the operator
+        menu first, then the value editor popover, and only when neither is open does it leave the
+        editor. Leaving with unsaved changes asks for confirmation first.
+      </p>
+
+      <h3>Drop-downs, comboboxes and expression fields</h3>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Control</th><th>Keys</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a href="expressions.html">Expression</a> fields, while the completion popover is showing</td>
+              <td><kbd>↓</kbd> / <kbd>↑</kbd> move through completions and wrap; <kbd>Enter</kbd> or <kbd>Tab</kbd> inserts the highlighted one — <kbd>Tab</kbd> is intercepted, so it does not move focus while the popover is open; <kbd>Esc</kbd> closes it. <kbd>←</kbd>, <kbd>→</kbd>, <kbd>Home</kbd> and <kbd>End</kbd> re-offer completions for the new caret position.</td>
+            </tr>
+            <tr>
+              <td>Template and workflow pickers</td>
+              <td><kbd>↓</kbd> / <kbd>↑</kbd> open the menu and move through it; <kbd>Enter</kbd> or <kbd>Space</kbd> choose; <kbd>Esc</kbd> closes.</td>
+            </tr>
+            <tr>
+              <td>The <a href="openapi.html">OpenAPI</a> operation picker</td>
+              <td><kbd>↓</kbd> / <kbd>↑</kbd> move through search results; <kbd>Enter</kbd> chooses; <kbd>Esc</kbd> closes.</td>
+            </tr>
+            <tr>
+              <td>Searchable select menus elsewhere</td>
+              <td><kbd>Esc</kbd> closes. These have no arrow-key navigation — use the search box and the mouse.</td>
+            </tr>
+            <tr>
+              <td>Fields offering a manual fallback value</td>
+              <td><kbd>Enter</kbd> commits what you typed.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Rename fields</h3>
+      <p>
+        Node titles, group titles, workflow names, workspace group names and
+        <a href="variables.html">variable</a> names all rename the same way:
+        <kbd>Enter</kbd> commits and <kbd>Esc</kbd> cancels. Clicking away commits rather than
+        cancelling. Renaming a workflow or a workspace group to an empty string restores the previous
+        name instead of saving a blank.
+      </p>
+
+      <h2>Mouse gestures worth knowing</h2>
+      <p>
+        Several actions have no keyboard equivalent at all and are only reachable with the pointer.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Gesture</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td>Double-click a Sub-flow node</td><td>Opens the referenced workflow on its own canvas, saving the current draft first. The arrow badge on the node does the same thing with a single click.</td></tr>
+            <tr><td>Double-click an Inline Code node</td><td>Opens the code editor.</td></tr>
+            <tr><td>Double-click a Condition node</td><td>Opens the full-screen logic editor.</td></tr>
+            <tr><td>Double-click a node's title</td><td>Renames it. The same works on a group's title.</td></tr>
+            <tr><td>Drag a node onto an existing wire</td><td>Inserts the node into that connection, splitting the edge in two.</td></tr>
+            <tr><td><kbd>Tab</kbd> to a port, then <kbd>Enter</kbd> or <kbd>Space</kbd></td><td>Starts or completes a connection without a mouse. This is the one connection gesture that <em>is</em> reachable from the keyboard.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Toolbar actions with no key binding</h2>
+      <p>
+        The in-app sheet lists these under a Layout heading, which reads as though they were shortcuts.
+        They are not — they are toolbar buttons, listed there so the layout tools are discoverable:
+      </p>
+      <ul>
+        <li><strong>Tidy</strong> — auto-arranges the graph from left to right.</li>
+        <li><strong>Grid</strong> — toggles snap-to-grid.</li>
+        <li><strong>Align</strong> and <strong>Distribute</strong> — appear only once two nodes are
+            selected; distribute needs three.</li>
+      </ul>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Opening the canvas disarms the runtime</span>
+        <p>
+          No key does this, but it surprises people often enough to belong on any page about the
+          editor: entering the canvas automatically disarms the runtime so that a draft you are part
+          way through editing cannot fire on a schedule. Re-arming is a deliberate click on the header
+          switch. See <a href="arming.html">Runtime arming</a>.
+        </p>
+      </div>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="canvas.html">
+          <div class="kg-card-title">The canvas editor</div>
+          <div class="kg-card-desc">What the toolbar, the panels and the selection tools actually do.</div>
+        </a>
+        <a class="kg-card" href="troubleshooting.html">
+          <div class="kg-card-title">Troubleshooting</div>
+          <div class="kg-card-desc">Symptoms, causes and fixes for the things that most often go wrong.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

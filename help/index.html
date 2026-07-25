@@ -1,0 +1,111 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Knotarium help — home. Served at /help/ by the app, and openable directly from the filesystem.
+  All paths are relative so both work without configuration.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knotarium Help</title>
+<meta name="description" content="Complete documentation for Knotarium — self-hosted, visual workflow automation.">
+<link rel="stylesheet" href="assets/help.css">
+</head>
+<body data-kg-page="index">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Knotarium documentation</h1>
+      <p class="kg-lead">
+        Everything about building, running, securing and extending your Knotarium instance. If you are
+        new here, start with <a href="pages/introduction.html">What is Knotarium?</a> — it explains the
+        pieces in about five minutes. If you are setting up a server, the
+        <a href="pages/configuration.html">configuration reference</a> documents every setting the
+        application reads. If something is misbehaving, go straight to
+        <a href="pages/troubleshooting.html">troubleshooting</a>.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="pages/introduction.html">
+          <div class="kg-card-title">Getting started</div>
+          <div class="kg-card-desc">What Knotarium is, how to install it, and building your first working workflow.</div>
+        </a>
+        <a class="kg-card" href="pages/canvas.html">
+          <div class="kg-card-title">Building workflows</div>
+          <div class="kg-card-desc">The canvas, expressions, variables, conditions and sub-flows.</div>
+        </a>
+        <a class="kg-card" href="pages/runs.html">
+          <div class="kg-card-title">Running and debugging</div>
+          <div class="kg-card-desc">Triggers, the run inspector, versions, error handling and the dead letter queue.</div>
+        </a>
+        <a class="kg-card" href="pages/nodes-overview.html">
+          <div class="kg-card-title">Node reference</div>
+          <div class="kg-card-desc">Every node you can place: its fields, its output ports, and what it needs to run.</div>
+        </a>
+        <a class="kg-card" href="pages/settings-overview.html">
+          <div class="kg-card-title">Administration</div>
+          <div class="kg-card-desc">Settings, the security model, capabilities, sandbox, retention and backups.</div>
+        </a>
+        <a class="kg-card" href="pages/configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Every setting and environment variable, its default, and what changing it does.</div>
+        </a>
+        <a class="kg-card" href="pages/custom-packages.html">
+          <div class="kg-card-title">Extending Knotarium</div>
+          <div class="kg-card-desc">Authoring custom node packages, the REST API, and building from source.</div>
+        </a>
+        <a class="kg-card" href="pages/troubleshooting.html">
+          <div class="kg-card-title">Troubleshooting</div>
+          <div class="kg-card-desc">Symptoms, causes and fixes — start here when something is not behaving.</div>
+        </a>
+      </div>
+
+      <h2>What you can do with it</h2>
+      <p>
+        Knotarium is self-hosted, visual workflow automation. You design an automation as a graph of
+        nodes on a canvas — HTTP calls, database queries, file and email operations, AI steps, and
+        inline C# — wire them together with conditions, loops and parallel branches, and start the
+        result from a manual click, a schedule, a webhook, or a poller.
+      </p>
+      <p>
+        The whole product is one .NET process serving both the API and the user interface, storing
+        everything in a single local SQLite file. There is no separate database server, no Node.js
+        runtime, and nothing phones home.
+      </p>
+
+      <h2>Finding things quickly</h2>
+      <ul>
+        <li>Press <kbd>/</kbd> or <kbd>Ctrl</kbd> + <kbd>K</kbd> anywhere to search.</li>
+        <li>The sidebar lists every page, grouped by topic.</li>
+        <li>Long pages have an outline on the right that tracks where you are.</li>
+      </ul>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Screens have no addresses</span>
+        <p>
+          Knotarium's interface keeps its navigation state in the browser session rather than in the
+          address bar, so individual screens cannot be bookmarked or linked. Throughout this
+          documentation a location is written as a click path, like
+          <span class="kg-path">Settings &rsaquo; Capabilities</span>, meaning: open the
+          <strong>Settings</strong> tab in the header, then choose <strong>Capabilities</strong> in
+          the list on the left.
+        </p>
+      </div>
+
+    </article>
+  </main>
+</div>
+
+<script src="assets/nav.js"></script>
+<script src="assets/help.js"></script>
+</body>
+</html>

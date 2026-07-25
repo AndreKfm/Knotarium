@@ -1,0 +1,387 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Every way a run starts. The node catalog is taken from
+  Backend/Knotarium.Features.Compiler/InMemoryNodePackageManifestProvider.cs (authoritative), the
+  behaviour from the scheduling/polling/webhook services and the editor property forms.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triggers · Knotarium Help</title>
+<meta name="description" content="Every way a Knotarium run can start — manual, webhook, cron, polling, error and device signals — and which version of the workflow each one executes.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="triggers.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Triggers</h1>
+      <p class="kg-lead">
+        A run begins in exactly one of six ways: you press Run, an HTTP caller posts to the webhook
+        endpoint, a cron schedule comes due, a polling trigger sees something new, another workflow
+        fails and hands off to the error workflow, or an external device raises a signal. This page
+        covers each of them — what configures it, what it produces, and how it fails.
+      </p>
+
+      <h2>The trigger nodes</h2>
+      <p>
+        Trigger nodes are marked trigger-only in the node catalog, which means they may start a graph
+        and cannot be wired into the middle of one. They all sit in the <strong>Triggers</strong>
+        palette category.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Node</th><th>Configuration</th><th>Output port</th></tr></thead>
+          <tbody>
+            <tr><td>Start</td><td>None.</td><td><code>result</code></td></tr>
+            <tr><td>Manual Trigger</td><td>None.</td><td><code>result</code></td></tr>
+            <tr><td>Webhook Trigger</td><td>An optional <code>payload</code> field.</td><td><code>result</code> (object)</td></tr>
+            <tr><td>Cron Scheduler</td><td><code>cronExpression</code> and <code>timezoneId</code>, both required.</td><td><code>triggeredAt</code> (string)</td></tr>
+            <tr><td>Polling Trigger</td><td>Interval, source kind and change detection, plus the fields the chosen source needs.</td><td><code>result</code></td></tr>
+            <tr><td>Error Trigger</td><td>None — routing is a global setting, not node configuration.</td><td><code>result</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        External Device blocks are not trigger nodes and live in the <strong>External</strong> category,
+        but a graph built around them is started by inbound signals rather than by anything on this list.
+        They are covered in their own section below.
+      </p>
+
+      <h2>Triggers run the active version, not your draft</h2>
+      <p>
+        This is the single most important thing to understand about starting a run, and it applies to
+        <strong>every</strong> start path without exception. A run always executes an immutable published
+        version — specifically the one currently marked active — never the working draft in your editor.
+        The webhook, scheduler, polling and simulate-signal endpoints all resolve the active version and
+        refuse with HTTP 409 and the message <em>"Workflow has no active version. Publish and activate a
+        version before triggering execution."</em> when there is not one.
+      </p>
+      <p>
+        The editor's Run button is not an exception; it is the mechanism that makes this invisible. Run
+        first <strong>activates the version selected in the toolbar dropdown</strong> and then triggers
+        the workflow. Activation happens on every press, so the dropdown selection is always what
+        executes and no separate activate step is needed. The practical rule is: save and publish, then
+        run. Editing the canvas and pressing Run without publishing re-runs the previously published
+        version, and the change you just made is not in it.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Pinned test outputs behave differently per origin</span>
+        <p>
+          A node with a pinned output emits its pinned sample instead of executing — but only on a run
+          whose origin is <code>manual</code>. Automatic runs from a webhook, a schedule, a poll or a
+          device signal ignore pins entirely and execute the node for real. Publishing a version that
+          still contains pins succeeds, with a warning naming the pinned nodes. That combination is a
+          real trap: the workflow can look correct every time you test it by hand and behave completely
+          differently the moment a schedule fires it.
+        </p>
+      </div>
+
+      <h2>Manual runs</h2>
+      <p>
+        A graph starting with a Start or Manual Trigger node is run from the canvas toolbar's green
+        <strong>Run</strong> button. The button is disabled until at least one version has been
+        published — its tooltip then reads <em>"Publish a version (Save &amp; Publish) before
+        running."</em> Running while previewing an older version is allowed: the preview closes and the
+        previewed version is what runs.
+      </p>
+      <p>
+        The run's origin is recorded as <code>manual</code>. Starting a run does not navigate away from
+        the editor; a non-disruptive toast reports that the run started, and the graph's variable pins
+        and per-node status colours fill in live while you keep working. Manual runs are never gated by
+        the arming switch.
+      </p>
+      <p>
+        A start can still be refused. If the execution queue is at capacity the response is HTTP 429
+        naming the pending-run limit, and if the version fails to compile the response is HTTP 400
+        carrying the compiler diagnostics, which the editor surfaces in its diagnostics panel rather than
+        as a bare error.
+      </p>
+
+      <h2>Webhook triggers</h2>
+      <p>
+        The inbound trigger is a single machine-facing endpoint, <code>POST /api/executions</code>, whose
+        JSON body names the workflow to start and supplies its input variables:
+      </p>
+      <pre><code><span class="tok-comment"># Start a workflow from outside</span>
+<span class="tok-cmd">curl</span> -X POST http://localhost:43120/api/executions \
+  -H <span class="tok-str">'Content-Type: application/json'</span> \
+  -H <span class="tok-str">'X-Knotarium-Webhook-Secret: &lt;secret&gt;'</span> \
+  -d <span class="tok-str">'{"workflowDefinitionId":"&lt;id&gt;","inputVariables":{"customer":"acme"}}'</span></code></pre>
+      <p>
+        The endpoint is deliberately anonymous — it is called by other systems, not by a signed-in
+        browser — so it is protected by four separate gates instead of a user session, checked in this
+        order:
+      </p>
+      <ol>
+        <li>The <strong>per-workflow webhook secret</strong>, when one is configured. The caller presents
+            the raw secret in the <code>X-Knotarium-Webhook-Secret</code> header and it is compared in
+            constant time. A wrong or missing secret is 401. A workflow with no secret configured stays
+            open, preserving the original machine-facing contract.</li>
+        <li>The <strong>arming switch</strong>. A disarmed runtime answers 409.</li>
+        <li>The <strong>workflow's enabled flag</strong>. A deactivated workflow answers 409 with
+            <em>"Workflow is deactivated and cannot be triggered externally."</em></li>
+        <li>An <strong>active version</strong> must exist, or 409 again.</li>
+      </ol>
+      <p>
+        Two limits bound what an anonymous caller can do to the instance. Requests are rate-limited by
+        <code>Security__RateLimit__AnonymousMachinePerMinute</code>, which defaults to
+        <strong>60 requests per minute</strong> and is shared with the run-resumption endpoint; raise it
+        if legitimate webhook traffic is being rejected. The request body is capped by
+        <code>Security__WebhookMaxBodyBytes</code>, default <strong>1048576</strong> bytes. The body limit
+        is enforced by the web server during the read, so an oversized payload is never fully buffered or
+        parsed.
+      </p>
+      <p>
+        A successful call returns HTTP 202 with the new run's identifier, so the caller can follow the
+        run without waiting for it. A full queue returns 429; a version that fails to compile returns 400
+        with diagnostics. The run's origin is recorded as <code>webhook</code>.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">A workflow without a webhook secret is open to anyone who can reach the port</span>
+        <p>
+          The absence of a secret is not an oversight in the design, it is backwards compatibility — but
+          it means any process that can open a socket to the instance can start that workflow with input
+          variables of its choosing. Configure a secret for every workflow you expose, and treat the
+          combination of a network-reachable bind address and an armed runtime as the moment that becomes
+          mandatory.
+        </p>
+      </div>
+
+      <h2>Cron schedules</h2>
+      <p>
+        A Cron Scheduler node carries a five-field cron expression and an IANA time-zone identifier. The
+        property form offers two modes. <strong>Simple</strong> builds the expression from a frequency
+        (every N minutes, hourly, daily, weekdays, weekly, monthly) plus the day and time controls that
+        frequency needs, and shows the generated expression underneath so you can see what it produced.
+        <strong>Advanced (cron)</strong> exposes the raw expression: five fields in the order
+        <code>minute hour day-of-month month day-of-week</code>, with Sunday as <code>0</code>,
+        <code>*</code> for any, <code>*/5</code> for steps and <code>1-5</code> for ranges. An expression
+        the simple builder cannot represent opens the form in advanced mode and warns rather than
+        silently rewriting it.
+      </p>
+      <p>
+        The time zone is a combobox: pick a suggestion or type any IANA identifier such as
+        <code>Europe/Berlin</code>. It is required, and occurrences are computed in that zone, so a daily
+        08:00 schedule stays at local 08:00 across a daylight-saving transition.
+      </p>
+      <p>
+        The scheduling worker wakes every ten seconds and evaluates whatever is due. Schedules belonging
+        to an explicitly deactivated workflow are skipped, and a schedule whose workflow has no active
+        version is skipped with a log entry rather than an error. Claiming a due occurrence is atomic, so
+        a duplicate claim simply advances the schedule instead of firing twice. Runs started this way
+        carry the origin <code>schedule</code>.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Missed occurrences catch up, but only ten of them</span>
+        <p>
+          When an instance was stopped over several scheduled occurrences, evaluation walks forward
+          through the missed windows to find where it should resume — up to <strong>ten</strong>
+          occurrences, after which it logs that the catch-up cap was reached and continues from there. A
+          minutely schedule that was down for a day therefore fires once on return, not fourteen hundred
+          times.
+        </p>
+      </div>
+
+      <h2>Polling triggers</h2>
+      <p>
+        A polling trigger asks a source whether anything has changed and starts a run only when the
+        answer is yes. Three fields are always present.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Values</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Interval (seconds)</td>
+              <td>integer, minimum 1; the form starts at 60</td>
+              <td>How long after each poll the next one becomes due. Required.</td>
+            </tr>
+            <tr>
+              <td>Source Kind</td>
+              <td><code>http</code> · <code>openapi</code></td>
+              <td>Whether to call a URL directly or an operation from an imported OpenAPI specification. Required.</td>
+            </tr>
+            <tr>
+              <td>Change Detection</td>
+              <td><code>etag</code> · <code>last-modified</code> · <code>hash</code> · <code>json-cursor</code> · <code>always</code></td>
+              <td>How "something is new" is decided. Required; an unrecognised value falls back to <code>hash</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The change-detection strategies differ in what they need from the server.
+        <code>etag</code> and <code>last-modified</code> compare the corresponding response header against
+        the stored cursor; if the server does not send that header at all, the poll is treated as new so a
+        run is never silently skipped — which on a badly-behaved server means a run every interval.
+        <code>hash</code> hashes the response body, needs no server cooperation, and is the safe default
+        precisely because it cannot flood you with runs. <code>json-cursor</code> reads a value out of the
+        response using the JSONPath in the <strong>JSON Cursor Path</strong> field, which appears only
+        when this strategy is selected — for example <code>$.data.cursor</code>. <code>always</code>
+        starts a run on every poll with no comparison at all.
+      </p>
+      <p>
+        An <code>http</code> source adds a <strong>URL</strong> (required, and it accepts expressions such
+        as <code>{{ $variables.myVar }}</code>), a <strong>Method</strong> chosen from GET, POST, PUT,
+        PATCH, DELETE and HEAD, an optional <strong>Headers (JSON)</strong> object, and an optional
+        <strong>API Key Secret</strong> picked from your stored credentials, whose value is injected as
+        the <code>Authorization</code> header. An <code>openapi</code> source instead asks for a
+        <strong>Server Config</strong>, an <strong>API Spec</strong> and an <strong>Operation</strong>;
+        the spec selector is only there to narrow the operation list and is not itself saved with the
+        node.
+      </p>
+      <p>
+        The polling worker also ticks every ten seconds and processes whatever is due. The cursor advances
+        only when a run was actually created, so a poll that finds new data but cannot start a run — no
+        active version, for instance — will find the same data new again on the next pass rather than
+        losing it. When a poll throws, the failure is recorded on the trigger and the next poll is
+        scheduled one interval later, so a broken endpoint is retried at the configured rate instead of
+        being hammered. One failing trigger never stalls the others.
+      </p>
+
+      <h2>The Error Trigger</h2>
+      <p>
+        An Error Trigger node marks a workflow as the entry point of an error handler. It takes no
+        configuration: which workflow plays that role is a single global choice made in
+        <span class="kg-path">Settings &rsaquo; Notifications</span>. When any other workflow fails, the
+        chosen workflow is started with the origin <code>error</code>, and the failure context — the
+        failed workflow, run, node, node type, message, original trigger origin and timestamp — is
+        emitted on the node's <code>result</code> port and also flattened into individual global
+        variables. The handler is never re-triggered by its own failures. This is covered in full on the
+        error-handling page.
+      </p>
+
+      <h2>External device signals</h2>
+      <p>
+        A graph containing External Device blocks reacts to signals from a connected system: device
+        <em>events</em> the device raises, and incoming <em>actions</em> it sends. Each wired output pin
+        becomes an entry point, and when a matching signal arrives the engine starts an ordinary run
+        seeded at that pin's downstream nodes.
+      </p>
+      <p>
+        Inbound signals are gated by the arming switch. While disarmed the subscription stays connected
+        and the signal is simply dropped, so nothing has to be re-registered when you arm the instance
+        again. Duplicate deliveries of the same signal instance — a provider re-sending a still-active
+        event after a reconnect, for example — are de-duplicated, and a pin targeting a specific lifecycle
+        phase only fires on the matching transition. Runs started this way carry the origin
+        <code>deviceEvent</code>; the run inspector labels them EVENT or ACTION depending on the signal.
+      </p>
+
+      <h3>Manual Run is disabled for these graphs</h3>
+      <p>
+        When a graph contains an External Device block and has <strong>no</strong> Start or Manual Trigger
+        node, the toolbar hides the Run button. In its place sits a non-interactive emerald status badge
+        reading <strong>Event-driven · runs on device events</strong>. It is a status, not a disabled
+        button: there is nothing for a manual run to start, because the device block itself is inert and
+        a generic run would execute it as a disconnected no-op and never flow out of the pin.
+      </p>
+      <p>
+        Two real actions sit next to that badge. <strong>Watch live runs →</strong> opens the run
+        inspector on this workflow's most recent run and then follows new device-event runs as they
+        arrive. <strong>Simulate signal</strong> is the manual test path that replaces Run.
+      </p>
+
+      <h3>The Simulate signal dialog</h3>
+      <p>
+        The dialog fires one wired pin as if the device had sent it. Its <strong>Pin</strong> dropdown
+        lists every simulatable pin, marked as an action or an event. Choosing an action reveals a
+        <strong>Sample fields</strong> section with one input per statically known field of that action;
+        blank fields are omitted from the payload, and an action with no static fields says so and sends
+        an empty payload. Choosing an event says instead that it fires the event as "started" with an
+        empty payload. <strong>Fire signal</strong> starts the run and opens it in the run inspector
+        immediately — unlike a background Run, a simulation is an explicit test, so it takes you to the
+        result.
+      </p>
+      <p>
+        A simulated run is a real run: it uses the active version, and the graph reads the synthetic
+        envelope through <code>signal.params.*</code> exactly as it would a live one. Simulation is
+        <strong>not</strong> gated by the arming switch, which is what makes it the way to test a
+        device-driven workflow while the instance is safely disarmed. It does still require an active
+        version, and it refuses with an explanatory error when no wired pin matches the chosen signal —
+        <em>"No wired device pin found … Wire the pin to a node first."</em>
+      </p>
+
+      <h2>Firing a schedule by hand</h2>
+      <p>
+        The run inspector's <strong>Schedule Controls</strong> panel lists every scheduler node in the
+        workflow with its next fire time, its cron expression and time zone, and a <strong>Fire now</strong>
+        button. Firing by hand starts a run immediately without disturbing the schedule's own next
+        occurrence. It requires the workflow to be enabled and to have an active version, and it refuses
+        with 400 if the node named is not a scheduler node. The resulting run is recorded with the origin
+        <code>schedule</code>, so it appears alongside genuinely scheduled runs in the history.
+      </p>
+
+      <h2>Which origin produced a run</h2>
+      <p>
+        Every run records the origin it was started with, and the run inspector shows it as a coloured
+        pill above the timeline. The vocabulary is small and worth knowing, because several features
+        branch on it.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Origin</th><th>Started by</th><th>Inspector pill</th></tr></thead>
+          <tbody>
+            <tr><td><code>manual</code></td><td>The editor's Run button, or firing a schedule by hand.</td><td>MANUAL, violet</td></tr>
+            <tr><td><code>webhook</code></td><td>An inbound HTTP call.</td><td>MANUAL, violet</td></tr>
+            <tr><td><code>schedule</code></td><td>A due cron occurrence, or Fire now.</td><td>AUTO, cyan</td></tr>
+            <tr><td><code>deviceEvent</code></td><td>An inbound device signal, live or simulated.</td><td>EVENT or ACTION, emerald</td></tr>
+            <tr><td><code>error</code></td><td>The global error workflow reacting to a failure.</td><td>—</td></tr>
+            <tr><td><code>replay</code></td><td>Re-running an earlier run from a chosen node.</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Polling runs are enqueued directly rather than through the trigger endpoint. The inspector only
+        distinguishes the three pill styles above, so anything that is neither a schedule nor a device
+        event reads as MANUAL there even when it came in over HTTP — the recorded origin on the run is
+        still the precise one.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="arming.html">
+          <div class="kg-card-title">Runtime arming</div>
+          <div class="kg-card-desc">The switch that decides whether automatic triggers may fire at all.</div>
+        </a>
+        <a class="kg-card" href="versioning.html">
+          <div class="kg-card-title">Versions and publishing</div>
+          <div class="kg-card-desc">Why every trigger needs an active version, and how one is created.</div>
+        </a>
+        <a class="kg-card" href="runs.html">
+          <div class="kg-card-title">Runs and the inspector</div>
+          <div class="kg-card-desc">Watching what a trigger started, step by step.</div>
+        </a>
+        <a class="kg-card" href="nodes-triggers.html">
+          <div class="kg-card-title">Trigger nodes</div>
+          <div class="kg-card-desc">The per-node reference for every node in the Triggers palette.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -93,6 +93,17 @@ export function LoginPage() {
         >
           <Lock size={15} /> {busy ? 'Please wait…' : isSetup ? 'Create admin & continue' : 'Sign in'}
         </button>
+
+        {/* The bundled help is served anonymously precisely so it is reachable from here — this is
+            where a first-time administrator is most likely to want it, and they have no session yet. */}
+        <a
+          href="/help/"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', textDecoration: 'none' }}
+        >
+          Open the documentation
+        </a>
       </form>
     </div>
   );

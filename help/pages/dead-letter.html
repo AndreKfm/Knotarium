@@ -1,0 +1,227 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The dead-letter triage list. Verified against Frontend/src/components/DeadLetterView.tsx, the
+  discard endpoint in ExecutionEndpoints.cs, ExecutionStatus.cs and JournalRetentionWorker.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dead letter queue · Knotarium Help</title>
+<meta name="description" content="The list of failed runs awaiting triage: what lands there, how to inspect and replay one, and what discarding actually does.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="dead-letter.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Dead letter queue</h1>
+      <p class="kg-lead">
+        The dead letter queue is the instance's inbox of failed runs. It is not a separate store and
+        nothing is moved into it — it is a filtered view of the runs whose status is Failed, kept as a
+        distinct screen so that "things that broke and nobody has looked at yet" is a list you can drive to
+        zero rather than a status you have to remember to filter for.
+      </p>
+
+      <h2>Where it is</h2>
+      <p>
+        <span class="kg-path">Dead Letter</span> is a top-level entry in the header navigation. The screen
+        is a single column: a heading, a <strong>Refresh</strong> button, one row per failed run, and a
+        line of explanatory text. When there is nothing to triage it says
+        <em>"No failed runs. 🎉"</em> — which is the state you are aiming for.
+      </p>
+      <p>
+        The list does not update by itself. It loads when you open the screen and reloads when you press
+        Refresh, so a run that fails while you are looking at the list will not appear until you ask for it.
+      </p>
+
+      <h2>What lands here</h2>
+      <p>
+        Exactly the runs whose status is <strong>Failed</strong>. In practice that means a node failed and
+        <em>nothing in the graph caught it</em>: automatic retries were exhausted or did not apply, and no
+        outgoing edge named <code>error</code> or <code>failure</code> was wired from the failed node. It
+        also includes runs an operator failed deliberately with the <strong>Fail Run</strong> decision on a
+        node awaiting a manual decision.
+      </p>
+      <p>
+        Just as important is what does <strong>not</strong> land here:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Not listed</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Runs that caught their own failure on an error port</td>
+              <td>Following an error edge lets the run continue, so it never reaches Failed status.</td>
+            </tr>
+            <tr>
+              <td>Cancelled runs</td>
+              <td>Cancelled is its own status — usually the result of deactivating a workflow, which cancels its in-flight runs.</td>
+            </tr>
+            <tr>
+              <td>Runs waiting for a retry or a manual decision</td>
+              <td>Still in progress. They appear here only if they eventually fail.</td>
+            </tr>
+            <tr>
+              <td>Runs you have already discarded</td>
+              <td>Discarding moves them to a separate status, off this list.</td>
+            </tr>
+            <tr>
+              <td>Starts that were refused outright</td>
+              <td>A start rejected because the version fails to compile, or because the execution queue is at capacity, persists no run at all — the caller gets the diagnostics or a 429 and there is nothing to fail.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Reading a row</h2>
+      <p>
+        Each row shows the workflow's name — falling back to its identifier when the name is unavailable —
+        and, underneath, the run's trigger origin and the time it last changed, formatted for your locale.
+        The origin is the useful half: a wall of <code>schedule</code> rows says something systemic broke,
+        whereas a single <code>webhook</code> row among them points at one caller.
+      </p>
+      <p>
+        The row itself carries no error message. That is deliberate — a failure message is frequently a
+        multi-line dump, and the list is a triage queue, not a log. The message lives one click away.
+      </p>
+
+      <h2>Triage: open or discard</h2>
+      <p>
+        Every row has exactly two actions, which is the whole workflow of the screen.
+      </p>
+
+      <h3>Open</h3>
+      <p>
+        <strong>Open</strong> loads the run in the Execution Visualizer, which is where all the actual
+        diagnosis happens: the failed node highlighted on the graph it ran against, the expanded failure
+        group in the timeline with the full error, the Time Travel inspector for the inputs and variables
+        as they stood at each step, and right-click replay to re-run from any node — optionally against a
+        newer version, which is how you verify a fix against the exact run that exposed the bug.
+      </p>
+      <p>
+        A replay creates a <em>new</em> run and never modifies the source. The original therefore stays in
+        the dead letter list until you discard it, which is correct: the failure happened, and a successful
+        replay does not un-happen it. Discard it once you are satisfied the replay resolved the situation.
+      </p>
+
+      <h3>Discard</h3>
+      <p>
+        <strong>Discard</strong> marks the run as Discarded so it drops off the list, and writes an
+        <code>ExecutionDiscarded</code> journal entry recording that it was discarded from the dead-letter
+        view. Only a failed run can be discarded — anything else is refused with the message
+        <em>"Only failed executions can be discarded."</em>
+      </p>
+      <p>
+        Discarding is <strong>not</strong> a delete and not a retry. It changes a status and nothing else:
+      </p>
+      <ul>
+        <li>The run, its journal, its per-node states and its inputs and outputs all remain in the database
+            and remain openable if you have the run's identifier.</li>
+        <li>Nothing is re-executed and nothing is compensated. Whatever the run did before it failed stays
+            done.</li>
+        <li>The version the run executed remains protected from the version-retention cap, because that cap
+            preserves any version a retained run used.</li>
+      </ul>
+      <p>
+        Read it as "acknowledged": the human decision that this failure has been understood and needs no
+        further action.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">There is no undiscard</span>
+        <p>
+          The screen offers no way back. A discarded run is not deleted, but it will not reappear in this
+          list, so if you discard something you have not actually investigated, you will need its run
+          identifier — from a notification, a log line or the error-handler run's link back — to find it
+          again. Open before you discard.
+        </p>
+      </div>
+
+      <h2>How it relates to the error workflow</h2>
+      <p>
+        The dead letter queue and the global error workflow react to the same event — a run reaching Failed
+        status — but they are complementary rather than alternatives, and neither suppresses the other.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th></th><th>Error workflow</th><th>Failure alerts</th><th>Dead letter queue</th></tr></thead>
+          <tbody>
+            <tr><td>When</td><td>Immediately, in the background</td><td>Immediately, in the background</td><td>When you next open the screen</td></tr>
+            <tr><td>Who acts</td><td>A workflow you wrote</td><td>A channel you configured</td><td>A person</td></tr>
+            <tr><td>Good for</td><td>Automatic compensation, escalation, ticket creation</td><td>Telling somebody</td><td>Deciding what actually happened</td></tr>
+            <tr><td>Clears itself</td><td>n/a</td><td>n/a</td><td>Only when you discard</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A failed run therefore does three things at once: it starts the error workflow if one is configured
+        and neither loop guard blocks it, it queues a failure alert to whichever channels the workflow
+        resolves to, and it appears in this list. The first two are automatic responses; this list is the
+        record that a human still owes it a decision.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">A handler run that fails appears here too</span>
+        <p>
+          Error-handler runs are ordinary runs, so one that fails while handling somebody else's failure
+          lands in this list alongside the original. It will not have spawned a handler of its own — the
+          loop guard on the <code>error</code> origin prevents that — so the dead letter queue is where a
+          broken error workflow becomes visible. Two rows appearing together at the same timestamp is
+          usually that pattern, and the lineage pills in the visualizer will confirm it.
+        </p>
+      </div>
+
+      <h2>The list empties itself eventually</h2>
+      <p>
+        Retention prunes terminal runs older than <code>Retention__RunHistoryDays</code>, which defaults to
+        <strong>30</strong> days, and deleting a run cascades to its journal and node states. Failed runs
+        are terminal, so an untriaged failure disappears from this list once it ages out — along with the
+        evidence needed to diagnose it.
+      </p>
+      <p>
+        That is the argument for keeping the queue near zero rather than treating it as an archive. If you
+        need failures to persist longer than they are being investigated, raise the retention window at
+        <span class="kg-path">Settings &rsaquo; Retention</span>; note that a stored value there overrides
+        the configuration file, and that keeping everything forever grows the database without bound.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="runs.html">
+          <div class="kg-card-title">Runs and the inspector</div>
+          <div class="kg-card-desc">The visualizer that Open takes you to, and how to replay from a node.</div>
+        </a>
+        <a class="kg-card" href="error-handling.html">
+          <div class="kg-card-title">Error handling and alerts</div>
+          <div class="kg-card-desc">Catching failures before they get this far, and being told when they do.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The retention window that decides how long a failed run survives.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

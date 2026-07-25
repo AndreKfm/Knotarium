@@ -25,6 +25,16 @@ managers — `Frontend/package-lock.json` (npm) and the NuGet restore graph (`do
 Build/test tooling (not shipped in the runtime bundle): Vite, Vitest, ESLint (MIT), TypeScript,
 Playwright (Apache-2.0), and their dependencies.
 
+## Fonts (bundled with the offline help)
+
+The offline help under `help/` embeds these font files so it renders without network access.
+Both are the latin subset only, redistributed unmodified.
+
+| Font | License | Project |
+|---|---|---|
+| Plus Jakarta Sans | SIL Open Font License 1.1 | https://github.com/tokotype/PlusJakartaSans |
+| JetBrains Mono | SIL Open Font License 1.1 | https://github.com/JetBrains/JetBrainsMono |
+
 ## Backend (.NET / NuGet)
 
 | Package | License | Project |

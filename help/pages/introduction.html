@@ -1,0 +1,170 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Orientation page: what the product is and what the moving parts are called, before any task.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What is Knotarium? · Knotarium Help</title>
+<meta name="description" content="An orientation to Knotarium — what it does, what the pieces are called, and how it differs from other automation tools.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="introduction.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>What is Knotarium?</h1>
+      <p class="kg-lead">
+        Knotarium is self-hosted workflow automation that you build by drawing. Instead of writing a
+        script that calls an API, checks a result and sends an email, you place those three steps on a
+        canvas, connect them, and press Run. The result is something you can watch execute, step
+        through afterwards, version, and hand to someone else.
+      </p>
+
+      <h2>The shape of the product</h2>
+      <p>
+        Everything is one program. A single .NET process serves the API and the user interface, and
+        stores its data in one local SQLite file. There is no database server to install, no Node.js
+        runtime, no message broker, and no cloud account. You can run it from a folder, as a Windows
+        service, or as a container, and the whole thing is a few hundred megabytes on disk.
+      </p>
+      <p>
+        That matters most when things go wrong: there is exactly one process to restart, one file to
+        back up, and one log to read.
+      </p>
+
+      <h2>The vocabulary</h2>
+      <p>
+        Five words carry most of the meaning in this documentation, and they are worth pinning down
+        before anything else.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 150" role="img" aria-labelledby="anatomy-title">
+          <title id="anatomy-title">A workflow: a trigger node connected through two nodes to an end node</title>
+          <defs>
+            <marker id="edge-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6b7280"/>
+            </marker>
+          </defs>
+
+          <rect x="8" y="8" width="684" height="134" rx="12" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="24" y="30" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11" font-weight="700" letter-spacing="0.09em">WORKFLOW</text>
+
+          <path d="M148 82 L188 82" stroke="#6b7280" stroke-width="1.6" marker-end="url(#edge-arrow)"/>
+          <path d="M328 82 L368 82" stroke="#6b7280" stroke-width="1.6" marker-end="url(#edge-arrow)"/>
+          <path d="M508 82 L548 82" stroke="#6b7280" stroke-width="1.6" marker-end="url(#edge-arrow)"/>
+
+          <rect x="28" y="56" width="120" height="52" rx="10" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1.6"/>
+          <text x="44" y="78" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">TRIGGER</text>
+          <text x="44" y="96" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Start</text>
+
+          <rect x="188" y="56" width="140" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.6"/>
+          <text x="204" y="78" fill="#06b6d4" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">NODE</text>
+          <text x="204" y="96" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">HTTP Request</text>
+
+          <rect x="368" y="56" width="140" height="52" rx="10" fill="rgba(245,158,11,0.08)" stroke="#f59e0b" stroke-width="1.6"/>
+          <text x="384" y="78" fill="#f59e0b" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">NODE</text>
+          <text x="384" y="96" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Condition</text>
+
+          <rect x="548" y="56" width="124" height="52" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.6"/>
+          <text x="564" y="78" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="10" font-weight="800" letter-spacing="0.08em">NODE</text>
+          <text x="564" y="96" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">End</text>
+
+          <text x="160" y="130" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="11">edge</text>
+        </svg>
+        <figcaption>A workflow is nodes joined by edges. One execution of it is a run.</figcaption>
+      </figure>
+
+      <ul>
+        <li><strong>Workflow</strong> — the graph you draw. It is the unit you save, publish, share and enable.</li>
+        <li><strong>Node</strong> — one step. Sending an HTTP request, querying a database, branching on a condition, writing a log line.</li>
+        <li><strong>Edge</strong> — a connection from one node's output to the next node's input. Edges carry both the flow of control and the data.</li>
+        <li><strong>Trigger</strong> — what starts a run: a manual click, a schedule, an inbound webhook, a poller that watches a source, or an error elsewhere.</li>
+        <li><strong>Run</strong> — one execution. Every run is recorded step by step, which is what makes the debugging tools possible.</li>
+      </ul>
+
+      <h2>What makes it different</h2>
+
+      <h3>The logic is real C#, compiled as it runs</h3>
+      <p>
+        The Inline Code node and custom node packages are genuine C# compiled at runtime, not a
+        scripting dialect bolted on for configuration. That is a real capability and a real risk,
+        which is why code execution is switched off until an administrator turns it on.
+      </p>
+
+      <h3>You can step backwards through a finished run</h3>
+      <p>
+        Because every run is journaled node by node, the inspector can show you what each node
+        received, what it produced, and what the variables looked like immediately before and after it
+        ran — for a run that finished days ago. When a workflow misbehaves you are reading a
+        recording, not reproducing a bug.
+      </p>
+
+      <h3>AI output passes through deterministic gates</h3>
+      <p>
+        Alongside the usual prompt and routing nodes, two nodes turn a language model's answer into
+        structured findings that ordinary code then judges. A claim with no supporting evidence is
+        marked unsupported rather than being quietly accepted. The decision to continue is made by
+        your rule, not by asking a model whether it thinks it did well.
+      </p>
+
+      <h3>Dangerous things are off until you switch them on</h3>
+      <p>
+        File access is denied by default and granted one directory at a time. Code execution and
+        database access are disabled until enabled explicitly. Outbound requests are checked against an
+        egress policy that blocks internal addresses. Importing a workflow that contains a privileged
+        node asks you to acknowledge it first.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Treat a running instance as privileged</span>
+        <p>
+          Knotarium exists to execute code and touch systems on your behalf. Anyone who can reach the
+          interface can eventually make it do those things. Do not put an instance on the public
+          internet without your own authentication layer in front of it, and be deliberate about who
+          holds an account.
+        </p>
+      </div>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Every setting the application reads, what it defaults to, and where your data is stored.</div>
+        </a>
+      </div>
+
+      <div class="kg-note">
+        <span class="kg-note-label">This documentation is being written</span>
+        <p>
+          Pages shown in grey in the sidebar are planned but not yet written. Everything listed in
+          normal text is complete and accurate against the current build.
+        </p>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Backup & Restore. Screen behaviour from Frontend/src/components/BackupRestorePanel.tsx; archive
+  format, contents and restore semantics from Features/Backup/* and Api/Endpoints/AdminBackupEndpoints.cs.
+  The extension is .kgbak, verified in BackupFormat.FileExtension.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backup and restore · Knotarium Help</title>
+<meta name="description" content="Creating an encrypted .kgbak snapshot of the whole instance, the stepped destructive restore, and how this relates to a plain file-level backup.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="backup-restore.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Backup and restore</h1>
+      <p class="kg-lead">
+        <span class="kg-path">Settings &rsaquo; Backup &amp; Restore</span> produces a single encrypted
+        file containing everything this instance manages — including its secrets — and can replace the
+        instance's entire state from one. Because a backup carries decrypted credentials inside its
+        envelope, it is not a shareable artefact and it lives here under instance settings rather than
+        alongside templates and bundles.
+      </p>
+
+      <h2>The file</h2>
+      <p>
+        A backup is a single file with the extension <code>.kgbak</code>, named
+        <code>knotarium-backup-</code> followed by the creation timestamp in UTC — for example
+        <code>knotarium-backup-20260725-141203.kgbak</code>. The browser downloads it directly; nothing is
+        written on the server.
+      </p>
+      <p>
+        Inside the envelope is an ordinary zip with a stable layout: a manifest at <code>backup.json</code>,
+        the workflow-group file, one JSON document per database aggregate under <code>data/</code>, and one
+        file per workflow draft under <code>workflows/</code>. The zip is written in a canonical order with
+        a pinned timestamp so the same content always produces the same bytes. You never see any of that —
+        the whole zip is encrypted — but it is why an archive containing an entry the reader does not
+        recognise is rejected outright rather than partially restored.
+      </p>
+
+      <h3>The encryption</h3>
+      <p>
+        The envelope is AES-256-GCM. Its header is cleartext — a magic marker, the envelope version, a byte
+        recording how the key was derived, the iteration count and a random salt — and that header is fed
+        to the cipher as associated data, so tampering with the key-derivation parameters makes
+        authentication fail rather than silently changing how the file is read.
+      </p>
+      <p>
+        A wrong passphrase and a corrupted archive are indistinguishable by design: both fail the
+        authentication tag and both produce the message <em>Incorrect passphrase, or the backup archive is
+        corrupt</em>.
+      </p>
+
+      <h2>Creating a backup</h2>
+      <p>
+        The left card is headed <strong>Create a backup</strong> and tagged <em>Safe</em>. It offers two
+        protection modes as a pair of buttons.
+      </p>
+
+      <h3>Passphrase</h3>
+      <p>
+        The default and the portable option. The key is derived from your passphrase with PBKDF2-HMAC-SHA256
+        at 600,000 iterations — the OWASP-recommended floor, chosen so guessing against a stolen archive is
+        expensive. The iteration count travels in the header so it can be raised in future without breaking
+        older files.
+      </p>
+      <p>
+        You type the passphrase twice. The card requires at least eight characters and a match before the
+        download button enables, and shows a four-segment strength meter labelled Weak, Fair, Good or
+        Strong based on length, mixed case with digits, and the presence of a symbol. A passphrase under
+        eight characters is flagged <em>Too short</em> inline.
+      </p>
+      <p>
+        A warning above the field says plainly that the passphrase cannot be recovered. That is literal.
+        There is no escrow, no reset, and no way for the server to open the file — lose the passphrase and
+        the backup is permanently unreadable. Store the two together and safely.
+      </p>
+
+      <h3>This server's key</h3>
+      <p>
+        The key is derived with HKDF-SHA256 from this host's credential encryption key, domain-separated so
+        it is not the same key used for anything else. There is no passphrase to remember and nothing to
+        lose — but the archive only decrypts on a host whose credential key is unchanged.
+      </p>
+      <p>
+        That makes it right for automatic local snapshots and useless for migration, by design. If you
+        restore it elsewhere the failure is explicit rather than confusing: <em>a server-key backup only
+        restores on the host that created it</em>. It also means that replacing or losing the credential
+        key makes every server-key backup you hold unreadable at the same moment it makes the live database's
+        credentials unreadable — which is the opposite of what you want from a backup.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Which to choose</span>
+        <p>
+          Use a passphrase for anything you keep as disaster recovery or intend to move to another host.
+          Use the server key only for convenient snapshots taken before a risky change on a machine you are
+          not leaving. If you keep only one kind, keep the passphrase kind.
+        </p>
+      </div>
+
+      <h2>What is in a backup — and what is not</h2>
+      <p>
+        The snapshot covers everything the instance manages as configuration and content:
+      </p>
+      <ul>
+        <li>Workflow definitions, their published versions, the active-version pointers and the activation log.</li>
+        <li>Workflow drafts from the file store, and the dashboard's workflow grouping.</li>
+        <li>Schedules and polling triggers.</li>
+        <li>Installed node packages with their versions.</li>
+        <li>Credentials and notification channels.</li>
+        <li>Application settings — which includes the capability policy, the file-access policy, the sandbox and retention settings, and the AI provider configuration.</li>
+        <li>Server configurations and imported OpenAPI specifications with their version history.</li>
+      </ul>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Three things are not in a backup</span>
+        <p>
+          <strong>Run history</strong> is not carried. The manifest has a flag for it and the preview shows
+          <em>Not included</em>, but the payload does not contain runs or journals today. <strong>User
+          accounts</strong> are not carried either, so a restore does not change who can sign in — which is
+          worth knowing before you assume a restore returns an instance to a known state in every respect.
+          And the <strong>audit log</strong> is not part of the snapshot.
+        </p>
+      </div>
+      <p>
+        The interface exposes no option for run history; the underlying request has one but it defaults to
+        excluded and the screen does not offer it.
+      </p>
+
+      <h3>How secrets travel</h3>
+      <p>
+        This is the part that dictates everything else about the format. Credential values and
+        notification-channel configurations are stored in the database encrypted under <em>this host's</em>
+        at-rest key, which is not in the database. A raw copy of those ciphertexts is undecryptable on a host
+        with a different key — so a backup carries them <strong>decrypted</strong> inside the encrypted
+        envelope, and the restore re-encrypts them under the target host's key.
+      </p>
+      <p>
+        That is what makes migration between hosts possible at all. It is also exactly why the archive
+        itself must be encrypted and why a backup is not something to leave in a shared folder. Anyone who
+        can open the file has every secret the instance held in plaintext.
+      </p>
+
+      <h2>Restoring</h2>
+      <p>
+        The right card is headed <strong>Restore from a backup</strong> and tagged <em>Destructive</em>,
+        because it is: restoring replaces all current state with the backup's contents. The flow is
+        deliberately stepped so there is no single click that does it.
+      </p>
+
+      <h3>Step one — choose the file</h3>
+      <p>
+        Drop a <code>.kgbak</code> on the drop zone or browse for one. As soon as a file is selected the
+        first six bytes are read <em>in the browser</em> to check the magic marker and read the key-source
+        byte, so the card can tell you whether it is passphrase-protected or server-key encrypted without a
+        round-trip and without decrypting anything. The file chip shows the size in megabytes alongside
+        that verdict.
+      </p>
+
+      <h3>Step two — inspect</h3>
+      <p>
+        For a passphrase backup you enter the passphrase used when it was created. For a detected server-key
+        backup the field is replaced by a note saying no passphrase is needed and the file opens only on
+        this host.
+      </p>
+      <p>
+        <strong>Inspect backup</strong> decrypts the archive and parses the manifest only — nothing is
+        written. The preview shows when the backup was created, the engine version with the format version
+        and database provider, and per-aggregate counts: workflows and versions, schedules and polling
+        triggers, credentials and channels, whether run history is included and the file size, and how the
+        archive was encrypted.
+      </p>
+      <p>
+        Read this before going further. It is the only opportunity to confirm you have the file you think
+        you have, and the credential and workflow counts are the fastest sanity check that the archive is
+        not from the wrong instance or a much older date than expected. Changing the file or the passphrase
+        invalidates the preview so a stale manifest can never be the thing you confirm against.
+      </p>
+      <p>
+        An archive whose format version this build cannot read is rejected as incompatible rather than
+        partially applied.
+      </p>
+
+      <h3>Step three — the two checks</h3>
+      <p>
+        A guard block headed <em>Before restoring — 2 checks</em> appears with the preview.
+      </p>
+      <ul>
+        <li>
+          <strong>Disarm the runtime.</strong> Until it is disarmed the step is open and offers a
+          <em>Disarm now</em> button that flips the same shared state the header pill shows. Once disarmed
+          it reads <em>Runtime disarmed — no live triggers will fire during the restore</em>.
+        </li>
+        <li>
+          <strong>The safety backup is automatic.</strong> This step is always shown as already done,
+          because the current state is snapshotted before any change is made.
+        </li>
+      </ul>
+      <p>
+        The disarm requirement is enforced on the server, not just in the interface. A restore attempted
+        while the runtime is armed is refused before any decryption or write, and the card reports
+        <em>Restore is blocked while the runtime is armed. Disarm the runtime and try again</em>.
+      </p>
+
+      <h3>Step four — type to confirm</h3>
+      <p>
+        A field asks you to type <code>RESTORE</code> to confirm the irreversible replace. The field is
+        disabled until the runtime is disarmed, and the <strong>Restore this instance</strong> button only
+        enables when the preview is present, the runtime is disarmed and the confirmation matches. The
+        server independently requires an explicit confirmation flag and refuses without it, so the typed
+        word is not merely a client-side speed bump.
+      </p>
+
+      <h3>What the restore actually does</h3>
+      <p>
+        In order: it resolves the key, decrypts and reads the archive, and checks format compatibility.
+        Then it writes a <strong>pre-restore safety backup</strong> of the current state, encrypted in the
+        same mode as the incoming archive so it can be opened the same way. Then it decodes every aggregate
+        from the archive up front, so a malformed document fails before anything is deleted.
+      </p>
+      <p>
+        Only then does it open a transaction, clear the managed tables in child-to-parent order, and
+        re-insert everything in parent-to-child order — re-encrypting credentials and channel configurations
+        under the current host's key as it goes. Run history is left untouched, since it was never in the
+        archive.
+      </p>
+      <p>
+        On success the card reports how many workflows and credentials replaced the previous state, shows
+        the path of the pre-restore safety backup, and reminds you to re-arm the runtime when ready.
+        Re-arming is manual and deliberate.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Where the safety backup really goes</span>
+        <p>
+          The guard step describes it as <code>auto-pre-restore.kgbak</code>. The file is actually written
+          into the operating system's temporary directory with a generated name beginning
+          <code>knotarium-pre-restore-</code> followed by a unique identifier and the ordinary backup file
+          name. The reported path in the success message is the real one — copy it somewhere durable
+          straight away if you might need it. Pre-restore backups older than seven days are deleted by the
+          next restore, and a temporary directory is not a place to keep anything you care about.
+        </p>
+      </div>
+      <p>
+        Note also that the safety backup is encrypted in the same mode as the archive you restored. If you
+        restored from a passphrase backup, opening the safety backup needs that same passphrase.
+      </p>
+
+      <h2>Who may do this</h2>
+      <p>
+        All three operations — create, inspect and restore — require the <code>admin</code> role, because a
+        full-instance backup contains every secret in re-encryptable form. This is one of the few places
+        the role check is actually enforced; see <a href="security.html">Security model</a> for why you
+        should not read more into that than it deserves. On an instance running with authentication
+        disabled the check is a no-op, consistent with every other endpoint being anonymous in that mode.
+      </p>
+
+      <h2>How this relates to a file-level backup</h2>
+      <p>
+        Copying files off the disk is a perfectly reasonable backup strategy, and for a stopped instance it
+        captures more than a <code>.kgbak</code> does — run history and user accounts included. But it has
+        one failure mode that loses data permanently, and it is the single most important thing on this
+        page.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The database and the credential key must be backed up together</span>
+        <p>
+          <code>Knotarium.db</code> holds every credential as ciphertext.
+          <code>.credential-key</code> — sitting beside it in the data directory — is what decrypts them. A
+          copy of the database <strong>without</strong> that key leaves you with credentials that can never
+          be read again: not by you, not by the application, not by anyone. Restoring such a backup gives
+          you an instance whose workflows all reference credentials that will not resolve, and the only
+          repair is to re-enter every secret by hand. Back up the whole data directory as a unit.
+        </p>
+      </div>
+      <p>
+        The trap is easy to fall into because the key is a dotfile that a naive copy of
+        <code>*.db</code> silently misses, and because nothing goes wrong until the day you restore. It is
+        also why <code>Database__ConnectionString</code> deserves care: setting it moves only the database
+        and leaves the key in the data directory, so the two can drift apart without anyone intending it.
+      </p>
+      <p>
+        The comparison in full:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th></th><th>A <code>.kgbak</code> snapshot</th><th>A file-level copy</th></tr></thead>
+          <tbody>
+            <tr><td>Secrets</td><td>Carried decrypted inside the envelope, re-encrypted on restore</td><td>Carried as ciphertext — useless without the key file</td></tr>
+            <tr><td>Portable to another host</td><td>Yes, with a passphrase backup</td><td>Only if the key file travels too</td></tr>
+            <tr><td>Run history</td><td>No</td><td>Yes</td></tr>
+            <tr><td>User accounts</td><td>No</td><td>Yes</td></tr>
+            <tr><td>Audit log</td><td>No</td><td>Yes</td></tr>
+            <tr><td>Needs the instance stopped</td><td>No</td><td>Yes, for a consistent copy</td></tr>
+            <tr><td>Restore is guarded</td><td>Yes — disarm, preview, type to confirm, safety backup</td><td>No — you are copying files over a live database</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        In practice the two complement each other. A passphrase <code>.kgbak</code> is the thing you keep
+        off-site and the thing you use to move an instance; a copy of the whole data directory, taken with
+        the process stopped, is the thing that gets you back exactly where you were including history. What
+        neither of them survives is a database backed up without its key.
+      </p>
+      <p>
+        Where the data directory is, what else lives in it, and how to move it are covered in the
+        <a href="configuration.html">configuration reference</a>.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Where the database and credential key live, and how to relocate them safely.</div>
+        </a>
+        <a class="kg-card" href="users.html">
+          <div class="kg-card-title">Users and sign-in</div>
+          <div class="kg-card-desc">Accounts are not in a backup — how they are created, and how credentials are managed.</div>
+        </a>
+        <a class="kg-card" href="retention.html">
+          <div class="kg-card-title">Retention and disk space</div>
+          <div class="kg-card-desc">Run history is not in a backup either; this is what decides how long it survives.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

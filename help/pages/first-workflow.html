@@ -1,0 +1,484 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Guided walkthrough. Every button label, heading and template name here was read out of the source:
+  Frontend/src/App.tsx, components/{Dashboard,TemplateGallery,TemplatesView,OnboardingEmptyState,
+  CanvasToolbar,SidebarPalette,HttpRequestPropertyForm,ExecutionDetail/*}.tsx, auth/LoginPage.tsx,
+  and Backend/Knotarium.Api/Templates/Sources/*/template.json. Where a label is only an aria-label or
+  a tooltip, the prose says so rather than pretending it is visible text.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your first workflow · Knotarium Help</title>
+<meta name="description" content="A walkthrough from a fresh instance to a working HTTP-calling workflow: create the admin, install a starter, run it, read the execution, then modify it and add a trigger.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="first-workflow.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Your first workflow</h1>
+      <p class="kg-lead">
+        This walkthrough starts at a running instance you have never signed into and ends with a
+        workflow that calls a real HTTP endpoint, logs what came back, and runs on a schedule. It takes
+        about fifteen minutes. Nothing here needs a credential, a capability switched on, or an AI
+        provider — the whole path works on a default install.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">Before you start</span>
+        <p>
+          You need a running instance. If you do not have one yet, the
+          <a href="install.html">install page</a> covers every way of getting one, and all of them end
+          at the same address. The rest of this page assumes you are looking at
+          <code>http://localhost:43120</code> in a browser.
+        </p>
+      </div>
+
+      <h2>Create the administrator</h2>
+      <p>
+        The first screen is the sign-in page, but on a fresh instance it is in setup mode: instead of
+        <span class="kg-path">Sign in to continue</span> it says <span class="kg-path">Create the
+        first administrator</span>, and explains that the instance has no users yet. This mode appears
+        only while sign-in is enabled and no account exists, so it is a one-time screen.
+      </p>
+      <p>
+        Fill in <span class="kg-path">Username</span>, <span class="kg-path">Password</span> and
+        <span class="kg-path">Confirm password</span>, then press <span class="kg-path">Create admin
+        &amp; continue</span>. The account is created with the admin role and you are signed in
+        immediately.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The length rule is enforced on the server, not in the form</span>
+        <p>
+          The password must be at least eight characters. The browser only checks that the two
+          password fields match — the length rule lives in the backend, so a short password produces
+          the server's error message after you submit rather than stopping you as you type. There is no
+          complexity requirement beyond length, and usernames are stored lower-cased, which makes
+          signing in case-insensitive.
+        </p>
+      </div>
+
+      <h2>What you are looking at</h2>
+      <p>
+        You land on the dashboard, headed <span class="kg-path">Workflow Control Center</span>. On a
+        brand-new instance the workflow list is replaced by a welcome panel that reads
+        <span class="kg-path">Welcome — let's build your first workflow</span>, offering a blank canvas
+        or a sample to install. That panel disappears for good once you have a workflow, which is why
+        the rest of this page navigates explicitly rather than relying on it.
+      </p>
+      <p>
+        The bar across the top is the whole navigation. There are no addresses to type — the interface
+        keeps its current screen in memory rather than in the URL, so bookmarking a particular view is
+        not possible and the browser's back button does not move between screens.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Top-bar entry</th><th>What it opens</th></tr></thead>
+          <tbody>
+            <tr><td><span class="kg-path">Dashboard</span></td><td>The workflow list, run statistics and the operations timeline.</td></tr>
+            <tr><td><span class="kg-path">Canvas Editor</span></td><td>A new, blank workflow.</td></tr>
+            <tr><td><span class="kg-path">AI Generate</span></td><td>A dialog that drafts a workflow from a description. Not a screen.</td></tr>
+            <tr><td><span class="kg-path">Templates</span></td><td>The gallery, your saved library, and import and export.</td></tr>
+            <tr><td><span class="kg-path">Settings</span></td><td>Capabilities, file access, sandbox, retention, AI provider and the rest.</td></tr>
+            <tr><td><span class="kg-path">Dead Letter</span></td><td>Failed runs held for review or replay.</td></tr>
+            <tr><td><span class="kg-path">Execution Visualizer</span></td><td>A run in detail. This entry only appears once you have opened a run.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        On the right-hand side of the same bar are the runtime arming switch, a
+        <span class="kg-path">Tour</span> button that replays the guided introduction, a
+        <span class="kg-path">Help</span> link that opens this documentation in a new tab, and the
+        signed-in user menu. The wordmark on the left carries the build version and returns you to the
+        dashboard.
+      </p>
+
+      <h2>Install a starter template</h2>
+      <p>
+        Building the first workflow by hand teaches you the editor slowly and badly. Installing a
+        starter and taking it apart is faster. Open <span class="kg-path">Templates &rsaquo;
+        Browse</span> — the <span class="kg-path">Templates</span> screen has four tabs,
+        <span class="kg-path">Browse</span>, <span class="kg-path">Library</span>,
+        <span class="kg-path">Import</span> and <span class="kg-path">Export</span>, and the first is
+        the built-in gallery.
+      </p>
+      <p>
+        Sixteen starters ship with the product, all authored by the project and all in the
+        <code>starter</code> category. The ones worth knowing before you pick:
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Template</th><th>What it contains</th></tr></thead>
+          <tbody>
+            <tr><td>Hello World</td><td>A start node, one Log node, an end node. The smallest thing that runs.</td></tr>
+            <tr><td>Set and Use a Variable</td><td>Stores a value, then logs it back through a variable reference.</td></tr>
+            <tr><td>Delay Then Log</td><td>Waits two seconds and logs. Shows the non-blocking Delay node on the timeline.</td></tr>
+            <tr><td>Fetch from an API</td><td>An HTTP request whose success and error branches are logged separately.</td></tr>
+            <tr><td>HTTP POST a Payload</td><td>The same shape with a method, a body and headers.</td></tr>
+            <tr><td>Scheduled API Fetch</td><td>A cron schedule driving an HTTP request and a log.</td></tr>
+            <tr><td>Webhook Receiver</td><td>Logs the JSON payload of every inbound webhook call.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The remaining starters are the AI ones — summarisation, support triage, evidence checking,
+        semantic diff and two that demonstrate the agent node. All of them need an AI provider
+        configured first, so they are the wrong place to begin.
+      </p>
+      <p>
+        Pick <strong>Fetch from an API</strong>. It is the one this walkthrough follows, and it is the
+        most honest representative of real work: a call goes out, something comes back, and the two
+        outcomes are handled separately.
+      </p>
+      <p>
+        Click the card's <span class="kg-path">Use template</span> button. The card expands to show a
+        <span class="kg-path">Workflow name</span> field pre-filled with the template's name, and the
+        button becomes <span class="kg-path">Create workflow</span>. Change the name if you like, then
+        confirm. The button reports <span class="kg-path">Created</span> when it is done. There is also
+        a <span class="kg-path">Preview</span> toggle on each card if you want to see the graph before
+        committing to it.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">Installing a template creates a draft, not a running workflow</span>
+        <p>
+          What you get is a fresh, unpublished draft. It is yours to edit and it will not run on its
+          own — a template can never quietly start doing things on your instance just because you
+          installed it.
+        </p>
+      </div>
+
+      <h2>Reading the canvas</h2>
+      <p>
+        Open the new workflow. The editor has three regions: the node palette on the left, the canvas
+        in the middle, and the property inspector on the right.
+      </p>
+
+      <figure class="kg-figure">
+        <svg viewBox="0 0 700 260" role="img" aria-labelledby="fetch-title">
+          <title id="fetch-title">The Fetch from an API starter: start, then an HTTP request whose success and error ports each lead to a log node, then end</title>
+          <defs>
+            <marker id="fw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6b7280"/>
+            </marker>
+            <marker id="fw-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#10b981"/>
+            </marker>
+            <marker id="fw-err" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 z" fill="#ef4444"/>
+            </marker>
+          </defs>
+
+          <rect x="8" y="8" width="684" height="244" rx="12" fill="#0e1420" stroke="#2e3f56" stroke-width="1.5" stroke-dasharray="5 4"/>
+
+          <rect x="28" y="106" width="104" height="48" rx="10" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1.6"/>
+          <text x="44" y="126" fill="#10b981" font-family="'Plus Jakarta Sans',sans-serif" font-size="9.5" font-weight="800" letter-spacing="0.08em">TRIGGER</text>
+          <text x="44" y="143" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Start</text>
+
+          <path d="M132 130 L172 130" stroke="#6b7280" stroke-width="1.6" marker-end="url(#fw-arrow)"/>
+
+          <rect x="172" y="100" width="150" height="60" rx="10" fill="#17212f" stroke="#06b6d4" stroke-width="1.6"/>
+          <text x="188" y="120" fill="#06b6d4" font-family="'Plus Jakarta Sans',sans-serif" font-size="9.5" font-weight="800" letter-spacing="0.08em">NETWORK</text>
+          <text x="188" y="137" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">HTTP Request</text>
+          <text x="188" y="152" fill="#6b7280" font-family="'JetBrains Mono',monospace" font-size="10">success · error</text>
+
+          <path d="M322 118 C 352 118, 352 62, 386 62" stroke="#10b981" stroke-width="1.6" fill="none" marker-end="url(#fw-ok)"/>
+          <text x="330" y="80" fill="#10b981" font-family="'JetBrains Mono',monospace" font-size="10.5">success</text>
+
+          <path d="M322 144 C 352 144, 352 200, 386 200" stroke="#ef4444" stroke-width="1.6" fill="none" marker-end="url(#fw-err)"/>
+          <text x="332" y="192" fill="#ef4444" font-family="'JetBrains Mono',monospace" font-size="10.5">error</text>
+
+          <rect x="386" y="38" width="132" height="48" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.6"/>
+          <text x="402" y="58" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="9.5" font-weight="800" letter-spacing="0.08em">UTILITY</text>
+          <text x="402" y="75" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Log</text>
+
+          <rect x="386" y="176" width="132" height="48" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.6"/>
+          <text x="402" y="196" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="9.5" font-weight="800" letter-spacing="0.08em">UTILITY</text>
+          <text x="402" y="213" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">Log</text>
+
+          <path d="M518 62 C 552 62, 552 118, 578 118" stroke="#6b7280" stroke-width="1.6" fill="none" marker-end="url(#fw-arrow)"/>
+          <path d="M518 200 C 552 200, 552 142, 578 142" stroke="#6b7280" stroke-width="1.6" fill="none" marker-end="url(#fw-arrow)"/>
+
+          <rect x="578" y="106" width="96" height="48" rx="10" fill="#17212f" stroke="#2e3f56" stroke-width="1.6"/>
+          <text x="594" y="126" fill="#6b7280" font-family="'Plus Jakarta Sans',sans-serif" font-size="9.5" font-weight="800" letter-spacing="0.08em">TRIGGER</text>
+          <text x="594" y="143" fill="#f3f4f6" font-family="'Plus Jakarta Sans',sans-serif" font-size="12.5" font-weight="600">End</text>
+        </svg>
+        <figcaption>Five nodes. The HTTP Request node has two output ports, and each one leads somewhere different.</figcaption>
+      </figure>
+
+      <p>
+        The important detail is the pair of edges leaving the HTTP Request node. Most nodes have a
+        single output; this one has <code>success</code> and <code>error</code>, so a failed call is a
+        branch you handle rather than an exception that kills the run. The starter logs both, which is
+        why there are two Log nodes.
+      </p>
+      <p>
+        Click the HTTP Request node. The right-hand panel changes from <span class="kg-path">Property
+        Inspector</span> to <span class="kg-path">HTTP Request Node Properties</span> and shows the
+        fields: <span class="kg-path">URL</span>, <span class="kg-path">Method</span>, an
+        <span class="kg-path">Authentication</span> section whose <span class="kg-path">Type</span>
+        offers no authentication, a bearer token, basic authentication or a custom API-key header, and
+        then <span class="kg-path">Headers</span> and <span class="kg-path">Body</span>.
+      </p>
+      <p>
+        Now click one of the Log nodes and look at its message. It contains something in the shape of
+        <code>{{ $node.&lt;id&gt;.output.&lt;field&gt; }}</code> — that is how a node reads what an
+        earlier node produced, and it is the single most important piece of syntax in the product. The
+        <a href="concepts.html">core concepts page</a> explains it properly.
+      </p>
+
+      <h3>The toolbar above the canvas</h3>
+      <p>
+        Along the top of the editor are <span class="kg-path">Back</span>, the workflow's name as an
+        editable field, a readout of the latest and active version numbers, a runtime-version picker,
+        and the two buttons that matter: <span class="kg-path">Save &amp; Publish</span> and
+        <span class="kg-path">Run</span>. Neither has a keyboard shortcut.
+      </p>
+      <p>
+        A separate floating toolbar sits at the top right of the canvas itself with layout tools —
+        <span class="kg-path">Center</span>, <span class="kg-path">Tidy</span>,
+        <span class="kg-path">Grid</span>, <span class="kg-path">Note</span>,
+        <span class="kg-path">Template</span>, <span class="kg-path">Group</span>,
+        <span class="kg-path">Extract</span>, <span class="kg-path">Ungroup</span> and
+        <span class="kg-path">History</span>. <span class="kg-path">Tidy</span> auto-arranges the graph
+        left to right and is the fastest way to make an imported workflow readable. The question-mark
+        button at the end opens the shortcut list, which you can also reach by pressing
+        <kbd>?</kbd>.
+      </p>
+
+      <h2>Publish, then run</h2>
+      <p>
+        Press <span class="kg-path">Save &amp; Publish</span> first. This is not optional housekeeping —
+        it is a precondition. Publishing freezes the current draft as an immutable numbered version, and
+        the version readout in the toolbar updates to show it.
+      </p>
+      <p>
+        If the graph has problems, the button reports the count instead — publishing fails until they
+        are fixed, though saving still keeps your draft. When there is nothing to publish, the button
+        reads <span class="kg-path">Saved</span>.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The canvas is never what executes</span>
+        <p>
+          <strong>Every run executes a published version, including the one you start by hand.</strong>
+          The draft you are editing is not runnable — there is no code path that executes it. Pressing
+          <span class="kg-path">Run</span> first <em>activates</em> the version selected in the toolbar's
+          runtime-version picker, then starts a run of it; the button's tooltip says exactly that. On a
+          workflow that has never been published there is nothing to activate, so the button is disabled
+          and its tooltip reads <span class="kg-path">Publish a version (Save &amp; Publish) before
+          running.</span> If you edit the canvas and press Run without publishing again, you re-run the
+          old version and see none of your changes.
+        </p>
+      </div>
+
+      <p>
+        Now press <span class="kg-path">Run</span>. A notification appears reading
+        <span class="kg-path">Run started.</span> with a <span class="kg-path">View execution</span>
+        button. Click it.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">A manual run does not need the runtime armed</span>
+        <p>
+          The arming switch in the header gates <em>automatic</em> triggers — schedules, polling and
+          the like. Pressing <span class="kg-path">Run</span> yourself always works, armed or not.
+          That separation is deliberate: you can build and test all day on an instance that will not
+          fire anything on its own.
+        </p>
+      </div>
+
+      <h2>Watching the execution</h2>
+      <p>
+        The Execution Visualizer shows the same graph with live state on it, plus an
+        <span class="kg-path">Execution Timeline</span> panel listing the nodes in the order they ran
+        with a duration for each. The header carries the workflow name, a <span class="kg-path">Live
+        run</span> badge while it is still going, and a truncated run identifier.
+      </p>
+      <p>
+        Nodes on the canvas pick up a status badge as they finish:
+        <span class="kg-pill is-on">Completed</span>,
+        <span class="kg-pill is-danger">Failed</span>,
+        <span class="kg-pill is-warning">Waiting</span>,
+        <span class="kg-pill is-warning">Retrying</span>,
+        <span class="kg-pill is-info">Manual</span> or
+        <span class="kg-pill is-off">Cancelled</span>.
+      </p>
+
+      <div class="kg-note">
+        <span class="kg-note-label">There is no badge for a node that is running</span>
+        <p>
+          A node that is currently executing, or one that has not started, carries no badge at all —
+          the in-progress state is conveyed by the node's styling and by the timeline, not by a label.
+          If you are watching a fast workflow you will simply see badges appear. Note also that the
+          timeline labels a finished run <strong>Success</strong> where the node badge says
+          <strong>Completed</strong>; they mean the same thing.
+        </p>
+      </div>
+
+      <p>
+        For the <em>Fetch from an API</em> starter you should see the HTTP Request node complete, the
+        success branch's Log node complete, and the error branch's Log node never run at all. That is
+        branching working correctly — an untaken branch is skipped, not failed.
+      </p>
+
+      <h3>Stepping through afterwards</h3>
+      <p>
+        Press <span class="kg-path">Step Through</span>. This is the feature worth learning early: it
+        opens an inspector that walks the run node by node, showing a <span class="kg-path">Step</span>
+        counter and three panels — <span class="kg-path">Inputs</span>, <span class="kg-path">Variables
+        at this step</span> and <span class="kg-path">Outputs</span>.
+      </p>
+      <p>
+        This is a recording, not a live debugger. It works just as well on a run from last week,
+        because every run is journaled as it happens. When someone reports that a workflow did the
+        wrong thing on Tuesday, you open Tuesday's run and read what each node actually received.
+      </p>
+
+      <h2>Make it yours</h2>
+      <p>
+        Go back to the editor. The starter points at a public endpoint; point it at something you care
+        about instead.
+      </p>
+      <ol>
+        <li>Select the HTTP Request node and replace the <span class="kg-path">URL</span> with your own
+            endpoint. Leave <span class="kg-path">Method</span> on <code>GET</code> for now.</li>
+        <li>If your endpoint needs a key, set <span class="kg-path">Type</span> under
+            <span class="kg-path">Authentication</span> and attach a credential. The secret is stored
+            encrypted and referenced by the node — it is never written into the workflow itself, which
+            is what makes a workflow safe to export.</li>
+        <li>Press <span class="kg-path">Save &amp; Publish</span>, then <span class="kg-path">Run</span>
+            again, and use <span class="kg-path">Step Through</span> to confirm the response looks the
+            way you expected.</li>
+      </ol>
+
+      <p>
+        The <span class="kg-path">Headers</span> field accepts either a JSON object or one
+        <code>Key: Value</code> pair per line. The <span class="kg-path">Body</span> field is sent as
+        JSON unless a header says otherwise, and it accepts expressions — which is how you send data
+        that an earlier node produced.
+      </p>
+
+      <h2>Add a trigger</h2>
+      <p>
+        So far the workflow only runs when you press a button. To make it run on its own you add a
+        trigger node from the palette on the left, in the section headed
+        <span class="kg-path">Trigger</span>. Click a palette entry to drop it on the canvas, or drag
+        it — dragging one onto an existing wire inserts it into that connection.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Palette entry</th><th>Starts a run when</th></tr></thead>
+          <tbody>
+            <tr><td><span class="kg-path">Start</span></td><td>You press Run. This is the manual entry point, and it is what the starter already has.</td></tr>
+            <tr><td><span class="kg-path">Cron Scheduler</span></td><td>A cron expression matches, in a time zone you choose.</td></tr>
+            <tr><td><span class="kg-path">Webhook Trigger</span></td><td>An inbound HTTP call arrives.</td></tr>
+            <tr><td><span class="kg-path">Polling Trigger</span></td><td>A source it watches has changed.</td></tr>
+            <tr><td><span class="kg-path">Error Trigger</span></td><td>Another workflow fails. This is the entry point of a global error handler.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Do not look for a "Manual Trigger" node</span>
+        <p>
+          The catalog does contain a node called Manual Trigger, but it is <strong>deliberately hidden
+          from the palette</strong> because it duplicates what <span class="kg-path">Start</span>
+          already does. Both are manual entry points. Use <span class="kg-path">Start</span>.
+        </p>
+      </div>
+
+      <p>
+        Add a <span class="kg-path">Cron Scheduler</span> and connect it to the HTTP Request node. Its
+        property panel offers a <span class="kg-path">Frequency</span> helper alongside the raw
+        <span class="kg-path">Cron expression</span> and <span class="kg-path">Time zone</span> fields,
+        both of which are required. Set it to something frequent while you are testing.
+      </p>
+
+      <h3>Three switches, all of which must agree</h3>
+      <p>
+        A scheduled workflow that never fires is almost always one of these, and they are independent:
+      </p>
+      <ol>
+        <li><strong>Publish and activate a version.</strong> Every run executes the active published
+            version, so adding the scheduler to the canvas changes nothing until you publish. Pressing
+            <span class="kg-path">Run</span> activates the version in the toolbar picker as a side
+            effect, which is a fast way to make the version you just published the active one — and an
+            easy way to activate the wrong one without noticing.</li>
+        <li><strong>Enable the workflow.</strong> The per-workflow enabled flag gates schedule, webhook
+            and polling triggers. Disabling it also cancels runs already in flight. Manual runs can
+            still be started either way.</li>
+        <li><strong>Arm the runtime.</strong> The global switch in the header gates automatic triggers
+            across the whole instance.</li>
+      </ol>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Editing disarms the runtime</span>
+        <p>
+          The runtime disarms itself when you are editing, so that half-finished work cannot fire. It
+          also disarms when the disk drops below its free-space floor, and it does <strong>not</strong>
+          re-arm on its own afterwards. If nothing has run for a while and you cannot see why, check
+          the arming switch before anything else.
+        </p>
+      </div>
+
+      <h3>Watching it fire</h3>
+      <p>
+        With all three switches set, wait for the schedule. New runs appear on the dashboard's
+        operations timeline, and each workflow row also has a play button — its tooltip reads
+        <span class="kg-path">Trigger Run</span> — so you can start one from the list without opening
+        the editor.
+      </p>
+
+      <h2>What to learn next</h2>
+      <p>
+        You now have the loop that everything else builds on: draw, publish, run, inspect, adjust. The
+        concepts page is the right next stop, because it names the things you have just used and
+        explains the ones this walkthrough skipped — the difference between a draft and an active
+        version, how expressions actually resolve, and why some nodes are switched off until an
+        administrator turns them on.
+      </p>
+
+      <div class="kg-cards">
+        <a class="kg-card" href="concepts.html">
+          <div class="kg-card-title">Core concepts</div>
+          <div class="kg-card-desc">The mental model behind everything you just did: versions, expressions, runs and capabilities.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">Every setting the instance reads, and what goes wrong when one is set badly.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

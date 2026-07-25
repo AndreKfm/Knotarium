@@ -1,0 +1,319 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Variables. Node parameters come from InMemoryNodePackageManifestProvider.cs; the write semantics
+  from NodeRuntime/VariablePath.cs + VariableTree.cs + Features/Nodes/VariableWriter.cs; the panel
+  behaviour from Frontend/src/stores/useVariableStore.ts.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Variables · Knotarium Help</title>
+<meta name="description" content="The workflow variable store: the Set Variable nodes, writing into nested paths, the Variables panel, and how variables are scoped to a run.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="variables.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Variables</h1>
+      <p class="kg-lead">
+        A variable is a named value that any node in the workflow can read, regardless of whether it is
+        wired to the node that produced it. Variables are how data reaches a branch that control flow
+        never touched, how a loop accumulates a result, and how a sub-flow hands something back to its
+        caller. This page covers the two nodes that write them, the path syntax for nested writes, what
+        the Variables panel is and — importantly — is not, and how far a variable's lifetime extends.
+      </p>
+
+      <h2>Scope: one run, not one installation</h2>
+      <p>
+        The word "global" appears throughout the interface, and it means <strong>global within this
+        run</strong>. Every execution starts with its own variable bag, seeded by whatever started it,
+        and nothing carries over from the previous run. There is no installation-wide key/value store
+        behind this feature; if you need a value to survive between runs it has to live somewhere real,
+        such as a file or a database.
+      </p>
+      <p>
+        The bag is snapshotted as the run progresses: the run record keeps the final state, and each
+        node's journal entry records the variables as they stood immediately before that node executed.
+        That is what makes the run inspector able to show you variable history after the fact.
+      </p>
+      <div class="kg-note">
+        <span class="kg-note-label">Two places where the scope narrows further</span>
+        <p>
+          Inside a <strong>sub-flow</strong>, variable names are silently rewritten with a per-call
+          prefix so two uses of the same sub-flow cannot collide. A write inside a sub-flow is
+          therefore invisible to the caller unless it is routed through the sub-flow's declared
+          outputs — see <a href="subflows.html">Sub-flows and grouping</a>. Inside a <strong>Parallel
+          For Each</strong> body, each iteration gets its own copy of the variables, so writes made in
+          one iteration are not seen by the others.
+        </p>
+      </div>
+
+      <h2>The Set Variable node</h2>
+      <p>
+        <strong>Set Variable</strong> (category Utility) writes one value. It has two fields:
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Expressions</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>variableName</code></td>
+              <td>No</td>
+              <td>The name to write, or a path into a nested structure. Taken literally — a
+                  <code>{{ … }}</code> expression here is not evaluated and becomes part of the name.</td>
+            </tr>
+            <tr>
+              <td><code>value</code></td>
+              <td>Yes</td>
+              <td>The value to store. Evaluated before the node runs, so it may be a literal or any
+                  expression.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A Set Variable node with an empty name does nothing at all and reports success — it is not an
+        error. Writing <code>null</code> into a plain (non-path) name <strong>removes</strong> the
+        variable rather than storing a null, which matters if a later node tests for its presence.
+      </p>
+
+      <h2>The Set Variables node</h2>
+      <p>
+        <strong>Set Variables</strong> writes several at once from a list of name-and-value rows. It
+        exists so that initialising six values does not need six nodes in a chain. Each row's value is
+        expression-enabled, and each row's name follows the same path rules as the single node.
+      </p>
+      <p>
+        Rows are applied in order, and the rules for a bad row differ depending on what is wrong with
+        it:
+      </p>
+      <ul>
+        <li>A row with a <strong>missing or blank name</strong> is skipped silently. Nothing is written
+            and nothing is reported.</li>
+        <li>A row whose write <strong>conflicts structurally</strong> with what is already stored fails
+            the node — and <strong>the rows before it stay applied</strong>. There is no rollback, so a
+            partially applied Set Variables node is a state you can genuinely end up in.</li>
+      </ul>
+      <p>
+        On success the node's result carries a <code>count</code> of the rows it wrote, which can be
+        referenced as <code>{{ $node.&lt;id&gt;.output.count }}</code>.
+      </p>
+
+      <h2>Writing into a nested path</h2>
+      <p>
+        The name field is not restricted to a plain identifier. It accepts the same path grammar used
+        for reading, so a single node can reach into a structure:
+      </p>
+      <pre><code><span class="tok-comment"># Head only — an ordinary variable</span>
+counter
+
+<span class="tok-comment"># Member access, two equivalent spellings</span>
+myDict.name
+myDict<span class="tok-str">[</span><span class="tok-str">"name"</span><span class="tok-str">]</span>
+
+<span class="tok-comment"># Array index</span>
+list<span class="tok-str">[</span><span class="tok-num">0</span><span class="tok-str">]</span>
+
+<span class="tok-comment"># Chained freely</span>
+config.servers<span class="tok-str">[</span><span class="tok-num">2</span><span class="tok-str">]</span>.host</code></pre>
+      <p>
+        The <strong>head</strong> — everything before the first <code>.</code> or <code>[</code> — is
+        the variable that actually exists. Writing <code>myDict["name"]</code> creates or updates a
+        variable called <code>myDict</code>; there is no variable called <code>myDict["name"]</code>.
+      </p>
+
+      <h3>What is created for you</h3>
+      <ul>
+        <li><strong>Missing containers are built automatically</strong>, and their kind is inferred from
+            the <em>next</em> segment: a following index makes an array, anything else makes an object.
+            So <code>config.servers[2].host</code> against a variable that does not exist yet produces
+            an object containing an array containing an object.</li>
+        <li><strong>Arrays grow to fit.</strong> An index past the end is not an error — the array is
+            padded with nulls up to that position. Writing <code>list[1]</code> into an empty array
+            gives <code>[null, value]</code>.</li>
+        <li><strong>Siblings survive.</strong> Writing <code>myDict["b"]</code> when
+            <code>myDict</code> already holds <code>{ "a": 1 }</code> leaves <code>a</code> alone.</li>
+      </ul>
+
+      <h3>What fails</h3>
+      <p>
+        A write fails when it contradicts the shape already stored — asking for a member of a number,
+        or an index of an object. The node fails with a message naming the variable and the conflict,
+        for example <em>Set Variable 'myVar["a"]': Cannot navigate by member: the variable's current
+        value is not an object.</em> The four conflict messages distinguish navigating by member versus
+        by index, and at the head versus deeper in the path.
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">A malformed path is not an error — it becomes a name</span>
+        <p>
+          If the path cannot be parsed at all — an unterminated bracket, a doubled dot, a negative or
+          non-numeric index, a quoted key that is never closed — the write does not fail. It falls back
+          to creating a variable whose <strong>literal name is the whole string you typed</strong>. So
+          a typo like <code>orders[0</code> quietly produces a variable called <code>orders[0</code>
+          that nothing will ever read. If a nested write appears to have done nothing, look for it as a
+          flat name in the run's variable snapshot.
+        </p>
+      </div>
+      <p>
+        One consequence worth knowing: after any path write, the head variable is stored as a JSON
+        structure. A plain write stores the raw value as it was. This is invisible in almost every case
+        but explains why the same variable can read back slightly differently depending on how it was
+        last written.
+      </p>
+
+      <h2>The Variables panel</h2>
+      <p>
+        The lower right panel of the canvas, titled <strong>Workflow variables</strong>, is the
+        editor's view of the store. Each card shows a variable's name, a type sigil, its last known
+        value, the node that produces it and the nodes that consume it.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Sigil</th><th>Type</th></tr></thead>
+          <tbody>
+            <tr><td><code>""</code></td><td>string</td></tr>
+            <tr><td><code>#</code></td><td>number</td></tr>
+            <tr><td><code>?</code></td><td>boolean</td></tr>
+            <tr><td><code>{}</code></td><td>dictionary</td></tr>
+            <tr><td><code>[]</code></td><td>array</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A variable is either <em>awaiting run</em> or <em>resolved</em>. Running the workflow from the
+        editor fills the resolved values in place, without leaving the canvas.
+      </p>
+
+      <h3>Two kinds of entry</h3>
+      <p>
+        <strong>Declared</strong> entries carry a small <em>declared</em> badge. They are derived
+        automatically from the Set Variable and Set Variables nodes on the canvas — and from a
+        sub-flow's declared inputs and outputs while you are editing it — so they appear and disappear
+        as you edit those nodes. They cannot be renamed or deleted from the panel; edit the node
+        instead. A keyed write contributes its <em>head</em> container, with the object or array glyph
+        inferred from the path syntax and no design-time value.
+      </p>
+      <p>
+        <strong>Promoted</strong> entries are ones you registered yourself by dragging a node's output
+        pill onto the panel's drop zone. These can be renamed and deleted. Names must be unique
+        (compared case-insensitively) and must look like an identifier — a letter or underscore
+        followed by letters, digits or underscores. Rejected renames report <em>Name cannot be
+        empty</em>, <em>Invalid variable name</em> or <em>Name already exists</em>, and a duplicate
+        registration flashes the conflicting card red rather than adding a second entry.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">The panel's list lives in your browser, not in the workflow</span>
+        <p>
+          Promoted entries are stored in browser local storage, keyed by workflow. They are not part of
+          the workflow definition, so they do not travel with an export, do not appear for a colleague
+          opening the same workflow, and are lost if the browser's storage is cleared. Declared entries
+          are safe because they are recomputed from the canvas every time.
+        </p>
+        <p>
+          What <em>is</em> saved into the workflow is the effect of using a variable: a reference bound
+          onto a node's field, or a name written by a Set Variable node. Losing the panel entry does
+          not break a running workflow — it only removes the pill from the editor.
+        </p>
+      </div>
+
+      <h2>Dropping an output into the store</h2>
+      <p>
+        Dragging an output pill from a node card onto the panel's drop zone — labelled <em>Register New
+        Variable</em>, and <em>Drop Node Output Here</em> while you hover — promotes that output to a
+        named variable. The proposed name is <code>&lt;nodeId&gt;_&lt;outputName&gt;</code>. Dropping
+        the same output again returns the existing entry rather than duplicating it.
+      </p>
+      <p>
+        That naming convention is not cosmetic. When a variable cannot be found in the run's bag, the
+        runtime falls back to interpreting its name as <code>nodeId_outputName</code> (split at the
+        <em>last</em> underscore) and reads that node's recorded output directly. This is what makes a
+        promoted output resolve at run time even though no node ever wrote it into the bag.
+      </p>
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Renaming a promoted output breaks that fallback</span>
+        <p>
+          Rename <code>fetch-user_result</code> to <code>user</code> and the fallback no longer
+          matches: at run time <code>user</code> is looked up in the variable bag, finds nothing, and
+          resolves to empty — unless a Set Variable node actually writes a variable of that name.
+          Renaming also does not rewrite references that are already bound to nodes, so an existing
+          binding keeps pointing at the old name and carries on working while any new binding to the
+          renamed variable silently resolves to nothing.
+        </p>
+        <p>
+          If you want a friendly name, do not rename the pill — add a <strong>Set Variable</strong>
+          node that writes <code>user</code> from
+          <code>{{ $node.fetch-user.output.result }}</code>. That is a real write into the bag and
+          behaves predictably everywhere.
+        </p>
+      </div>
+
+      <h2>Using a variable in a node</h2>
+      <p>
+        There are two ways to consume one, and they are not equivalent.
+      </p>
+      <ul>
+        <li><strong>Drag the variable pill onto a node.</strong> This stores a structured reference on
+            the node's primary input field. At run time it is resolved by looking the name up in the
+            variable bag, including a dotted path into a structured value such as an inbound signal.</li>
+        <li><strong>Type an expression</strong> such as <code>{{ $variables.customerId }}</code> into
+            any expression-capable field, as described in
+            <a href="expressions.html">Expressions and data</a>.</li>
+      </ul>
+      <p>
+        Both work. The difference shows up in the editor: the dashed <strong>data wires</strong> drawn
+        between a variable's producer and its consumers, and the <em>Consumers</em> list on the
+        variable card, are built by scanning node properties for <em>dropped references</em> only. A
+        variable used through a typed expression is read perfectly well at run time but is
+        <strong>not</strong> counted as a consumer and draws no wire — so an empty consumer list is not
+        evidence that a variable is unused.
+      </p>
+      <p>
+        The wires themselves are drawn dashed and coloured by type, with a value token or a small
+        diamond at the midpoint depending on the data-wire density setting described in
+        <a href="canvas.html">The canvas editor</a>. Hovering a node, a variable card or a wire
+        highlights the whole relationship; clicking pins it so it stays visible.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="expressions.html">
+          <div class="kg-card-title">Expressions and data</div>
+          <div class="kg-card-desc">The reference syntax, path grammar and what an unresolved reference does.</div>
+        </a>
+        <a class="kg-card" href="subflows.html">
+          <div class="kg-card-title">Sub-flows and grouping</div>
+          <div class="kg-card-desc">How variables cross the boundary into and out of a reusable sub-flow.</div>
+        </a>
+        <a class="kg-card" href="conditions.html">
+          <div class="kg-card-title">Conditions and branching</div>
+          <div class="kg-card-desc">Using a variable as an operand and previewing the result before you run.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

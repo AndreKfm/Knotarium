@@ -1,0 +1,354 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  Conditions and branching. Operator catalogue from node-editor/condition/operators.ts (drift-tested
+  against the backend catalogue); routing from Features/Execution/WorkflowExecutor.RoutesBySelectedPort;
+  publish gate from Features/Nodes/Condition/ConditionPublishGate.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conditions and branching · Knotarium Help</title>
+<meta name="description" content="The Condition node and its visual logic editor, the operator catalogue, the live preview, and how the Switch and AI Router nodes branch.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="conditions.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Conditions and branching</h1>
+      <p class="kg-lead">
+        Branching is what turns a sequence of steps into a workflow. Knotarium's main branch node is
+        <strong>Condition</strong>, which has a dedicated full-screen editor for building nested
+        AND/OR/NOT logic and previewing the result against real data before you ever run anything. This
+        page covers that editor in detail, and then the two other nodes that route a run — Switch and
+        AI Router — including a limitation of Switch that is worth knowing before you build on it.
+      </p>
+
+      <h2>The Condition node</h2>
+      <p>
+        The Condition node has two output ports, <code>true</code> and <code>false</code>, and the run
+        follows exactly one of them. It is one of a small, explicit set of node types the engine treats
+        as branch routers: when such a node reports which port it chose, every outgoing edge on a
+        different port is suppressed.
+      </p>
+      <p>
+        Configuration is stored in a single <code>logic</code> property. A much older format kept three
+        separate fields — <code>left</code>, <code>operator</code> and <code>right</code> — and nodes
+        still carrying it continue to run. Precedence at run time is strict: valid <code>logic</code>
+        wins; otherwise the legacy fields are used; a node with neither is a configuration error.
+      </p>
+
+      <h2>The logic editor</h2>
+      <p>
+        The property inspector shows a one-line summary of the current logic and an <strong>Edit
+        logic</strong> button. Double-clicking the Condition node on the canvas opens the same editor.
+        It fills the screen, because a condition of any real complexity does not fit in a side panel.
+      </p>
+      <p>
+        The editor draws the logic as a left-to-right dataflow graph rather than as nested boxes:
+        operand cards on the left feed comparator cards, comparators feed AND/OR group cards and NOT
+        cards, and the final result arrives at a TRUE/FALSE output card on the right. The layout is
+        computed for you — nodes cannot be dragged — and it is recomputed on every edit, so the picture
+        always matches the logic.
+      </p>
+      <p>
+        <strong>Save &amp; Publish</strong> in the editor's top bar is disabled until every operand is
+        complete; its tooltip reads <em>Complete every operand to save</em>. Leaving with unsaved
+        changes asks <em>Discard unsaved changes to this condition?</em>; <kbd>Esc</kbd> is the same as
+        Back.
+      </p>
+
+      <h3>Building one comparison</h3>
+      <p>
+        Clicking an operand card opens a small editor with two tabs.
+      </p>
+      <ul>
+        <li><strong>Reference</strong> lists the workflow's variables and, on signal-driven graphs, the
+            fields of the inbound signal, each with its type. Picking one stores an expression that is
+            resolved at run time. Beneath the list is a <strong>Sample value</strong> field used only
+            by the live preview.</li>
+        <li><strong>Literal</strong> offers a string / number / boolean selector. Boolean literals are a
+            true/false toggle rather than free text; the other two are a text field, and the value is
+            converted to its declared type when you save.</li>
+      </ul>
+      <p>
+        For the two membership operators the right-hand operand is a <strong>list</strong> instead of a
+        single value: the type picker disappears and you type comma-separated values, for example
+        <code>3, 5, 4</code>. Each element is typed against the left operand when the comparison is
+        evaluated.
+      </p>
+
+      <h3>The operator catalogue</h3>
+      <p>
+        The catalogue is shared between the editor and the runtime and is kept in sync by a drift test,
+        so what the menu offers is exactly what will execute. Unary operators ignore the right-hand
+        operand entirely.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>Group</th><th>Operators</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Comparison</td>
+              <td>Equals <code>=</code>, Not equals <code>≠</code>, Greater than <code>&gt;</code>,
+                  Greater or equal <code>≥</code>, Less than <code>&lt;</code>, Less or equal <code>≤</code></td>
+            </tr>
+            <tr>
+              <td>Text</td>
+              <td>Contains, Does not contain, Starts with, Ends with, Matches regex</td>
+            </tr>
+            <tr>
+              <td>Membership</td>
+              <td>Is one of, Is not one of — both take a list on the right</td>
+            </tr>
+            <tr>
+              <td>Existence</td>
+              <td>Is empty, Is not empty, Exists, Does not exist — all unary</td>
+            </tr>
+            <tr>
+              <td>Boolean</td>
+              <td>Is true, Is false — both unary</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Type filtering and the ordering guardrails</h3>
+      <p>
+        When the left operand's type is known, the operator menu only offers operators that accept it.
+        A number hides the text operators, a boolean hides the ordering operators, and so on. Exists
+        and Does not exist are genuinely type-agnostic and are always offered. When the type is not
+        known — a dynamic reference — everything is offered and the runtime is the backstop.
+      </p>
+      <p>
+        Ordering comparisons are constrained further. If both operand types are known and they differ,
+        or they match but are not orderable, the editor blocks the combination so it can never be
+        saved, with a reason such as <em>Ordering needs matching types; got string and number.</em>
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Ordering on strings compares letter by letter</span>
+        <p>
+          The four ordering operators also accept strings, and the editor shows a hint when you use
+          them that way: <em>Strings compare lexically (ordinal): "9" &gt; "10" is true, "Z" &lt; "a" is
+          true.</em> If you are comparing version numbers, quantities or anything else that only looks
+          numeric, set the operand's type to number rather than relying on the string comparison to do
+          what you meant.
+        </p>
+      </div>
+
+      <h3>Grouping and negation</h3>
+      <p>
+        <strong>Add condition</strong> in the toolbar adds a comparator, wrapping the existing logic in
+        an AND group if it was a bare comparison. Every card carries three small tools: wrap in a
+        group, wrap in NOT, and remove. A group card switches between AND and OR, and groups nest
+        freely, so <code>(A AND B) OR NOT C</code> is built by wrapping, not by typing.
+      </p>
+      <p>
+        The structure has bounds, mirrored from the parser that validates it on the backend: nesting at
+        most 20 deep, at most 200 nodes in the whole tree, and at most 50 children in any one group. A
+        literal may be up to 10,000 characters, a reference 2,000, and a regular expression 512.
+      </p>
+
+      <h2>The live preview</h2>
+      <p>
+        Everything in the editor is evaluated as you type. Each comparator card shows its own result,
+        the wires are coloured by what they carry, and an <strong>output</strong> pill in the toolbar
+        gives the overall verdict.
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th>State</th><th>Means</th></tr></thead>
+          <tbody>
+            <tr><td>TRUE / FALSE</td><td>The comparison resolved with the values currently in play.</td></tr>
+            <tr><td>runtime</td><td>Valid, but referencing something that has no design-time value. It will resolve when the workflow runs. This is a healthy state, not a problem.</td></tr>
+            <tr><td>incomplete</td><td>An operand or operator is still missing. Save is blocked.</td></tr>
+            <tr><td>error</td><td>The comparison cannot be evaluated as written — for example a type mismatch or a malformed regular expression.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Above the graph, a <strong>Conditions</strong> strip labels each comparator A, B, C… in the
+        order they appear on screen, with its expression and a pass/fail marker, followed by the
+        top-level combinator. It is the fastest way to see which half of a long condition is the one
+        failing.
+      </p>
+
+      <h3>Where the preview gets its values</h3>
+      <p>
+        This is the part that makes the preview trustworthy. When the workflow has already run, the
+        editor asks the backend to resolve each of the condition's references against the
+        <strong>last real run</strong>, and a <em>Last run / Manual</em> selector appears in the
+        toolbar. Last run is chosen by default. The selector shows when that run happened, and marks it
+        <em>stale</em> when the run came from a different published version than the one you are
+        editing — the values are still shown, but the graph they came from is not this graph.
+      </p>
+      <p>
+        Switching to <strong>Manual</strong> uses the per-operand Sample value fields instead. If the
+        workflow has never run, Manual is the only option and the selector is not shown at all.
+      </p>
+
+      <h3>Test mode</h3>
+      <p>
+        The <strong>▶ Test</strong> button turns every reference operand into an editable field so you
+        can type the values an incoming signal would carry and watch the condition resolve. A row of
+        presets fills them for you: make everything match, make one named comparator fail, make
+        everything fail, or clear. The bar states plainly that values are temporary and the
+        configuration is unchanged, and <strong>✕ Exit test</strong> discards them.
+      </p>
+
+      <h2>Migrating a legacy condition</h2>
+      <p>
+        A node still using the old three-field form is summarised in the property inspector as
+        <em>Legacy condition — open to migrate</em>. Opening the editor seeds a single comparator from
+        those fields as a best effort, and saving writes the new format and <strong>deletes</strong>
+        the old <code>left</code>, <code>operator</code> and <code>right</code> properties. The
+        migration is one-way and happens on save, not on open, so opening a legacy condition to look at
+        it changes nothing.
+      </p>
+      <p>
+        The editor also opens conditions already stored in the earlier flat format — a list of
+        comparators joined by one combinator — and saves them as a tree. The property inspector renders
+        that flat format as a row per comparison, and the tree format as a single parenthesised
+        expression, which is a quick way to tell which one a node is on.
+      </p>
+
+      <h2>What blocks publishing</h2>
+      <p>
+        A Condition node is publishable when it can produce a definite branch: it has either a
+        <code>logic</code> blob that parses, or a legacy operator. A node with neither, or whose logic
+        no longer parses, is <strong>incomplete</strong> and publishing is refused with a message
+        naming the offending node ids and telling you to open and complete them in the editor.
+      </p>
+      <p>
+        Saving a draft is deliberately not gated, so an unfinished condition never stops you from
+        saving work in progress. Only publishing and activating are checked.
+      </p>
+
+      <h2>What happens at run time</h2>
+      <p>
+        References inside the logic are resolved by the node itself rather than by the generic
+        expression pass, which lets it distinguish "resolved to null" from "could not be found". The
+        outcome maps onto three behaviours:
+      </p>
+      <ul>
+        <li><strong>True</strong> or <strong>False</strong> — the run continues down that port.</li>
+        <li><strong>Error</strong> — the node <strong>fails</strong>, carrying a code and the comparator
+            and operand that caused it. The codes are <code>INVALID_LOGIC</code>,
+            <code>RESOLUTION_FAILED</code>, <code>COERCION_FAILED</code>, <code>TYPE_MISMATCH</code>
+            and an internal-invariant backstop.</li>
+        <li>A node with <strong>no configuration at all</strong> takes the <code>false</code> port. That
+            is the only silent fallback, and the publish gate is what stops it from reaching a live
+            instance.</li>
+      </ul>
+      <div class="kg-note">
+        <span class="kg-note-label">A missing reference fails the node rather than reading as false</span>
+        <p>
+          This is a deliberate difference from ordinary expression fields, where an unresolved
+          reference quietly becomes nothing. A branch taken because a value could not be found is a
+          bug that hides for months, so a Condition treats it as <code>RESOLUTION_FAILED</code> and
+          stops. Recovery for the node is <em>fail immediately</em> — it is not retried.
+        </p>
+      </div>
+
+      <h2>The Switch node</h2>
+      <p>
+        <strong>Switch</strong> (category Control) takes a <code>value</code> and a
+        <code>cases</code> list. The list is split on commas, semicolons and line breaks; entries are
+        trimmed and empties dropped. At run time the value is compared against each case in order,
+        ignoring case, and the node reports the first case that matched — or <code>default</code> when
+        none did.
+      </p>
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">Switch does not currently branch</span>
+        <p>
+          Two things stop it. Its manifest declares a single output socket, <code>default</code>, so an
+          edge drawn from any other port is rejected at compile time with an invalid-socket-mapping
+          error and publishing fails. And the engine's list of branch-routing node types — the types
+          for which a reported port suppresses the other outgoing edges — contains Condition, For Loop,
+          Parallel For Each, AI Router, AI Verify and AI Semantic Diff, but <strong>not</strong>
+          Switch. So even where an edge exists, every outgoing edge from a Switch node is followed
+          regardless of which case matched.
+        </p>
+        <p>
+          In practice a Switch node evaluates its cases and records the match, but the run continues
+          down all of its connections. Use chained Condition nodes, or an AI Router when the input is
+          natural language, for multi-way branching that actually routes.
+        </p>
+      </div>
+
+      <h2>The AI Router and its dynamic ports</h2>
+      <p>
+        <strong>AI Router</strong> (category AI) classifies its <code>input</code> using the configured
+        language model and routes the run down one of its category branches. Unlike Switch, it is a
+        real branch router: the port it selects is the only one followed.
+      </p>
+      <p>
+        Its branches are not fixed. The <code>categories</code> field takes labels separated by commas,
+        semicolons or line breaks, and <strong>each label becomes an output port on the node card as
+        you type</strong>, followed always by an <code>otherwise</code> fallback. Labels are trimmed,
+        empties dropped, and duplicates removed case-insensitively keeping the first spelling. The same
+        parsing runs on the backend, so the handles you see are the ports the runtime can select.
+      </p>
+      <p>
+        Because the ports are derived from configuration rather than declared in the manifest, the node
+        declares no outputs at all — which is precisely what tells the compiler to skip socket
+        validation for it. That escape hatch is why AI Router's dynamic branches work where Switch's
+        do not.
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">Renaming a category orphans its branch</span>
+        <p>
+          The port id <em>is</em> the label text. Editing a category label changes the handle, and any
+          edge attached to the old handle no longer has a port to hang from. Re-wire branches after
+          renaming a category, and prefer short stable labels over sentences.
+        </p>
+      </div>
+      <p>
+        Two further AI nodes route by verdict with <strong>fixed</strong> ports, so they need no such
+        escape hatch: AI Verify emits <code>verified</code>, <code>unsupported</code>,
+        <code>contradicted</code> and <code>uncertain</code>, and AI Semantic Diff emits its material,
+        cosmetic and none branches. In both cases the verdict is computed by ordinary deterministic
+        code over the model's structured output, not by asking the model to judge itself.
+      </p>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="expressions.html">
+          <div class="kg-card-title">Expressions and data</div>
+          <div class="kg-card-desc">Writing the references you use as condition operands.</div>
+        </a>
+        <a class="kg-card" href="diagnostics.html">
+          <div class="kg-card-title">Diagnostics</div>
+          <div class="kg-card-desc">The invalid-socket-mapping error and everything else that blocks publishing.</div>
+        </a>
+        <a class="kg-card" href="variables.html">
+          <div class="kg-card-title">Variables</div>
+          <div class="kg-card-desc">Where the operand reference list comes from.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>

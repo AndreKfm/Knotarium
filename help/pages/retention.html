@@ -1,0 +1,348 @@
+<!doctype html>
+<!--
+  Copyright 2026 Andre Kaufmann
+  SPDX-License-Identifier: Apache-2.0
+
+  The Retention section — two cards. Field labels and hints from RetentionSetting.tsx and
+  DiskSpaceSetting.tsx; sweep semantics, the preservation rules and the audit re-anchoring from
+  Api/Services/JournalRetentionWorker.cs; the guard behaviour from DiskSpaceGuardWorker.cs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retention and disk space · Knotarium Help</title>
+<meta name="description" content="Pruning finished runs and journals, capping version and audit history, and the free-space floor that disarms the runtime and never re-arms on its own.">
+<link rel="stylesheet" href="../assets/help.css">
+</head>
+<body data-kg-page="retention.html">
+
+<a class="kg-skip-link" href="#kg-content">Skip to content</a>
+
+<div class="kg-layout">
+  <nav id="kg-sidebar" class="kg-sidebar" aria-label="Documentation sections"></nav>
+
+  <main class="kg-main" id="kg-content">
+    <article class="kg-article">
+
+      <h1>Retention and disk space</h1>
+      <p class="kg-lead">
+        <span class="kg-path">Settings &rsaquo; Retention</span> holds two cards that solve the same
+        problem from opposite ends. <em>Data retention</em> bounds how large the database can grow by
+        pruning on a schedule. <em>Disk-space guard</em> is the backstop underneath it: when free space
+        runs out anyway, it disarms the runtime so nothing new starts writing. Neither needs a restart,
+        and neither takes effect instantly.
+      </p>
+
+      <h2>Why this screen exists</h2>
+      <p>
+        Every run writes a journal — one entry per step — and that is what makes the run inspector able to
+        replay a run that finished days ago. It is also the fastest-growing table in the product. A
+        once-a-minute schedule adds roughly half a million schedule-fire rows a year on its own, before any
+        journal entries. On a long-lived instance with no retention configured, the SQLite file grows
+        without bound until the disk is full.
+      </p>
+      <p>
+        A full disk does not crash the engine — SQLite starts failing writes and the product degrades
+        rather than falls over — but that is a bad place to arrive at. These two cards are the mechanisms
+        for not arriving there.
+      </p>
+
+      <h2>Data retention</h2>
+      <p>
+        The card's description is accurate about the essential guarantee: old finished runs are deleted
+        along with their logs, and <strong>in-flight runs are never touched</strong>. Concretely, only runs
+        in a terminal state are eligible — completed, failed, cancelled or discarded. A run that is
+        pending, running, suspended or waiting to retry is excluded no matter how old it is, so a
+        long-suspended run is never deleted out from under the executor.
+      </p>
+
+      <h3>The two primary fields</h3>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Default</th><th>Range</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Run history (days)</td>
+              <td><code>30</code></td>
+              <td>0–3650</td>
+              <td>Deletes finished runs and their logs older than this. Zero keeps everything forever.</td>
+            </tr>
+            <tr>
+              <td>Sweep interval (minutes)</td>
+              <td><code>60</code></td>
+              <td>1–10080</td>
+              <td>How often the cleanup runs. The first sweep is one interval after startup.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Deleting a run cascades. The database removes that run's journal entries, node states, work items,
+        retry states and correlation tokens in the same statement, so there is no orphaned wreckage left
+        behind and no second pass needed.
+      </p>
+      <p>
+        The same age window also prunes the <strong>schedule-fire log</strong> — the append-only record of
+        every scheduler tick. It has to be pruned separately because its link to a run is nulled rather
+        than cascaded when the run goes, which means run-history retention would otherwise never reach it.
+        Before this was added, that table was never reclaimed at all.
+      </p>
+      <p>
+        Setting run history to zero shows an amber warning on the card stating that the database will grow
+        without bound as runs accumulate. It is a legitimate choice on an instance where every run is an
+        audit record, but it is a choice to make deliberately.
+      </p>
+
+      <h3>The optional caps</h3>
+      <p>
+        Under <em>Version history &amp; audit caps</em> sit three more fields. All default to zero, meaning
+        nothing here is deleted unless you opt in.
+      </p>
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Default</th><th>Range</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Max versions / workflow</td>
+              <td><code>0</code></td>
+              <td>0–100000</td>
+              <td>Keeps the newest N published versions per workflow. Zero keeps all.</td>
+            </tr>
+            <tr>
+              <td>Max OpenAPI versions / spec</td>
+              <td><code>0</code></td>
+              <td>0–100000</td>
+              <td>Caps the re-import history of each imported specification. Zero keeps all.</td>
+            </tr>
+            <tr>
+              <td>Audit log (days)</td>
+              <td><code>0</code></td>
+              <td>0–3650</td>
+              <td>Rolls over audit entries older than this. Zero keeps them forever.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The version cap is more careful than "keep the newest N" suggests, and the extra care is what makes
+        it safe to turn on. Beyond the newest N, a version is only deleted if <em>nothing</em> refers to
+        it. Three things count as a reference and protect a version permanently:
+      </p>
+      <ul>
+        <li>It is the currently active version of its workflow.</li>
+        <li>
+          The append-only activation log mentions it — as an activated version, as the version something
+          was restored from, or as the previously active version.
+        </li>
+        <li>Any retained run executed it, which is what preserves replay lineage.</li>
+      </ul>
+      <p>
+        The practical consequence is that the cap prunes less than the number suggests, and that is
+        correct. Setting it to five does not guarantee five versions remain; it guarantees that at least
+        the newest five, plus everything still referenced, remain. Run-history retention interacts with it:
+        once old runs are pruned, the versions those runs pinned become eligible on a later sweep.
+      </p>
+
+      <div class="kg-note is-danger">
+        <span class="kg-note-label">The audit roll-over rewrites the tamper-evident hash chain</span>
+        <p>
+          The audit log is a hash chain, each entry linked to the one before it, and startup verifies the
+          chain. Deleting old entries would break that link — so after the roll-over the surviving entries
+          are re-anchored: the chain is rebuilt so the new first entry links to genesis and verification
+          still passes. That is what makes trimming possible at all, and it is also exactly what a tamper
+          would look like. The card says so in a red banner when the field is non-zero. Enable this only if
+          losing the ability to verify the surviving entries against the original chain is acceptable for
+          your compliance needs.
+        </p>
+      </div>
+      <p>
+        The roll-over is logged as a warning, not an informational message, naming how many entries were
+        removed and over what window. If you are auditing an instance, that log line is the record of when
+        the chain was re-anchored.
+      </p>
+
+      <h3>How a sweep runs</h3>
+      <p>
+        The worker loops forever. Each cycle re-reads the sweep interval, waits, then re-reads the whole
+        policy and sweeps. Two consequences follow from that shape:
+      </p>
+      <ul>
+        <li>
+          <strong>The first sweep is one interval after startup.</strong> A process that starts and stops
+          quickly never prunes anything, which is deliberate — an upgrade or a short-lived test run should
+          not silently delete history.
+        </li>
+        <li>
+          <strong>The loop never exits when retention is disabled.</strong> With everything at zero the
+          sweep returns immediately, but the worker keeps cycling so that turning retention on later is
+          picked up without a restart.
+        </li>
+      </ul>
+      <p>
+        When a sweep actually deletes something, the space is reclaimed rather than left at high-water
+        mark: the write-ahead log is checkpoint-truncated, and freed pages are returned to the operating
+        system with an incremental vacuum. The latter is a no-op unless the database was created in
+        incremental auto-vacuum mode, which happens at first startup — so on a very old database the file
+        may not shrink even though rows were deleted, while the freed space is still reused for future
+        writes.
+      </p>
+      <p>
+        A sweep that throws is logged as an error and retried on the next interval rather than killing the
+        worker. Retention failing is therefore quiet: the symptom is a database that keeps growing, and
+        the evidence is in the log.
+      </p>
+      <p>
+        Saving the card confirms with <em>Saved — applies on the next sweep</em>, which is precise. If you
+        have just set the interval to a week, the next sweep is a week away.
+      </p>
+
+      <h2>The disk-space guard</h2>
+      <p>
+        The second card is the hard backstop. When free space on the data volume falls below the floor,
+        the runtime is <strong>disarmed</strong> so no new runs start — each run writes many journal rows,
+        so pausing new runs is the fastest way to stop the write pressure. Retention only prunes on a
+        schedule and is time-based, so nothing else in the product reacts to a disk approaching full.
+      </p>
+
+      <div class="kg-table-wrap">
+        <table class="kg-table-keys">
+          <thead><tr><th>Field</th><th>Default</th><th>Range</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Minimum free space (MB)</td>
+              <td><code>256</code></td>
+              <td>0–10000000</td>
+              <td>Disarms the runtime below this. Zero disables the guard entirely.</td>
+            </tr>
+            <tr>
+              <td>Check interval (seconds)</td>
+              <td><code>60</code></td>
+              <td>30–86400</td>
+              <td>How often free space is sampled. Values below thirty seconds are raised to thirty.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The volume watched is the one holding the data directory. Free space is read as the drive's
+        available free space; if it cannot be determined the check logs a warning and does nothing rather
+        than guessing.
+      </p>
+      <p>
+        Setting the floor to zero shows a red banner on the card warning that nothing will stop new runs as
+        the disk approaches full and that SQLite will start failing writes, and suggesting a positive floor
+        such as 512 MB. Take that seriously on any instance you are not watching by hand.
+      </p>
+
+      <h3>What happens when it trips</h3>
+      <p>
+        When free space falls below the floor and the runtime is currently armed, the guard disarms it and
+        logs at <strong>critical</strong> severity, naming both the observed free space and the threshold,
+        and instructing you to free up space and re-arm manually. The pill in the application header
+        changes to <em>Disarmed</em>, and from then on only manual runs execute — scheduled workflows and
+        automatic triggers stop firing.
+      </p>
+
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">It never re-arms on its own</span>
+        <p>
+          When space is recovered, the guard logs a warning saying so and noting that the runtime was
+          disarmed by the disk-space guard and can be re-armed when you are ready. It does not re-arm.
+          Recovering disk and returning to automatic execution is a deliberate operator action, taken from
+          the arming switch in the header — because the guard cannot know whether you have actually fixed
+          the underlying cause or merely deleted something temporarily.
+        </p>
+      </div>
+      <p>
+        Note what this means for an unattended instance: a disk that fills at three in the morning leaves
+        the runtime disarmed until a person notices. The critical log line is the alert, and it is worth
+        wiring into whatever watches your logs.
+      </p>
+      <p>
+        Like the retention worker, the guard runs its first check one interval after startup, keeps looping
+        even when the floor is zero so that enabling it later is picked up, and re-reads the policy on
+        every cycle. If reading the policy fails it falls back to 256 MB and sixty seconds and logs the
+        error. Saving the card confirms with <em>Saved — applies on the next check</em>.
+      </p>
+
+      <h2>The two free-space controls are different</h2>
+      <p>
+        It is easy to confuse this floor with the reserve on <a href="file-access.html">File access</a>,
+        and they do different jobs:
+      </p>
+      <div class="kg-table-wrap">
+        <table>
+          <thead><tr><th></th><th>Disk-space guard</th><th>File-access reserve</th></tr></thead>
+          <tbody>
+            <tr><td>Watches</td><td>The volume holding the data directory</td><td>The drive each write targets</td></tr>
+            <tr><td>Triggered by</td><td>A periodic check</td><td>An individual write, before it happens</td></tr>
+            <tr><td>Effect</td><td>Disarms the whole runtime</td><td>Denies that one write</td></tr>
+            <tr><td>Recovery</td><td>Manual re-arm</td><td>Automatic once space exists</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        On an instance whose workflows write large files to the same volume as the database, configure
+        both. The reserve stops a single workflow eating the headroom; the guard stops the accumulated
+        journal doing it slowly.
+      </p>
+
+      <h2>Configuration and precedence</h2>
+      <p>
+        Both cards are seeded from configuration — the <code>Retention__*</code> keys and the disk-guard
+        half of <code>Storage__*</code> — and both persist into the database once saved, after which
+        <strong>the stored values override the configuration file</strong>. An instance that never opens
+        this screen keeps behaving exactly as its <code>appsettings.json</code> says; one that has saved
+        the screen once ignores that file for these values from then on.
+      </p>
+      <p>
+        The workers read the policy through the same store the screen writes, on every sweep and every
+        check, which is why changes need no restart. The full key list is in the
+        <a href="configuration.html">configuration reference</a>.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">A reasonable starting point</span>
+        <p>
+          For a production instance that keeps a quarter's worth of run history and has a comfortable
+          margin on disk: run history 90 days, sweep interval 60 minutes, version and OpenAPI caps left at
+          zero, audit log left at zero, minimum free space 1024 MB. Then revisit the run-history figure
+          once you know how large the database actually gets — it is far easier to shorten the window later
+          than to reconstruct history you pruned.
+        </p>
+      </div>
+
+      <h2>Where to go next</h2>
+      <div class="kg-cards">
+        <a class="kg-card" href="backup-restore.html">
+          <div class="kg-card-title">Backup and restore</div>
+          <div class="kg-card-desc">What a snapshot carries — and why run history is not in it.</div>
+        </a>
+        <a class="kg-card" href="file-access.html">
+          <div class="kg-card-title">File access</div>
+          <div class="kg-card-desc">The other free-space control, applied per write instead of per instance.</div>
+        </a>
+        <a class="kg-card" href="configuration.html">
+          <div class="kg-card-title">Configuration reference</div>
+          <div class="kg-card-desc">The retention and storage keys as read at startup, before this screen overrides them.</div>
+        </a>
+      </div>
+
+      <nav id="kg-pagenav" class="kg-pagenav" aria-label="Previous and next page"></nav>
+
+    </article>
+
+    <aside class="kg-toc" aria-label="On this page">
+      <div class="kg-toc-title">On this page</div>
+      <div id="kg-toc"></div>
+    </aside>
+  </main>
+</div>
+
+<script src="../assets/nav.js"></script>
+<script src="../assets/help.js"></script>
+</body>
+</html>
