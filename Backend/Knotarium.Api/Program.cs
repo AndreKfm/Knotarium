@@ -102,7 +102,19 @@ builder.Services.AddSingleton<INodePackageCatalogProvider>(sp => sp.GetRequiredS
 builder.Services.AddHostPlugins(builder.Configuration);
 
 builder.Services.AddScoped<DatabaseWorkflowStore>();
-builder.Services.AddScoped<FileWorkflowStore>();
+// Workflow drafts (workflows/*.json + groups.json) anchor in the same shared data directory as the
+// DB, so a service and an interactive run edit the same drafts and Storage:DataDirectory relocates
+// all persisted state together. Development keeps the historical per-user %APPDATA%\Knotarium store
+// (parameterless ctor), matching the DB's dev-only relative path above.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddScoped<FileWorkflowStore>();
+}
+else
+{
+    builder.Services.AddScoped(sp =>
+        new FileWorkflowStore(dataDir, sp.GetRequiredService<ILogger<FileWorkflowStore>>()));
+}
 builder.Services.AddScoped<IWorkflowStore>(sp => sp.GetRequiredService<FileWorkflowStore>());
 builder.Services.AddScoped<IWorkflowDefinitionProvider>(sp => sp.GetRequiredService<DatabaseWorkflowStore>());
 builder.Services.AddSingleton<SseEventPublisher>();
@@ -191,7 +203,9 @@ builder.Services.AddScoped<ActiveWorkflowVersionService>();
 builder.Services.AddScoped<WorkflowActivationService>();
 builder.Services.AddScoped<Knotarium.Api.Services.WorkflowLifecycleService>();
 // Workflow-portability family (folder export, .kgbundle bundles, .kgtpl templates, .kgbak backup).
-builder.Services.AddPortability();
+// Productive builds anchor the default export folder in the shared data directory (dev keeps the
+// per-user %APPDATA% fallback), mirroring the workflow-draft store above.
+builder.Services.AddPortability(builder.Environment.IsDevelopment() ? null : dataDir);
 
 builder.Services.AddScoped<IOpenApiParser, MicrosoftOpenApiParser>();
 builder.Services.AddScoped<IOpenApiSpecStore, OpenApiSpecStore>();
@@ -391,6 +405,14 @@ if (authEnabled)
 }
 
 var app = builder.Build();
+
+// Relocate workflow drafts that older builds wrote to the per-user %APPDATA%\Knotarium store into
+// the shared data directory. Must run before the first request constructs a FileWorkflowStore, and
+// only where the store is anchored in dataDir (i.e. not in Development).
+if (!app.Environment.IsDevelopment())
+{
+    LegacyWorkflowStoreMigration.Migrate(dataDir, app.Logger);
+}
 
 app.UseCors();
 app.UseRateLimiter();

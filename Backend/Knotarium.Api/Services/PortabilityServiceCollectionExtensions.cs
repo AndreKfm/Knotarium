@@ -19,7 +19,12 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class PortabilityServiceCollectionExtensions
 {
-    public static IServiceCollection AddPortability(this IServiceCollection services)
+    /// <param name="services">The service collection.</param>
+    /// <param name="sharedDataDirectory">
+    /// The machine-wide data directory (Storage:DataDirectory) to anchor the default export folder in;
+    /// null keeps the historical per-user %APPDATA% fallback (Development).
+    /// </param>
+    public static IServiceCollection AddPortability(this IServiceCollection services, string? sharedDataDirectory = null)
     {
         // Shared "current published state" resolver, consumed by the folder exporter, the bundle workflow
         // source, and the template pipeline so they never disagree about which version a workflow exports.
@@ -30,10 +35,12 @@ public static class PortabilityServiceCollectionExtensions
             var exportFolder = configuration["Export:Folder"];
             if (string.IsNullOrWhiteSpace(exportFolder))
             {
-                exportFolder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "Knotarium",
-                    "export");
+                exportFolder = sharedDataDirectory is not null
+                    ? Path.Combine(sharedDataDirectory, "export")
+                    : Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "Knotarium",
+                        "export");
             }
 
             return new WorkflowExportService(

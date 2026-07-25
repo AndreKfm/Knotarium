@@ -23,8 +23,10 @@ public class GroupPreconditionFailedException : Exception
 }
 
 /// <summary>
-/// Persists and retrieves workflow draft definitions on the local file system
-/// in the user's AppData directory for Git versioning.
+/// Persists and retrieves workflow draft definitions as JSON files on the local file system
+/// (suitable for Git versioning). Productive hosts anchor the store in the shared machine-wide
+/// data directory next to the DB via the store-folder constructor; the parameterless constructor
+/// falls back to the per-user %APPDATA%/Knotarium location used in Development.
 /// </summary>
 public sealed class FileWorkflowStore : IWorkflowStore
 {
@@ -38,7 +40,8 @@ public sealed class FileWorkflowStore : IWorkflowStore
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileWorkflowStore"/> class.
-    /// Uses the default path %APPDATA%/Knotarium.
+    /// Uses the per-user default path %APPDATA%/Knotarium (Development only — productive hosts
+    /// pass the shared data directory to the other constructor).
     /// </summary>
     /// <param name="logger">The logger instance.</param>
     public FileWorkflowStore(ILogger<FileWorkflowStore> logger)
