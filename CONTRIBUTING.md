@@ -32,26 +32,17 @@ cd Frontend && npm install && npm test && npm run build
 
 ## Licensing of contributions
 
-No CLA is required. Per **Apache-2.0 §5**, any contribution intentionally submitted for inclusion is
-licensed under the project's [Apache-2.0 License](LICENSE) automatically, unless explicitly stated otherwise.
-
-We use the **Developer Certificate of Origin** ([DCO](https://developercertificate.org/)) — and it is
-**enforced**. Every commit in a pull request must carry a `Signed-off-by:` line certifying that you wrote the
-change, or otherwise have the right to submit it under Apache-2.0. Add it automatically as you commit:
-
-```bash
-git commit -s      # appends "Signed-off-by: Your Name <you@example.com>"
-```
-
-A required **DCO check** gates every PR; a commit missing the sign-off fails the check. To fix an existing
-branch, re-sign its commits with `git rebase --signoff <base>` and force-push.
+No CLA, and no per-commit sign-off. Per **Apache-2.0 §5**, any contribution intentionally submitted for
+inclusion is licensed under the project's [Apache-2.0 License](LICENSE) automatically, unless explicitly
+stated otherwise. Opening a pull request is your statement that you wrote the change, or otherwise have the
+right to submit it under that license.
 
 ### AI-assisted contributions
 
-AI-assisted contributions are **welcome** — much of this project is itself agent-written. The rule is just the
-DCO applied honestly: by signing off, *you* — the human submitter — certify that you have the right to submit
-the change under Apache-2.0 and take responsibility for it, whatever tools produced it. Review what you send;
-you are vouching for it, not the tool.
+AI-assisted contributions are **welcome** — much of this project is itself agent-written. The rule above
+applies unchanged: *you* — the human submitter — have the right to submit the change under Apache-2.0 and
+take responsibility for it, whatever tools produced it. Review what you send; you are vouching for it, not
+the tool.
 
 ## Reporting bugs vs. security issues
 
