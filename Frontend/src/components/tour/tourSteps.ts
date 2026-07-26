@@ -13,7 +13,7 @@ export interface TourStep {
 export const TOUR_STEPS: TourStep[] = [
   {
     title: 'Welcome to Knotarium',
-    body: 'A quick tour of the main areas — about a minute. Skip anytime, or restart it later from “Tour” in the top bar.',
+    body: 'A quick tour of the main areas — about a minute. Skip anytime, or restart it later from “Product tour” in the account menu.',
   },
   {
     selector: '[data-tour="dashboard"]',
