@@ -137,7 +137,7 @@ export function GuidedTour({ onClose }: GuidedTourProps) {
         </div>
 
         <div style={{ marginTop: 10, fontSize: '0.72rem', color: 'var(--text-muted)', opacity: 0.85 }}>
-          Reopen anytime from the “Tour” button in the top bar.
+          Reopen anytime from “Product tour” in the account menu, or via Ctrl K.
         </div>
       </div>
     </div>

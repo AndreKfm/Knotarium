@@ -7,14 +7,14 @@ import { Dashboard } from './components/Dashboard';
 import { Canvas } from './components/Canvas';
 import { ExecutionDetail } from './components/ExecutionDetail/index';
 import { OpenApiView } from './components/OpenApiView';
-import { Activity, Edit3, Grid, Code, Globe, Settings, ArrowLeft, Inbox, Package, LayoutTemplate, FileInput, Sparkles, Compass, BookOpen } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { AiGenerateModal } from './components/AiGenerateModal';
 import type { WorkflowDefinition, VersionInfo } from './types';
 import { NodeEditorShell } from './node-editor/NodeEditorShell';
 import { SettingsView } from './components/SettingsView';
 import { DeadLetterView } from './components/DeadLetterView';
-import { RuntimeArmingToggle } from './components/RuntimeArmingToggle';
-import { UserMenu } from './components/auth/UserMenu';
+import { TopBar, type TopBarTarget } from './components/topbar/TopBar';
+import { UsersPanel } from './components/auth/UsersPanel';
 import { GuidedTour } from './components/tour/GuidedTour';
 import { BundlesView } from './components/BundlesView';
 import { TemplatesView } from './components/TemplatesView';
@@ -32,15 +32,6 @@ interface NavigationState {
 }
 
 const NAVIGATION_STATE_STORAGE_KEY = 'knotarium-navigation-state';
-
-// Build time for the header badge in a FIXED ISO-like format (local time, 24h) — deliberately NOT
-// locale-formatted, so the build stamp reads identically on any machine (no "5. Juli" vs "Jul 5").
-function formatBuildTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
 function loadNavigationState(): NavigationState | null {
   if (typeof window === 'undefined') {
@@ -116,8 +107,9 @@ export default function App() {
   // Canvas registers for its current on-canvas definition.
   const [aiRefineBase, setAiRefineBase] = useState<WorkflowDefinition | null>(null);
   const getEditorDefinitionRef = useRef<(() => WorkflowDefinition) | null>(null);
-  const openAiModal = () => {
-    const def = currentView === 'editor' && getEditorDefinitionRef.current ? getEditorDefinitionRef.current() : null;
+  // 'extend' seeds the dialog with what is currently on the canvas; 'new' always starts empty.
+  const openAiGenerate = (mode: 'new' | 'extend') => {
+    const def = mode === 'extend' && getEditorDefinitionRef.current ? getEditorDefinitionRef.current() : null;
     setAiRefineBase(def && def.nodes.length > 0 ? def : null);
     setShowAiModal(true);
   };
@@ -137,6 +129,8 @@ export default function App() {
   // Build identity shown in the header so a stale instance is obvious after a rebuild.
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [showTour, setShowTour] = useState(false);
+  // User management is a top-bar destination but renders as an overlay panel.
+  const [showUsers, setShowUsers] = useState(false);
   const closeTour = () => {
     setShowTour(false);
     try { localStorage.setItem('kg-tour-done', '1'); } catch { /* ignore */ }
@@ -306,337 +300,67 @@ export default function App() {
     navigateToDashboard();
   };
 
+  // The Execution Visualizer is a permanent destination in the top bar, so it must lead somewhere
+  // even when no run is selected yet: open the most recent one, or fall back to the dashboard,
+  // which is where runs are listed when there are none.
+  const openLatestRun = async () => {
+    try {
+      const executions = await api.getExecutions();
+      const latest = [...executions]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+      if (latest) {
+        navigateToExecution(latest.id);
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to open the most recent run:', error);
+    }
+    navigateToDashboard();
+  };
+
+  const handleTopBarSelect = (target: TopBarTarget) => {
+    switch (target) {
+      case 'dashboard':
+        navigateToDashboard();
+        break;
+      case 'editor':
+        setPreviewDefinition(null);
+        navigateToEditor(null);
+        break;
+      case 'execution':
+        if (selectedExecutionId) {
+          setCurrentView('execution');
+        } else {
+          void openLatestRun();
+        }
+        break;
+      case 'users':
+        setShowUsers(true);
+        break;
+      default:
+        setCurrentView(target);
+        setLastNonExecutionView(target);
+        break;
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'var(--bg-main)', overflow: 'hidden' }}>
-      {/* Premium Glassmorphic Header */}
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '0 24px',
-          height: '70px',
-          background: 'rgba(16, 22, 37, 0.7)',
-          backdropFilter: 'blur(10px)',
-          borderBottom: '1px solid var(--border-color)',
-          zIndex: 10,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={navigateToDashboard}>
-          <div
-            style={{
-              background: 'linear-gradient(135deg, var(--color-accent), var(--color-info))',
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 15px var(--color-accent-glow)',
-            }}
-          >
-            <Activity size={18} color="#fff" />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
-            <span style={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '0.05em', color: '#fff' }}>
-              KNOT<span style={{ color: 'var(--text-secondary, #94a3b8)', fontWeight: 600 }}>ARIUM</span><span style={{ color: 'var(--color-accent)', textShadow: '0 0 10px var(--color-accent-glow)' }}>.</span>
-            </span>
-            {version && (
-              <span
-                title={version.buildTimeUtc ? `Built ${new Date(version.buildTimeUtc).toLocaleString()}` : undefined}
-                style={{ fontSize: '0.62rem', fontWeight: 600, letterSpacing: '0.02em', color: 'var(--text-secondary, #94a3b8)' }}
-              >
-                v{version.version}{version.buildTimeUtc ? ` · built ${formatBuildTime(version.buildTimeUtc)}` : ''}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Custom Premium Tabs Navigation */}
-        <nav style={{ display: 'flex', gap: '8px' }}>
-          <button
-            data-tour="dashboard"
-            onClick={navigateToDashboard}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'dashboard' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'dashboard' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Grid size={16} />
-            Dashboard
-          </button>
-          <button
-            data-tour="canvas-editor"
-            onClick={() => { setPreviewDefinition(null); navigateToEditor(null); }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'editor' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'editor' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Edit3 size={16} />
-            Canvas Editor
-          </button>
-          <button
-            data-tour="ai-generate"
-            onClick={openAiModal}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Sparkles size={16} />
-            AI Generate
-          </button>
-          <button
-            onClick={() => {
-              setCurrentView('node-editor');
-              setLastNonExecutionView('node-editor');
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'node-editor' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'node-editor' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Code size={16} />
-            Node Editor
-          </button>
-          <button
-            onClick={() => {
-              setCurrentView('api-importer');
-              setLastNonExecutionView('api-importer');
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'api-importer' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'api-importer' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Globe size={16} />
-            API Importer
-          </button>
-          <button
-            data-tour="settings"
-            onClick={() => {
-              setCurrentView('settings');
-              setLastNonExecutionView('settings');
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'settings' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'settings' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Settings size={16} />
-            Settings
-          </button>
-          <button
-            data-tour="dead-letter"
-            onClick={() => {
-              setCurrentView('dead-letter');
-              setLastNonExecutionView('dead-letter');
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'dead-letter' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'dead-letter' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Inbox size={16} />
-            Dead Letter
-          </button>
-          <button
-            onClick={() => {
-              setCurrentView('bundles');
-              setLastNonExecutionView('bundles');
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'bundles' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'bundles' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Package size={16} />
-            Bundles
-          </button>
-          <button
-            data-tour="templates"
-            onClick={() => {
-              setCurrentView('templates');
-              setLastNonExecutionView('templates');
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'templates' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'templates' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <LayoutTemplate size={16} />
-            Templates
-          </button>
-          <button
-            onClick={() => {
-              setCurrentView('imports');
-              setLastNonExecutionView('imports');
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              background: currentView === 'imports' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-              border: 'none',
-              borderRadius: '8px',
-              color: currentView === 'imports' ? '#fff' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <FileInput size={16} />
-            Import
-          </button>
-          {selectedExecutionId && (
-            <button
-              onClick={() => setCurrentView('execution')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 16px',
-                background: currentView === 'execution' ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-                border: 'none',
-                borderRadius: '8px',
-                color: currentView === 'execution' ? '#fff' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <Activity size={16} />
-              Execution Visualizer
-            </button>
-          )}
-        </nav>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <RuntimeArmingToggle
-            armed={armed}
-            busy={armingBusy}
-            onToggle={() => { void setRuntimeArmed(!(armed === true)); }}
-          />
-          <button
-            onClick={() => setShowTour(true)}
-            title="Take the product tour"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
-          >
-            <Compass size={15} /> Tour
-          </button>
-          {/* Offline help, served from wwwroot/help by the same process. A plain link rather than a
-              router push: the docs are static HTML outside the SPA, and opening them in a new tab
-              means reading them does not discard canvas state. Absolute "/help/" (not "help/") so it
-              resolves the same from every screen. */}
-          <a
-            href="/help/"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Open the documentation"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '8px', color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', textDecoration: 'none' }}
-          >
-            <BookOpen size={15} /> Help
-          </a>
-          <UserMenu />
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-            Local time: {new Date().toLocaleTimeString()}
-          </div>
-        </div>
-      </header>
+      {/* Adaptive top bar — never hides a destination, sheds labels under width pressure. */}
+      <TopBar
+        view={currentView}
+        onSelect={handleTopBarSelect}
+        onAiGenerate={openAiGenerate}
+        onOpenWorkflow={(id) => navigateToEditor(id)}
+        onOpenRun={(id) => navigateToExecution(id)}
+        onOpenLatestRun={() => { void openLatestRun(); }}
+        onOpenTour={() => setShowTour(true)}
+        armed={armed}
+        armingBusy={armingBusy}
+        onSetArmed={(next) => { void setRuntimeArmed(next); }}
+        version={version}
+        onGoHome={navigateToDashboard}
+      />
 
       {/* Main Content Area */}
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -813,6 +537,8 @@ export default function App() {
         </div>,
         document.body,
       )}
+
+      {showUsers && <UsersPanel onClose={() => setShowUsers(false)} />}
 
       {showTour && <GuidedTour onClose={closeTour} />}
     </div>

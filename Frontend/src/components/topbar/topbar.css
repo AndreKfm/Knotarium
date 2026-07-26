@@ -1,0 +1,411 @@
+/* Copyright 2026 Andre Kaufmann
+   SPDX-License-Identifier: Apache-2.0
+
+   ═══════════════════════════════════════════════════════════════════════════
+   Adaptive top bar — "icon switch" (scoped to .tb)
+   ═══════════════════════════════════════════════════════════════════════════
+   The bar never hides a destination. When it runs out of width it sheds
+   LABELS, in a fixed order, driven by useAdaptiveBar(): that controller puts
+   the cumulative level classes (.tb-l-*) on .tb and .iconly on individual nav
+   items. Everything below is the rendering of those states — no breakpoints,
+   because the trigger is the bar's own measured width, not the viewport's.
+
+   Handoff tokens are declared locally (same pattern as .kgb / .bkr in
+   index.css) and mapped onto the app palette, so the bar keeps the existing
+   chrome instead of introducing a second colour system. The "you are here"
+   accent is called --cyan in the handoff; in Knotarium that role is the
+   indigo --color-accent. */
+
+.tb {
+  --ink: var(--text-primary);
+  --muted: var(--text-secondary);
+  --faint: var(--text-muted);
+  --line: var(--border-color);
+  --line-soft: rgba(255, 255, 255, 0.06);
+  --cyan: var(--color-accent);
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 70px;
+  padding: 0 16px;
+  background: rgba(16, 22, 37, 0.7);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  z-index: 10;
+  /* Paint guard ONLY. The actual overflow target is .tb-nav at the last
+     ladder step (.tb-l-scroll); this never clips as the mechanism. */
+  overflow: hidden;
+}
+
+/* ── brand ───────────────────────────────────────────────────────────────── */
+
+.tb-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.tb-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-info));
+  box-shadow: 0 0 15px var(--color-accent-glow);
+  color: #fff;
+}
+.tb-word {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  text-align: left;
+  white-space: nowrap;
+}
+.tb-word-name {
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #fff;
+}
+.tb-word-dim { color: var(--muted); font-weight: 600; }
+.tb-word-dot { color: var(--color-accent); text-shadow: 0 0 10px var(--color-accent-glow); }
+.tb-build {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.tb.tb-l-brand .tb-word { display: none; }
+
+/* ── nav row ─────────────────────────────────────────────────────────────── */
+
+.tb-nav {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  min-width: 0;
+}
+.tb-sep {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  margin: 0 5px;
+  background: var(--line);
+}
+.ni {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 11px;
+  flex: none;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap; /* non-negotiable: a wrapped label grows the bar's height */
+  cursor: pointer;
+  transition:
+    background 0.13s,
+    color 0.13s,
+    padding 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ni:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
+.ni:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.ni.on {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 -2px 0 var(--cyan);
+}
+.ni-icon { display: grid; place-items: center; flex: none; }
+.ni-label { white-space: nowrap; }
+.ni.iconly { width: 34px; padding: 0; justify-content: center; }
+.ni.iconly .ni-label { display: none; }
+
+/* Last step: the row itself scrolls. Nothing leaves the DOM, ever. */
+.tb.tb-l-scroll .tb-nav {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #2c3a4d transparent;
+  mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+
+/* Free space between nav and the right cluster. Doubles as the headroom
+   gauge the layout controller reads for its grow hysteresis. */
+.tb-spacer { flex: 1 1 0; min-width: 0; align-self: stretch; }
+
+/* ── ⌘K field ────────────────────────────────────────────────────────────── */
+
+.tb-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--faint);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: padding 0.18s cubic-bezier(0.4, 0, 0.2, 1), width 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tb-cmd:hover { color: var(--muted); border-color: rgba(255, 255, 255, 0.24); }
+.tb-cmd-kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 0.68rem;
+  color: var(--faint);
+}
+.tb.tb-l-cmd .tb-cmd { width: 34px; padding: 0; justify-content: center; }
+.tb.tb-l-cmd .tb-cmd-text,
+.tb.tb-l-cmd .tb-cmd-kbd { display: none; }
+
+/* ── right cluster ───────────────────────────────────────────────────────── */
+
+.tb-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.tb-vr { width: 1px; height: 22px; flex: none; background: var(--line); }
+.tb.tb-l-brand .tb-vr { display: none; }
+.tb-clock {
+  flex: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tb.tb-l-clock .tb-clock { display: none; }
+
+.tb-gbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.tb-gbtn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.05); }
+.tb-gbtn.sq { width: 32px; padding: 0; justify-content: center; }
+
+.tb-brand:focus-visible,
+.tb-cmd:focus-visible,
+.tb-gbtn:focus-visible,
+.tb-pill:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* ── arming pill — safety state, never removed ───────────────────────────── */
+
+.tb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  flex: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, opacity 0.2s, padding 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tb-pill:disabled { cursor: not-allowed; opacity: 0.5; }
+.tb-pill-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; }
+.tb-pill-icon { display: grid; place-items: center; flex: none; }
+.tb.tb-l-pill .tb-pill { padding: 0 9px; }
+.tb.tb-l-pill .tb-pill-label,
+.tb.tb-l-pill .tb-pill-icon { display: none; }
+
+/* ── tooltip (portaled to <body>: .tb clips its own children) ────────────── */
+
+.tb-tip {
+  position: fixed;
+  z-index: 3000;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: rgba(9, 13, 22, 0.97);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── account menu (portaled) ─────────────────────────────────────────────── */
+
+.tb-menu {
+  position: fixed;
+  z-index: 2500;
+  min-width: 208px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--bg-surface-opaque);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.tb-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.tb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.tb-menu-item:hover { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
+.tb-menu-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.tb-menu-foot {
+  padding: 8px 10px 4px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── ⌘K palette ──────────────────────────────────────────────────────────── */
+
+.tb-pal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgba(4, 7, 13, 0.55);
+  backdrop-filter: blur(2px);
+}
+.tb-pal {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 66vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--bg-surface-opaque);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.tb-pal-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+.tb-pal-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.95rem;
+  outline: none;
+}
+.tb-pal-list { overflow-y: auto; padding: 6px; }
+.tb-pal-group {
+  padding: 10px 10px 4px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tb-pal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.tb-pal-row.sel { background: rgba(99, 102, 241, 0.16); color: var(--text-primary); }
+.tb-pal-row .tb-pal-hint {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42%;
+}
+.tb-pal-empty { padding: 22px 16px; color: var(--text-muted); font-size: 0.85rem; text-align: center; }
+.tb-pal-foot {
+  display: flex;
+  gap: 14px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}

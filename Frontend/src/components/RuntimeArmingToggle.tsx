@@ -15,6 +15,11 @@ interface RuntimeArmingToggleProps {
  * Global runtime arming switch shown in the app header.
  * - Armed: the scheduler fires active workflows automatically (run-time / live).
  * - Disarmed: automatic execution is paused; only manual "Run" executes (design-time / editing).
+ *
+ * Layout lives in topbar.css (.tb-pill) because the top bar's degradation
+ * ladder collapses this pill to its dot at the narrowest widths — it may lose
+ * its label but is never removed, since it carries safety state. Only the
+ * state colours stay inline: they are derived, not themeable.
  */
 export function RuntimeArmingToggle({ armed, busy, onToggle }: RuntimeArmingToggleProps) {
   const isLoading = armed === null;
@@ -28,40 +33,25 @@ export function RuntimeArmingToggle({ armed, busy, onToggle }: RuntimeArmingTogg
 
   return (
     <button
+      type="button"
+      className="tb-pill"
       onClick={onToggle}
       disabled={busy || isLoading}
       title={title}
       aria-label={`Runtime ${label}. ${isArmed ? 'Click to disarm.' : 'Click to arm.'}`}
       aria-pressed={isArmed}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '8px 14px',
-        borderRadius: '999px',
         background: isArmed ? 'rgba(16, 185, 129, 0.12)' : 'rgba(250, 204, 21, 0.10)',
         border: `1px solid ${isArmed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(250, 204, 21, 0.35)'}`,
         color,
-        fontWeight: 700,
-        fontSize: '0.8rem',
-        letterSpacing: '0.02em',
-        cursor: busy || isLoading ? 'not-allowed' : 'pointer',
-        opacity: busy || isLoading ? 0.5 : 1,
-        transition: 'background 0.2s, border-color 0.2s, opacity 0.2s',
       }}
     >
       <span
-        style={{
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: color,
-          boxShadow: isArmed ? '0 0 8px var(--color-success)' : 'none',
-          flex: 'none',
-        }}
+        className="tb-pill-dot"
+        style={{ background: color, boxShadow: isArmed ? '0 0 8px var(--color-success)' : 'none' }}
       />
-      {isArmed ? <ShieldCheck size={15} /> : <ShieldOff size={15} />}
-      <span>{label}</span>
+      <span className="tb-pill-icon">{isArmed ? <ShieldCheck size={15} /> : <ShieldOff size={15} />}</span>
+      <span className="tb-pill-label">{label}</span>
     </button>
   );
 }
