@@ -397,6 +397,22 @@ code, pre {
   stroke: var(--color-accent) !important;
 }
 
+/* The wire a palette item hovering the canvas would be spliced into on release. Marching dashes so
+   it reads as "about to change", not as "selected". */
+.react-flow__edge.splice-target .react-flow__edge-path {
+  stroke: var(--color-accent) !important;
+  stroke-width: 4;
+  stroke-dasharray: 8 5;
+  animation: kg-splice-target-march 0.6s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.6));
+}
+
+@keyframes kg-splice-target-march {
+  to {
+    stroke-dashoffset: -13;
+  }
+}
+
 .react-flow__handle {
   width: 10px !important;
   height: 10px !important;

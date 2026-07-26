@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { Canvas } from '../components/Canvas';
 import { api } from '../utils/api';
-import { DEFAULT_NODE_WIDTH } from './canvasGeometry';
 import { useVariableStore } from '../stores/useVariableStore';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +57,7 @@ function internalFor(id: string) {
   return {
     id,
     position: n.position,
+    measured: { width: NODE_W, height: NODE_H },
     internals: { positionAbsolute: { x: ax, y: ay }, handleBounds: { source, target } },
   };
 }
@@ -241,11 +241,60 @@ describe('Feature B — insert-on-edge', () => {
     expect(logX).toBeGreaterThan(400);
     // New node centered in the *expanded* gap (midpoint + half the downstream shift),
     // so the A→new and new→B wires come out balanced rather than new hugging A.
-    const delta = DEFAULT_NODE_WIDTH + 80;
-    expect(delay.position.x).toBeCloseTo(300 - DEFAULT_NODE_WIDTH / 2 + delta / 2);
+    // The gap is sized from the MEASURED node width, not the DEFAULT_NODE_WIDTH guess.
+    const delta = NODE_W + 80;
+    expect(delay.position.x).toBeCloseTo(300 - NODE_W / 2 + delta / 2);
     // Sanity: the node now sits between A's output (200) and B's shifted input.
     expect(delay.position.x).toBeGreaterThan(200);
-    expect(delay.position.x + DEFAULT_NODE_WIDTH).toBeLessThan(logX);
+    expect(delay.position.x + NODE_W).toBeLessThan(logX);
+  });
+
+  it('splices when the dropped node OVERLAPS the wire, not just when the cursor is on it', async () => {
+    // The cursor sits 30 units below the wire (y=40) — outside any point-based tolerance — but the
+    // node the drop would place (NODE_H=80, centred on the cursor) still covers it. This is the
+    // grab that used to be missed, and the one that got progressively harder as the canvas started
+    // opening at its true zoom instead of a clamped, magnified one.
+    loadedGraph = {
+      nodes: [node('start-1', 'start', 0, 0, true), node('log-1', 'log', 400, 0)],
+      edges: [{ id: 'e1', source: 'start-1', sourceHandle: 'result', target: 'log-1', targetHandle: 'in' }],
+    };
+    vi.mocked(api.getNodePackages).mockResolvedValue([pkg('start', { triggerOnly: true }), pkg('log'), pkg('delay')] as never);
+
+    await renderCanvas();
+    dropPackage('delay', 300, 70);
+
+    await waitFor(() => expect(readEdges()).toHaveLength(2));
+    const delay = readNodes().find((n) => n.type === 'delay');
+    const edges = readEdges();
+    expect(edges.some((e) => e.id === 'e1')).toBe(false);
+    expect(edges.find((e) => e.source === 'start-1')?.target).toBe(delay.id);
+    expect(edges.find((e) => e.target === 'log-1')?.source).toBe(delay.id);
+  });
+
+  it('picks the wire closest to the dropped node when its box covers two', async () => {
+    // Two parallel wires 100 apart (y≈40 and y≈140); the box spans both. The drop sits nearer the
+    // lower one, so that is the one spliced.
+    loadedGraph = {
+      nodes: [
+        node('start-1', 'start', 0, 0, true),
+        node('log-1', 'log', 400, 0),
+        node('log-2', 'log', 0, 100),
+        node('log-3', 'log', 400, 100),
+      ],
+      edges: [
+        { id: 'top', source: 'start-1', sourceHandle: 'result', target: 'log-1', targetHandle: 'in' },
+        { id: 'bot', source: 'log-2', sourceHandle: 'result', target: 'log-3', targetHandle: 'in' },
+      ],
+    };
+    vi.mocked(api.getNodePackages).mockResolvedValue([pkg('start', { triggerOnly: true }), pkg('log'), pkg('delay')] as never);
+
+    await renderCanvas();
+    dropPackage('delay', 300, 120);
+
+    await waitFor(() => expect(readEdges()).toHaveLength(3));
+    const edges = readEdges();
+    expect(edges.some((e) => e.id === 'bot')).toBe(false);
+    expect(edges.some((e) => e.id === 'top')).toBe(true);
   });
 
   it('does not splice a trigger-only node (no input) — plain add instead', async () => {
@@ -298,6 +347,94 @@ describe('Feature B — insert-on-edge', () => {
     expect(intoJoin?.source).toBe(delay.id);
     expect(intoJoin?.targetHandle).toBe('in');
     expect(edges.some((e) => e.id === 'e1')).toBe(false);
+  });
+});
+
+describe('Feature B — splicing a node that is already on the canvas', () => {
+  beforeEach(() => {
+    store.nodes = [];
+    store.edges = [];
+    vi.mocked(api.getWorkflow).mockResolvedValue({ id: { value: 'wf-1' }, name: 'WF', nodes: [], edges: [] } as never);
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  // Drives one full React Flow drag gesture: start, optional hover, release at `to`.
+  function dragNodeTo(id: string, to: { x: number; y: number }, opts: { hoverOnly?: boolean } = {}) {
+    store.handlers.onNodeDragStart({}, store.nodes.find((n) => n.id === id));
+    store.nodes = store.nodes.map((n) => (n.id === id ? { ...n, position: to } : n));
+    const moved = { ...store.nodes.find((n) => n.id === id), position: to };
+    store.handlers.onNodeDrag({}, moved);
+    if (!opts.hoverOnly) store.handlers.onNodeDragStop({}, moved);
+    return moved;
+  }
+
+  it('splices an UNWIRED node dragged onto a wire, same as a palette drop', async () => {
+    loadedGraph = {
+      nodes: [node('start-1', 'start', 0, 0, true), node('log-1', 'log', 400, 0), node('delay-1', 'delay', 0, 400)],
+      edges: [{ id: 'e1', source: 'start-1', sourceHandle: 'result', target: 'log-1', targetHandle: 'in' }],
+    };
+    vi.mocked(api.getNodePackages).mockResolvedValue([pkg('start', { triggerOnly: true }), pkg('log'), pkg('delay')] as never);
+
+    await renderCanvas();
+    expect(readEdges()).toHaveLength(1);
+
+    // Release it so its box (200×80 at 250,10) covers the wire running at y≈40.
+    act(() => { dragNodeTo('delay-1', { x: 250, y: 10 }); });
+
+    await waitFor(() => expect(readEdges()).toHaveLength(2));
+    const edges = readEdges();
+    expect(edges.some((e) => e.id === 'e1')).toBe(false);
+    expect(edges.find((e) => e.source === 'start-1')?.target).toBe('delay-1');
+    expect(edges.find((e) => e.target === 'log-1')?.source).toBe('delay-1');
+
+    // Room was made downstream and the node moved into the middle of it.
+    const nodes = readNodes();
+    expect(nodes.find((n) => n.id === 'log-1').position.x).toBe(400 + NODE_W + 80);
+    expect(nodes.find((n) => n.id === 'delay-1').position.x).toBeCloseTo(300 - NODE_W / 2 + (NODE_W + 80) / 2);
+  });
+
+  it('leaves an ALREADY WIRED node alone — it would silently reroute the graph', async () => {
+    loadedGraph = {
+      nodes: [
+        node('start-1', 'start', 0, 0, true),
+        node('log-1', 'log', 400, 0),
+        node('log-2', 'log', 0, 400),
+        node('delay-1', 'delay', 0, 600),
+      ],
+      edges: [
+        { id: 'e1', source: 'start-1', sourceHandle: 'result', target: 'log-1', targetHandle: 'in' },
+        { id: 'e2', source: 'log-2', sourceHandle: 'result', target: 'delay-1', targetHandle: 'in' },
+      ],
+    };
+    vi.mocked(api.getNodePackages).mockResolvedValue([pkg('start', { triggerOnly: true }), pkg('log'), pkg('delay')] as never);
+
+    await renderCanvas();
+    act(() => { dragNodeTo('delay-1', { x: 250, y: 10 }); });
+
+    // Give the deferred proximity pass time to (not) fire.
+    await new Promise((r) => setTimeout(r, 50));
+    const edges = readEdges();
+    expect(edges).toHaveLength(2);
+    expect(edges.some((e) => e.id === 'e1')).toBe(true);
+    expect(edges.some((e) => e.id === 'e2')).toBe(true);
+  });
+
+  it('highlights the wire under an unwired node while it is being dragged', async () => {
+    loadedGraph = {
+      nodes: [node('start-1', 'start', 0, 0, true), node('log-1', 'log', 400, 0), node('delay-1', 'delay', 0, 400)],
+      edges: [{ id: 'e1', source: 'start-1', sourceHandle: 'result', target: 'log-1', targetHandle: 'in' }],
+    };
+    vi.mocked(api.getNodePackages).mockResolvedValue([pkg('start', { triggerOnly: true }), pkg('log'), pkg('delay')] as never);
+
+    await renderCanvas();
+    expect(readEdges()[0].className ?? '').not.toContain('splice-target');
+
+    act(() => { dragNodeTo('delay-1', { x: 250, y: 10 }, { hoverOnly: true }); });
+    await waitFor(() => expect(readEdges()[0].className ?? '').toContain('splice-target'));
+
+    // Moving away from the wire drops the highlight again.
+    act(() => { dragNodeTo('delay-1', { x: 250, y: 600 }, { hoverOnly: true }); });
+    await waitFor(() => expect(readEdges()[0].className ?? '').not.toContain('splice-target'));
   });
 });
 

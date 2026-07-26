@@ -294,6 +294,8 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
   // Latest proximity-snap scheduler, kept in a ref so handlers declared earlier in the
   // component (e.g. handleNodeDragStop) can trigger it without a use-before-declare cycle.
   const scheduleProximityRef = useRef<(nodeId: string, triggerOnly: boolean) => void>(() => {});
+  // Same bridge for insert-on-edge: an unwired node dragged onto a wire is spliced into it.
+  const spliceNodeRef = useRef<(node: RFNode) => boolean>(() => false);
 
   // ── Undo/Redo ── The canvas is the live "present"; a ref-held history holds snapshots to
   // restore. recordUndo() pushes a pre-change snapshot before each structural edit. See canvas/useUndoRedo.
@@ -417,6 +419,10 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
   const [isDensityPopoverOpen, setIsDensityPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
+  // Wire a palette item hovering the canvas would splice into on release — highlighted in
+  // displayEdges below, maintained by handleCanvasDragOver further down.
+  const [spliceTarget, setSpliceTarget] = useState<string | null>(null);
+
   // Close popover when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -503,10 +509,17 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
       });
     });
 
-    return [...decorateEdgesWithDiagnostics(edges, edgeDiagnostics), ...virtualEdges];
+    const realEdges = decorateEdgesWithDiagnostics(edges, edgeDiagnostics).map((e) =>
+      // Only the one wire changes identity while a palette item hovers it, so the rest keep their
+      // object reference and React Flow re-renders just this edge.
+      e.id === spliceTarget
+        ? { ...e, className: [e.className, 'splice-target'].filter(Boolean).join(' ') }
+        : e,
+    );
+    return [...realEdges, ...virtualEdges];
     // Depends on the node-id SET, not `nodes` — so a position-only drag doesn't rebuild every edge object
     // (which would force React Flow to re-render all edges each frame).
-  }, [edges, edgeDiagnostics, variables, nodeIdSet, currentId, hoveredNodeId, hoveredVariableId, pinnedNodeIds, pinnedVariableIds, densityMode]);
+  }, [edges, edgeDiagnostics, variables, nodeIdSet, currentId, hoveredNodeId, hoveredVariableId, pinnedNodeIds, pinnedVariableIds, densityMode, spliceTarget]);
   const [availableNodes, setAvailableNodes] = useState<NodePackageSummary[]>([]);
   // id -> name for every workflow, used to label subflow nodes with the workflow they call.
   const [workflowNameById, setWorkflowNameById] = useState<Record<string, string>>({});
@@ -986,6 +999,7 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
   const handleNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: RFNode) => {
     // Clear the drag-time snap highlight + proximity cache regardless of node type.
     useVariableStore.getState().setSnapCandidateKeys([]);
+    setSpliceTarget(null);
     dragProximityRef.current = null;
 
     // Commit the pre-move snapshot to history if the drag actually moved the node.
@@ -993,9 +1007,10 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
     // settled position here; reparenting always shifts position too, so it's covered).
     const startSnap = dragStartSnapshotRef.current;
     dragStartSnapshotRef.current = null;
+    let moved = false;
     if (startSnap) {
       const before = startSnap.nodes.find((n) => n.id === node.id);
-      const moved =
+      moved =
         !before ||
         before.position?.x !== node.position?.x ||
         before.position?.y !== node.position?.y ||
@@ -1071,10 +1086,17 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
       }));
     }
 
-    // Proximity snap (Feature A) for a node moved in the open canvas. Skipped when the
-    // drop reparents into a container — the container owns its body wiring there.
+    // Wiring for a node moved in the open canvas. Skipped when the drop reparents into a container
+    // — the container owns its body wiring there.
     if (!loopNode) {
-      scheduleProximityRef.current(node.id, Boolean(node.data?.triggerOnly));
+      // Insert-on-edge (Feature B) first: an UNWIRED node let go over a wire is spliced into it,
+      // exactly like a fresh one dropped from the palette. It takes precedence over the proximity
+      // snap, which would otherwise hang the node off one end instead of putting it in line.
+      // Requires an actual move, so clicking a node that happens to sit on a wire changes nothing.
+      const spliced = moved && spliceNodeRef.current(node);
+      if (!spliced) {
+        scheduleProximityRef.current(node.id, Boolean(node.data?.triggerOnly));
+      }
     }
   }, [nodes, setNodes]);
 
@@ -1787,10 +1809,10 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
   // ── Proximity auto-connect (Feature A) + insert-on-edge (Feature B) ── See canvas/useAutoConnect.
   // scheduleProximityRef + dragProximityRef stay in Canvas (they bridge into the drag lifecycle
   // handlers onNodeDragStart/handleNodeDragStop) and are passed in.
-  const { handleNodeDrag, scheduleProximityConnect, tryInsertOnEdge } = useAutoConnect({
-    getNodes, getInternalNode, edges, edgesRef, isValidConnection,
-    addConnection, addRecentNode, setNodes, setEdges, snapIfEnabled,
-    scheduleProximityRef, dragProximityRef,
+  const { handleNodeDrag, scheduleProximityConnect, tryInsertOnEdge, spliceTargetEdgeId, resetSpliceProbe } = useAutoConnect({
+    getNodes, getInternalNode, getZoom, edges, edgesRef, isValidConnection,
+    addConnection, addRecentNode, setNodes, setEdges, snapIfEnabled, setSpliceTarget,
+    scheduleProximityRef, spliceNodeRef, dragProximityRef,
   });
 
   const handlePaletteDragStart = useCallback((event: DragEvent<HTMLButtonElement>, nodePackage: NodePackageSummary) => {
@@ -1801,13 +1823,37 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
   // Stable so the memoized SidebarPalette doesn't re-render on every Canvas render (hover/drag).
   const handleOpenApiImport = useCallback(() => setShowOpenApiImportModal(true), []);
 
+  // Keeps `spliceTarget` (declared with the other edge-display state) in step with the cursor, so
+  // the wire that a release would splice into is highlighted BEFORE letting go.
   const handleCanvasDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
-  }, []);
+    // dataTransfer.getData() is blocked during dragover, so the package id — and with it
+    // triggerOnly, which cannot splice — is unknown here; only the format can be checked. A trigger
+    // node therefore still highlights and then plainly drops. Rare enough to accept over losing the
+    // affordance for every other node.
+    if (!event.dataTransfer.types.includes('application/knotarium-node-package')) return;
+    const point = snapIfEnabled(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+    const next = spliceTargetEdgeId(point);
+    setSpliceTarget((current) => (current === next ? current : next));
+  }, [screenToFlowPosition, snapIfEnabled, spliceTargetEdgeId]);
+
+  // Ending the drag gesture (drop, or leaving the canvas) clears both the highlight and the
+  // per-drag port cache the probe built up.
+  const endSpliceHint = useCallback(() => {
+    resetSpliceProbe();
+    setSpliceTarget((current) => (current === null ? current : null));
+  }, [resetSpliceProbe]);
+
+  const handleCanvasDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    // dragleave also fires when moving onto a child (node, panel); only a real exit counts.
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    endSpliceHint();
+  }, [endSpliceHint]);
 
   const handleCanvasDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    endSpliceHint();
 
     // 0. A template dragged from the palette — stamp its subgraph at the cursor.
     const templateRaw = event.dataTransfer.getData('application/knotarium-template');
@@ -1922,7 +1968,7 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
         scheduleProximityConnect(newNode.id, Boolean(metadata?.triggerOnly));
       }
     }
-  }, [availableNodes, screenToFlowPosition, nodes, addRecentNode, setNodes, addConnection, tryInsertOnEdge, scheduleProximityConnect, recordUndo, snapIfEnabled, insertTemplateByDrop]);
+  }, [availableNodes, screenToFlowPosition, nodes, addRecentNode, setNodes, addConnection, tryInsertOnEdge, scheduleProximityConnect, recordUndo, snapIfEnabled, insertTemplateByDrop, endSpliceHint]);
 
   // Save & Publish in one step: persist the draft, then snapshot + activate a
   // runtime version so the workflow is immediately runnable. The backend dedups
@@ -2388,6 +2434,7 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
               transition: 'opacity 0.15s ease',
             }}
             onDragOver={handleCanvasDragOver}
+            onDragLeave={handleCanvasDragLeave}
             onDrop={handleCanvasDrop}
           >
             {/* React Flow Editor. In PublishedPreview we render the read-only
