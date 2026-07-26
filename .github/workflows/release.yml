@@ -243,7 +243,7 @@ jobs:
 
       - name: Download build artifacts
         if: steps.gate.outputs.enabled == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
@@ -251,7 +251,7 @@ jobs:
         id: vt
         if: steps.gate.outputs.enabled == 'true'
         continue-on-error: true   # a VT outage or rate-limit must never fail a release
-        uses: crazy-max/ghaction-virustotal@v4
+        uses: crazy-max/ghaction-virustotal@v5
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
           request_rate: 4   # stay within the free public API's 4 lookups/minute
