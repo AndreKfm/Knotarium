@@ -582,7 +582,13 @@ public class InMemoryNodePackageManifestProvider : INodePackageManifestProvider
                 new("value", "string", true, true),
                 new("cases", "string", true, false)
             },
-            new List<OutputDefinition> { new("default") }
+            // No declared outputs, exactly like aiRouter: the branches are DYNAMIC, one per label in
+            // the node's own 'cases' property plus the always-present 'default'. This is what makes the
+            // node usable at all — the compiler's socket check only runs when a manifest declares
+            // outputs, so declaring just 'default' here (as it used to) rejected every edge drawn from
+            // a case port with ERR_INVALID_SOCKET_MAPPING. The canvas derives the handles in
+            // Frontend/src/node-editor/switchPorts.ts; SwitchNodeTask.ParseCases is the matching parse.
+            new List<OutputDefinition>()
         ));
 
         // 13. Transform node manifest

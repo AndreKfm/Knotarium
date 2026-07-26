@@ -163,15 +163,19 @@
         </table>
       </div>
 
-      <div class="kg-note is-danger">
-        <span class="kg-note-label">Transform has no executor in this build</span>
+      <div class="kg-note">
+        <span class="kg-note-label">A path that matches nothing fails the node</span>
         <p>
-          No task implementation is registered for the <code>transform</code> type, so a run that
-          reaches one <strong>fails the node</strong> with <code>No task implementation registered for
-          type 'transform'.</code> The failure is loud and journalled, but it happens at run time —
-          the workflow publishes and validates cleanly. Until that changes, do the extraction inline
-          with a <code>{{ }}</code> expression on the consuming node's parameter, or in an
-          <strong>Inline Code</strong> node when the reshaping is more than a single lookup.
+          Transform does not pass an empty value downstream when the path selects nothing — it fails,
+          naming the path. That is deliberate: a null travelling on to the next node turns a typo here
+          into a confusing failure three steps later. A missing <strong>inputJson</strong> or
+          <strong>jsonPath</strong> fails the same way.
+        </p>
+        <p>
+          For a single lookup feeding one parameter you often do not need this node at all — a
+          <code>{{ }}</code> expression on the consuming parameter does the same job with one node
+          fewer. Reach for Transform when the extracted value feeds several places, or when you want
+          the extraction to be visible on the canvas.
         </p>
       </div>
 
@@ -227,13 +231,17 @@
         </table>
       </div>
 
-      <div class="kg-note is-danger">
-        <span class="kg-note-label">Merge has no executor in this build</span>
+      <div class="kg-note">
+        <span class="kg-note-label">Both inputs are optional, and non-arrays are appended</span>
         <p>
-          As with Transform and Switch, no task implementation is registered for the
-          <code>merge</code> type, and a run reaching one fails with <code>No task implementation
-          registered for type 'merge'.</code> Concatenate in an <strong>Inline Code</strong> node, or
-          restructure the graph so a <strong>Join</strong> collects the branches instead.
+          Wiring only one side makes Merge a pass-through, which is useful when a branch may or may
+          not produce a second list. Wiring neither yields an empty array rather than an error — the
+          following node decides whether empty is a problem.
+        </p>
+        <p>
+          A value that is not an array is appended as a single element instead of being rejected, so
+          merging one record onto a list needs no wrapper. Alongside <code>success</code> the node
+          publishes <code>count</code>, since testing the size is the most common next step.
         </p>
       </div>
 

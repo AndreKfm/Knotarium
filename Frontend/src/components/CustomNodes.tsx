@@ -10,6 +10,7 @@ import { SubflowLanes, type SubflowInterface } from './SubflowLanes';
 import { ExternalDeviceLanes } from './ExternalDeviceLanes';
 import { readDeviceSurface } from '../node-editor/externalDevicePins';
 import { aiRouterOutputHandles } from '../node-editor/aiRouterPorts';
+import { switchOutputHandles } from '../node-editor/switchPorts';
 import { useSubflowOpenStore } from '../stores/useSubflowOpenStore';
 import { canRenameNode, applyNodeRename } from '../node-editor/nodeRename';
 
@@ -325,19 +326,6 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
   const primaryOutputHandle = outputHandles[0];
   const statusBadge = getStatusBadge(execStatus);
 
-  // React Flow caches each node's handle geometry at mount; when handles are added/removed, re-id'd, or
-  // moved AFTER mount it must be told to re-measure, or edges anchored to those handles silently fail to
-  // draw until an unrelated pan/zoom forces a remeasure. This bit the Error Trigger (and any trigger
-  // node): its `triggerOnly` flag — and thus its rendered handle set — flips once the manifest metadata
-  // loads asynchronously, so the errorTrigger→next wire came and went. Re-measure whenever a
-  // handle-affecting input changes (trigger flag, output ports, or the low-detail body collapse that
-  // shifts the vertically-centred handles).
-  const updateNodeInternals = useUpdateNodeInternals();
-  const outputHandlesKey = outputHandles.join('|');
-  useEffect(() => {
-    updateNodeInternals(id);
-  }, [id, triggerOnly, lowDetail, primaryOutputHandle, outputHandlesKey, type, updateNodeInternals]);
-
   // AI Classify node: one branch handle per configured category label plus the 'otherwise'
   // fallback — derived from the node's own properties (see aiRouterPorts.ts), not the manifest,
   // so the handles follow the config live while editing.
@@ -345,6 +333,27 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
   const aiRouterHandles = isAiRouter
     ? aiRouterOutputHandles(data?.properties as Record<string, unknown> | undefined)
     : [];
+
+  // Switch node: same deal — one branch handle per configured case plus the 'default'
+  // fallback, derived from the node's own properties (see switchPorts.ts).
+  const isSwitch = type === 'switch';
+  const switchHandles = isSwitch
+    ? switchOutputHandles(data?.properties as Record<string, unknown> | undefined)
+    : [];
+
+  // React Flow caches each node's handle geometry at mount; when handles are added/removed, re-id'd, or
+  // moved AFTER mount it must be told to re-measure, or edges anchored to those handles silently fail to
+  // draw until an unrelated pan/zoom forces a remeasure. This bit the Error Trigger (and any trigger
+  // node): its `triggerOnly` flag — and thus its rendered handle set — flips once the manifest metadata
+  // loads asynchronously, so the errorTrigger→next wire came and went. Re-measure whenever a
+  // handle-affecting input changes (trigger flag, output ports, the property-derived branch handles of
+  // the dynamic-port nodes, or the low-detail body collapse that shifts the vertically-centred handles).
+  const updateNodeInternals = useUpdateNodeInternals();
+  const outputHandlesKey = outputHandles.join('|');
+  const branchHandlesKey = [...aiRouterHandles, ...switchHandles].join('|');
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, triggerOnly, lowDetail, primaryOutputHandle, outputHandlesKey, branchHandlesKey, type, updateNodeInternals]);
 
   // External device node: pins are derived from the selected events/actions (not static ports).
   // Pure inbound surface — events AND incoming actions are both source pins (right). See externalDevicePins.ts.
@@ -519,17 +528,18 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
   } : {};
 
   // Nodes that render branch/verdict labels down the right edge (AI Verify's 4, AI Diff's 3, AI Router's
-  // dynamic categories) need a right gutter on the OUTPUTS chip section so the promotable-output chips don't
-  // slide under those labels. The header title is short and left-aligned, so it does NOT get the gutter
-  // (padding it would squeeze the title in the execution view, where a status badge shares the header row,
-  // and wrap it onto 3 lines). For AI Router the gutter is sized to the longest category (labels ellipsize
-  // at 45% of the node, so it is capped accordingly).
-  const rightBranchCount = type === 'aiVerify' ? 4 : type === 'aiDiff' ? 3 : isAiRouter ? aiRouterHandles.length : 0;
+  // dynamic categories, Switch's dynamic cases) need a right gutter on the OUTPUTS chip section so the
+  // promotable-output chips don't slide under those labels. The header title is short and left-aligned, so
+  // it does NOT get the gutter (padding it would squeeze the title in the execution view, where a status
+  // badge shares the header row, and wrap it onto 3 lines). For the dynamic-port nodes the gutter is sized
+  // to the longest label (labels ellipsize at 45% of the node, so it is capped accordingly).
+  const dynamicBranchHandles = isAiRouter ? aiRouterHandles : isSwitch ? switchHandles : [];
+  const rightBranchCount = type === 'aiVerify' ? 4 : type === 'aiDiff' ? 3 : dynamicBranchHandles.length;
   const branchLabelGutter = type === 'aiVerify' ? 104
     : type === 'aiDiff' ? 92
     : type === 'httpRequest' ? 46  // short DONE/FAIL labels — just enough to clear the isSuccess chip
-    : isAiRouter && aiRouterHandles.length > 0
-      ? Math.min(150, Math.max(...aiRouterHandles.map((h) => h.length)) * 7 + 18)
+    : dynamicBranchHandles.length > 0
+      ? Math.min(150, Math.max(...dynamicBranchHandles.map((h) => h.length)) * 7 + 18)
       : 0;
   // Give branch-heavy nodes a little more height so 3–4 labels spread down the right edge with breathing
   // room instead of stacking tightly (they were reading as "condensed").
@@ -1013,14 +1023,14 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {isAiRouter && (
+      {dynamicBranchHandles.length > 0 && (
         <>
-          {aiRouterHandles.map((handle, index) => {
-            // Distribute the branch handles evenly down the right edge; the trailing
-            // 'otherwise' fallback renders muted so real categories stand out.
-            const top = `${Math.round(((index + 1) / (aiRouterHandles.length + 1)) * 100)}%`;
-            const isOtherwise = index === aiRouterHandles.length - 1;
-            const color = isOtherwise ? 'var(--text-muted, #6b7280)' : 'var(--color-accent)';
+          {dynamicBranchHandles.map((handle, index) => {
+            // Distribute the branch handles evenly down the right edge; the trailing fallback
+            // ('otherwise' / 'default') renders muted so the real branches stand out.
+            const top = `${Math.round(((index + 1) / (dynamicBranchHandles.length + 1)) * 100)}%`;
+            const isFallback = index === dynamicBranchHandles.length - 1;
+            const color = isFallback ? 'var(--text-muted, #6b7280)' : 'var(--color-accent)';
             return (
               <span key={handle}>
                 <Handle
@@ -1249,7 +1259,7 @@ function GenericCustomNodeImpl({ id, type, data, selected, width: measuredWidth,
         </>
       )}
 
-      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && type !== 'aiVerify' && type !== 'aiDiff' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && (
+      {!triggerOnly && type !== 'condition' && type !== 'httpRequest' && type !== 'aiVerify' && type !== 'aiDiff' && !isContainer && type !== 'end' && !isExternalDevice && !isAiRouter && !isSwitch && (
         <Handle
           type="source"
           position={Position.Right}
