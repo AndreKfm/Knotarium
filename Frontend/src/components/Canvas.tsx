@@ -93,9 +93,20 @@ import { useCanvasStore } from '../stores/useCanvasStore';
 import type { NodePackageSummary, WorkflowDefinition } from '../types';
 import { analyzeMultiExtraction, planParametrizedExtraction, type ExNode, type ExEdge } from '../node-editor/extractSubflow';
 
+// How long after pressing Run an incoming "armed" transition counts as caused by that run (and so
+// must not re-frame the canvas). Covers the activate + trigger round-trip with room to spare, while
+// staying far below any plausible manual arm-toggle that follows a run.
+const ARM_FRAMING_SUPPRESSION_MS = 5000;
+
 // ── Per-workflow viewport persistence ───────────────────────────────────────
 // Re-entering a workflow should land where you left it, not re-center on (often empty) middle.
-const VIEWPORT_KEY = (id: string) => `kg-canvas-viewport:${id}`;
+// Only ever store cameras the USER put there (see onMoveEnd): a programmatic framing that lands
+// wrong would otherwise be persisted and restored on every later visit, which is how the graph used
+// to end up permanently parked in a corner.
+// v2 keys: entries written before that rule may hold such a camera, so they are ignored (and pruned)
+// once — the workflow re-frames on its next load and the new camera is recorded from then on.
+const VIEWPORT_KEY = (id: string) => `kg-canvas-viewport:v2:${id}`;
+const LEGACY_VIEWPORT_KEY = (id: string) => `kg-canvas-viewport:${id}`;
 
 function saveViewport(id: string, vp: { x: number; y: number; zoom: number }) {
   if (!id) return;
@@ -106,6 +117,7 @@ function saveViewport(id: string, vp: { x: number; y: number; zoom: number }) {
 function loadViewport(id: string): { x: number; y: number; zoom: number } | null {
   if (!id) return null;
   try {
+    try { localStorage.removeItem(LEGACY_VIEWPORT_KEY(id)); } catch { /* ignore */ }
     const raw = localStorage.getItem(VIEWPORT_KEY(id));
     if (!raw) return null;
     const v = JSON.parse(raw) as { x?: unknown; y?: unknown; zoom?: unknown };
@@ -189,10 +201,14 @@ interface CanvasProps {
 
 
 function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSaved, onBack, onTriggered, onSimulated, onWorkflowLoadFailed, onOpenSubflow, isSubflow, registerSubflowExit, registerGetDefinition, onWatchLiveRuns, armed }: CanvasProps) {
-  const { screenToFlowPosition, getInternalNode, getNodes, setCenter, fitView, getZoom, setViewport, getViewport } = useReactFlow();
+  const { screenToFlowPosition, getInternalNode, getNodes, setCenter, fitView, getZoom, setViewport } = useReactFlow();
   const reactFlowStore = useStoreApi();
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  // True once every (non-hidden) node has real measured dimensions. Every camera move that frames the
+  // graph has to wait for this — fitView reads measured sizes, so framing earlier fits a subset and
+  // lands on a clamped, wrong zoom. Also drives the post-load auto-tidy further down.
+  const nodesInitialized = useNodesInitialized();
   // Live mirrors so callbacks/keybindings always snapshot the latest graph without
   // being re-created (and without stale closures) on every node/edge change. Synced in
   // an effect (post-commit) — handlers run after render, so they read fresh values.
@@ -859,64 +875,59 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
   }, [getNodes, reactFlowStore]);
 
   const restoredForRef = useRef<string>('');
-  // Tracks the pending framing-poll rAF so it can be cancelled on UNMOUNT only (see the unmount-only
-  // effect below). The poll effect itself has no cleanup on purpose (that would orphan it on re-run).
-  const restoreRafRef = useRef<number | null>(null);
-  useEffect(() => () => { if (restoreRafRef.current != null) cancelAnimationFrame(restoreRafRef.current); }, []);
   useEffect(() => {
     if (!currentId || nodes.length === 0 || restoredForRef.current === currentId) return;
+    // Wait for React Flow to have MEASURED every node. fitView derives its bounds purely from measured
+    // node sizes, so framing before that fits whatever subset happens to be measured already — typically
+    // a single node — and the resulting zoom slams into a clamp (maxZoom on a small graph, minZoom on a
+    // big import) that nothing ever corrects. That wrong camera then reads as "the graph is stuck in the
+    // corner"/"the canvas is empty".
+    //
+    // Gating on bounds instead of measurement (what this used to do) does NOT work: getNodesBounds is
+    // computed from node POSITIONS, so it reports a large box on the very first frame, while every node
+    // is still 0×0. And useNodesInitialized does not deadlock under onlyRenderVisibleElements the way
+    // the old comment here assumed — React Flow force-renders every node once before it can know whether
+    // it is visible (getNodesInside's forceInitialRender), so off-screen nodes are measured too.
+    if (!nodesInitialized) return;
     restoredForRef.current = currentId;
     const saved = loadViewport(currentId);
 
-    // Frame the graph once React Flow has actually measured the nodes. We can't gate on
-    // useNodesInitialized() — with onlyRenderVisibleElements, off-screen nodes never mount, so it never
-    // reports "all measured" and the restore would deadlock. Instead, poll a few frames until the graph
-    // reports real (non-zero) bounds: a single rAF often fires before measurement, and fitView on a 0×0
-    // box is a no-op that leaves the camera at the default {0,0,1} — i.e. pinned to the top-left corner,
-    // which is exactly the bug this guards against. Bounded so it can never spin.
-    //
-    // The loop is NOT torn down by a cleanup: this effect re-runs during the async load (versions/active
-    // arrive after the nodes), and cancelling on every re-run — while the ref-guard blocks restarting —
-    // would orphan the poll and never frame the graph. Instead each frame checks the ref: a genuinely new
-    // workflow updates restoredForRef to its own id, which self-terminates any earlier workflow's loop.
-    let attempts = 0;
-    const frame = () => {
-      if (restoredForRef.current !== currentId) return; // superseded by a newer workflow load
-      const bounds = getNodesBounds(getNodes());
-      const measured = bounds.width > 1 && bounds.height > 1;
-      if (!measured && attempts++ < 20) {
-        restoreRafRef.current = requestAnimationFrame(frame);
-        return;
-      }
-      // Restore the remembered viewport only if it still actually shows the graph. A stale/degenerate
-      // saved viewport (e.g. the origin {0,0,1}) would leave the graph off-screen — common because graphs
-      // can sit at negative coordinates — so fall back to fitView instead of landing in an empty corner.
-      if (saved && viewportShowsGraph(saved)) {
-        setViewport(saved, { duration: 0 });
-      } else {
-        fitView({ padding: 0.15, duration: 0 });
-      }
-    };
-    restoreRafRef.current = requestAnimationFrame(frame);
-  }, [currentId, nodes.length, setViewport, fitView, viewportShowsGraph, getNodes]);
+    // Restore the remembered viewport only if it still actually shows the graph. A saved camera can go
+    // stale when the graph changes underneath it (tidy, import, nodes added at negative coordinates), so
+    // fall back to framing the graph instead of landing in an empty corner.
+    if (saved && viewportShowsGraph(saved)) {
+      setViewport(saved, { duration: 0 });
+    } else {
+      fitView({ padding: 0.15, duration: 0 });
+    }
+  }, [currentId, nodes.length, nodesInitialized, setViewport, fitView, viewportShowsGraph]);
 
   // After an AI generation/refinement lands, center the new graph — it lays out from the origin, so
   // without this it reads as pinned to the top-left corner. Runs once per generated definition.
   const fittedPreviewRef = useRef<unknown>(null);
   useEffect(() => {
     if (!previewDefinition || nodes.length === 0 || fittedPreviewRef.current === previewDefinition) return;
+    // Same measurement gate as the restore effect: these nodes are brand new, so a single rAF is not
+    // enough — fitView before they are measured frames one node and clamps the zoom.
+    if (!nodesInitialized) return;
     fittedPreviewRef.current = previewDefinition;
-    requestAnimationFrame(() => fitView({ padding: 0.2, duration: 300 }));
-  }, [previewDefinition, nodes.length, fitView]);
+    fitView({ padding: 0.2, duration: 300 });
+  }, [previewDefinition, nodes.length, nodesInitialized, fitView]);
 
   // Frame the whole graph when the workflow is armed. Arming is a deliberate "go live" action, so a
   // re-render that leaves the graph pinned to a corner reads as broken — centering makes the now-live
   // surface obvious. Only on the false/null → true transition (not on disarm, and not every render).
+  //
+  // Except when the arming is a side effect of pressing Run: the user's camera is deliberate there and
+  // re-framing it reads as the canvas jumping on every run. handleRun stamps runStartedAtRef, and this
+  // effect stays out of the way for the moment it takes the trigger round-trip to arm the runtime.
   const prevArmedRef = useRef(armed);
+  const runStartedAtRef = useRef(0);
   useEffect(() => {
     const wasArmed = prevArmedRef.current;
     prevArmedRef.current = armed;
-    if (armed === true && wasArmed !== true && nodes.length > 0) {
+    const armedByRun = Date.now() - runStartedAtRef.current < ARM_FRAMING_SUPPRESSION_MS;
+    if (armed === true && wasArmed !== true && nodes.length > 0 && !armedByRun) {
       requestAnimationFrame(() => fitView({ padding: 0.15, duration: 400 }));
     }
   }, [armed, nodes.length, fitView]);
@@ -1297,7 +1308,6 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
     requestAnimationFrame(() => fitView({ padding: 0.15, duration: 400 }));
   }, [nodeSize, setNodes, snapIfEnabled, fitView]);
 
-  const nodesInitialized = useNodesInitialized();
   useEffect(() => {
     if (nodesInitialized && autoTidyPending) {
       setAutoTidyPending(false);
@@ -2127,13 +2137,10 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
     useVariableStore.getState().clearVariableValues(currentId);
     // Reset any prior run's node-status painting so this run starts from a clean slate.
     resetNodeExecStatuses();
-    // Starting a run re-initializes the flow to its default viewport, jumping the graph into the
-    // upper-left corner. Snapshot the current framing now and restore it once that reset settles, so
-    // the camera stays exactly where the user left it. Two attempts cover slight timing variance.
-    const framingBeforeRun = getViewport();
-    const keepFraming = () => setViewport(framingBeforeRun, { duration: 0 });
-    window.setTimeout(keepFraming, 300);
-    window.setTimeout(keepFraming, 650);
+    // Running arms the runtime, and arming frames the graph (see the armed effect) — which would throw
+    // away the camera the user is running from. Mark the run so that framing is skipped; no timers, no
+    // snapshot/restore of the viewport, so nothing visibly jumps and settles back.
+    runStartedAtRef.current = Date.now();
     try {
       const activeVersion = await api.activateWorkflowVersion(currentId, selectedVersion.id);
       setActiveWorkflowVersion(activeVersion);
@@ -2449,7 +2456,12 @@ function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSave
               snapToGrid={snapEnabled}
               snapGrid={[SNAP_GRID_SIZE, SNAP_GRID_SIZE]}
               // Persist the viewport per workflow so re-entry restores it (see the restore effect).
-              onMoveEnd={(_e, vp) => saveViewport(currentId, vp)}
+              // Persist the viewport per workflow so re-entry restores it (see the restore effect), but
+              // ONLY for moves the user made: React Flow reports programmatic camera changes (fitView,
+              // setViewport) with a null event. Storing those meant a framing that landed wrong was
+              // remembered and replayed on every later visit — the graph stayed parked in the corner
+              // across reloads. A user pan/zoom always carries its d3 event.
+              onMoveEnd={(event, vp) => { if (event) saveViewport(currentId, vp); }}
             >
               <Controls position="bottom-right" />
               {/* offset = gap puts the dots on the grid corners (flow multiples of the gap),
