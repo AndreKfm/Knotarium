@@ -163,27 +163,25 @@
 
       <h3>How the ports behave</h3>
       <p>
-        The ports listed in each entry are the handles you can draw an edge from. Only six node types
-        pick a single branch to follow — Condition, For Loop, Parallel For-Each, AI Router, AI Verify and
-        AI Semantic Diff. <strong>Nothing on this page is one of them.</strong> When a node here succeeds,
-        the engine schedules <em>every</em> outgoing edge, whichever handle it left.
+        The ports listed in each entry are the handles you can draw an edge from. Only seven node types
+        pick a single branch to follow — Condition, Switch, For Loop, Parallel For-Each, AI Router,
+        AI Verify and AI Semantic Diff. <strong>Nothing on this page is one of them.</strong> When a node
+        here succeeds, the engine schedules every outgoing edge <em>except</em> the failure edges: a
+        handle named <code>error</code> or <code>failure</code>, matched without regard to case, is
+        skipped on the success path.
       </p>
       <p>
-        When the node fails, the engine looks for outgoing edges whose handle is named
-        <code>error</code> or <code>failure</code>. If it finds any, it follows those and the run
-        continues; if it finds none, the whole run is marked failed at that node.
+        When the node fails, the opposite happens. The engine looks for outgoing edges whose handle is
+        named <code>error</code> or <code>failure</code>; if it finds any it follows those and the run
+        continues, and if it finds none the whole run is marked failed at that node. The two paths are
+        therefore exclusive — a success takes the ordinary edges and a failure takes the failure edges,
+        and neither takes both.
       </p>
-
-      <div class="kg-note is-warning">
-        <span class="kg-note-label">An error edge also fires on success</span>
-        <p>
-          Because these nodes do not select a branch, an edge you draw from the <code>error</code> handle
-          is scheduled on a successful run <em>as well as</em> a failed one. The handle is a failure edge
-          in the sense that the engine takes it when the node fails — not in the sense that it is skipped
-          when the node succeeds. If your error branch must run only on failure, gate it with a Condition
-          on the upstream node's output rather than relying on the handle alone.
-        </p>
-      </div>
+      <p>
+        Only the exact names <code>error</code> and <code>failure</code> count. A handle called
+        <code>errorDetails</code> or <code>on-error</code> is an ordinary edge and fires on success like
+        any other, which is worth knowing before renaming a port on a custom package.
+      </p>
 
       <h3>Automatic retry is narrower than the manifest suggests</h3>
       <p>
@@ -253,7 +251,7 @@
           <thead><tr><th>Port</th><th>Declared type</th><th>When it fires</th></tr></thead>
           <tbody>
             <tr><td><code>success</code></td><td>object</td><td>The response status was 2xx.</td></tr>
-            <tr><td><code>error</code></td><td>string</td><td>The node failed — a non-2xx status, or a transport exception. Also scheduled on success; see the warning above.</td></tr>
+            <tr><td><code>error</code></td><td>string</td><td>The node failed — a non-2xx status, or a transport exception. Not scheduled on success.</td></tr>
           </tbody>
         </table>
       </div>
@@ -318,7 +316,7 @@
           <thead><tr><th>Port</th><th>When it fires</th></tr></thead>
           <tbody>
             <tr><td><code>success</code></td><td>The operation returned a successful response.</td></tr>
-            <tr><td><code>error</code></td><td>The node failed. Also scheduled on success, as with every non-branching node.</td></tr>
+            <tr><td><code>error</code></td><td>The node failed. Skipped on success, as with every failure handle.</td></tr>
           </tbody>
         </table>
       </div>

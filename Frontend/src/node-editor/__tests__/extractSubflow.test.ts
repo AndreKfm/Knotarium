@@ -35,8 +35,23 @@ describe('refsOf / writesOf', () => {
 
   it('detects writes for setVariable and setVariables', () => {
     expect([...writesOf(node('s', 'setVariable', { variableName: 'total.sum' }))]).toEqual(['total']);
-    expect([...writesOf(node('s', 'setVariables', { variables: [{ key: 'a', value: 1 }, { key: 'b', value: 2 }] }))]).toEqual(['a', 'b']);
     expect([...writesOf(node('f', 'fireAction', {}))]).toEqual([]);
+  });
+
+  // The rows the property form actually writes are { name, value } — see ManifestForm's Row type.
+  // This case used to be missed entirely: writesOf read `entry.key`, so a variable written by a
+  // Set Variables node was invisible to extraction and silently dropped from the sub-flow's outputs.
+  // The pre-existing test below asserted the `key` shape, so it encoded the bug rather than catching it.
+  it('detects setVariables writes from the { name, value } rows the form produces', () => {
+    const n = node('s', 'setVariables', { variables: [{ name: 'a', value: 1 }, { name: 'b.c', value: 2 }] });
+    expect([...writesOf(n)]).toEqual(['a', 'b']);
+  });
+
+  it('still reads the legacy { key, value } row shape', () => {
+    // Workflows saved before the form settled on `name` may carry rows in this shape; dropping support
+    // would quietly change what an old graph extracts.
+    const n = node('s', 'setVariables', { variables: [{ key: 'a', value: 1 }, { key: 'b', value: 2 }] });
+    expect([...writesOf(n)]).toEqual(['a', 'b']);
   });
 });
 

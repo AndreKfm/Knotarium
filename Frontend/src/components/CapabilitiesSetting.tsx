@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Code, Database, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Bot, Code, Database, ShieldAlert } from 'lucide-react';
 import { api } from '../utils/api';
 
 const cardStyle: React.CSSProperties = {
@@ -13,7 +13,11 @@ const cardStyle: React.CSSProperties = {
   marginBottom: '24px',
 };
 
-// The switchable privileged capabilities (must match CapabilityPolicyStore.Switchable on the backend).
+// The switchable privileged capabilities. This list MUST match CapabilityPolicyStore.Switchable on the
+// backend: anything switchable there but missing here cannot be turned on at all, because this screen is
+// the only way to set the policy. That is exactly what happened to 'aiAgent' — AiAgentNodeTask refused
+// to run and told the reader to enable it "under Settings → Capabilities", where no such switch existed.
+// CapabilityPolicySwitchableTests pins the backend list so a future addition fails a test naming this file.
 const CAPS: { key: string; label: string; icon: typeof Code; desc: string }[] = [
   {
     key: 'code.execute',
@@ -26,6 +30,12 @@ const CAPS: { key: string; label: string; icon: typeof Code; desc: string }[] = 
     label: 'Database access',
     icon: Database,
     desc: 'Let the Database Query node open connections and run SQL against your configured databases.',
+  },
+  {
+    key: 'aiAgent',
+    label: 'AI agent tool loop',
+    icon: Bot,
+    desc: 'Let the AI Agent node run its tool-use loop, calling the workflows you allow-list on the node. Task text and tool results are untrusted input — list only workflows you would let that data invoke.',
   },
 ];
 

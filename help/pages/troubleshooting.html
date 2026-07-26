@@ -223,16 +223,6 @@ disk-space guard; re-arm it when ready.</code></pre>
         <a href="versioning.html">Versions and publishing</a>.
       </p>
 
-      <div class="kg-note is-warning">
-        <span class="kg-note-label">One of the in-app tips is wrong about this</span>
-        <p>
-          The Tip of the Day card on the dashboard states that "triggers use the active version while
-          manual runs use what you're editing". The second half of that sentence does not match the
-          code. A manual run activates and executes a published version exactly like a trigger does.
-          Do not rely on the tip.
-        </p>
-      </div>
-
       <h3>A configuration change has no effect</h3>
       <p>
         There are four distinct reasons a setting can be edited correctly and still do nothing.
@@ -478,21 +468,11 @@ credential in Settings → AI Provider.</code></pre>
       <p>
         <strong>The capability is off.</strong> The node fails immediately with <code>AI Agent is
         disabled: the 'aiAgent' capability is off. An administrator can enable it under Settings →
-        Capabilities.</code>
+        Capabilities.</code> Follow the message: the switch is the third row on
+        <span class="kg-path">Settings &rsaquo; Capabilities</span>, labelled <strong>AI agent tool
+        loop</strong>. It saves immediately and the check is read per execution, so re-running the
+        workflow straight afterwards succeeds without a restart.
       </p>
-
-      <div class="kg-note is-danger">
-        <span class="kg-note-label">That advice cannot currently be followed</span>
-        <p>
-          <span class="kg-path">Settings &rsaquo; Capabilities</span> renders only two toggles, for
-          inline code and database access. There is no toggle for the AI Agent capability, even though
-          the backend accepts it as switchable and the node enforces it. Until a toggle is added, the
-          only way to enable it is a direct administrator call to
-          <code>PUT /api/settings/capabilities</code> including <code>aiAgent</code> in the list of
-          enabled capabilities. This is a gap in the interface, not a misreading of the message.
-        </p>
-      </div>
-
       <p>
         <strong>The vendor does not support it.</strong> <code>The AI Agent node does not support
         Gemini in this version. Configure Anthropic or an OpenAI-compatible provider in Settings → AI

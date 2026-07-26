@@ -202,7 +202,10 @@ export function BundleInstaller() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v13" /><path d="m6 9 6-6 6 6" /><path d="M5 21h14" /></svg>
             </div>
             <div className="dz-title"><span className="lk">Click to upload</span> or drag &amp; drop</div>
-            <div className="dz-sub">Signed <span className="ext">.kgbundle</span> archive · up to 200 MB</div>
+            {/* 5 MB is what the server actually enforces (WorkflowArchiveLimits.Default.MaxArchiveBytes);
+                bundles only raise the entry COUNT, not any size limit. The label said 200 MB, so anything
+                larger was accepted by the picker and then rejected by the upload. */}
+            <div className="dz-sub">Signed <span className="ext">.kgbundle</span> archive · up to 5 MB</div>
             <input
               ref={fileInputRef}
               type="file"

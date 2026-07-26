@@ -115,8 +115,9 @@ export function SettingsView({ armed, onDisarm }: SettingsViewProps) {
               <div className="iset-head">
                 <h1><span className="ih-ic"><ShieldAlert size={20} /></span> Capabilities</h1>
                 <p>
-                  Master on/off switches for privileged node capabilities — inline code execution and
-                  database access. Off by default; enable only what you trust every workflow to use.
+                  Master on/off switches for privileged node capabilities — inline code execution,
+                  database access and the AI agent tool loop. Off by default; enable only what you
+                  trust every workflow to use.
                 </p>
               </div>
               <CapabilitiesSetting />

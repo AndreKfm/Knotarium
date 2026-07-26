@@ -166,10 +166,16 @@
       <h2>Branching nodes</h2>
 
       <p>
-        AI Router, AI Verify and AI Semantic Diff are three of the six node types in Knotarium that
+        AI Router, AI Verify and AI Semantic Diff are three of the seven node types in Knotarium that
         <strong>select a single outgoing branch</strong> rather than following every edge. Each emits an
         internal <code>selectedPort</code> value, and the engine schedules only the edges whose handle
         matches it. Draw one edge per branch you care about; branches with no edge simply end that path.
+      </p>
+      <p>
+        The selected port wins over every other routing rule. An ordinary node skips its
+        <code>error</code> and <code>failure</code> handles when it succeeds, but that rule does not
+        reach a node which routes by selected port, so an AI Router category you legitimately named
+        <em>error</em> is followed like any other category.
       </p>
 
       <h3>AI Router</h3>
@@ -396,14 +402,15 @@
         faster and reproducible.
       </p>
 
-      <div class="kg-note is-danger">
+      <div class="kg-note is-warning">
         <span class="kg-note-label">Off until an administrator turns it on</span>
         <p>
           The node checks the <code>aiAgent</code> capability first and fails immediately with
           "AI Agent is disabled: the 'aiAgent' capability is off" when it is not enabled. Turn it on at
-          <span class="kg-path">Settings &rsaquo; Capabilities</span>. It sits alongside code execution
-          and database access as a privileged capability for a reason: enabling it means a model gets to
-          decide which of your workflows run, and with which arguments.
+          <span class="kg-path">Settings &rsaquo; Capabilities</span>, where the row is labelled
+          <strong>AI agent tool loop</strong>. It sits alongside code execution and database access as a
+          privileged capability for a reason: enabling it means a model gets to decide which of your
+          workflows run, and with which arguments.
         </p>
       </div>
 

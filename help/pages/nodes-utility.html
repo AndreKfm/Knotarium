@@ -270,7 +270,7 @@ config.servers[<span class="tok-num">2</span>].host    <span class="tok-comment"
           <thead><tr><th>Port</th><th>When it fires</th></tr></thead>
           <tbody>
             <tr><td><code>result</code></td><td>The script completed. Carries whatever the script returned.</td></tr>
-            <tr><td><code>error</code></td><td>The node failed — a compilation error, a thrown exception, a timeout, or an explicit <code>Fail(...)</code>. As with every non-branching node, this handle is also scheduled on success.</td></tr>
+            <tr><td><code>error</code></td><td>The node failed — a compilation error, a thrown exception, a timeout, or an explicit <code>Fail(...)</code>. Like every handle named <code>error</code> or <code>failure</code>, it is skipped when the node succeeds.</td></tr>
           </tbody>
         </table>
       </div>

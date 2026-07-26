@@ -36,11 +36,18 @@
       <h2>Branch ports and container ports</h2>
       <p>
         Most nodes hand the run to whatever is wired downstream. A <strong>branch</strong> node
-        instead picks exactly one of its ports and suppresses every edge leaving the others. Only six
-        node types route this way, and three of them are on this page: Condition, For Loop and
+        instead picks exactly one of its ports and suppresses every edge leaving the others. Only seven
+        node types route this way, and four of them are on this page: Condition, Switch, For Loop and
         Parallel For-Each. That restriction is deliberate — a node such as HTTP Request has several
         data sockets that must <em>all</em> deliver, so routing has to be opt-in rather than triggered
         by any node that happens to name a port.
+      </p>
+      <p>
+        Because the chosen port wins outright, a branch node's explicit choice is not second-guessed by
+        the failure-edge rule that applies elsewhere. An ordinary node skips its <code>error</code> and
+        <code>failure</code> handles when it succeeds, but a branch node that selects a port spelled
+        <code>error</code> — an AI Router carrying a category by that name, say — follows it exactly as
+        it would any other label.
       </p>
       <p>
         <strong>Container</strong> nodes — For Loop and Parallel For-Each — are drawn as a resizable

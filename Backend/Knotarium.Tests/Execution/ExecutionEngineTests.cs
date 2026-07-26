@@ -1915,6 +1915,137 @@ public class ExecutionEngineTests : IDisposable
     }
 
     /// <summary>
+    /// A node's error branch must not run when the node succeeded. Every node declaring a success/error
+    /// pair used to fire both on completion, because only a whitelisted handful of types routed by
+    /// selectedPort and everything else scheduled all of its outgoing edges.
+    /// </summary>
+    [Fact]
+    public async Task CompletedNode_DoesNotScheduleItsErrorBranch()
+    {
+        using var context = await CreateContextAsync();
+
+        var start = new NodeDefinition(NodeId.Create("start"), "start", new Dictionary<string, object>());
+        var call = new NodeDefinition(NodeId.Create("call"), "httpRequest", new Dictionary<string, object>());
+        var onOk = new NodeDefinition(NodeId.Create("on-ok"), "log", new Dictionary<string, object>());
+        var onErr = new NodeDefinition(NodeId.Create("on-err"), "log", new Dictionary<string, object>());
+
+        var workflowId = WorkflowDefinitionId.New();
+        context.WorkflowDefinitions.Add(new WorkflowDefinition(
+            workflowId,
+            "Error branch isolation",
+            new[] { start, call, onOk, onErr },
+            new[]
+            {
+                new EdgeDefinition("e0", start.Id, "result", call.Id, "in"),
+                new EdgeDefinition("e1", call.Id, "success", onOk.Id, "in"),
+                new EdgeDefinition("e2", call.Id, "error", onErr.Id, "in"),
+            }));
+        await context.SaveChangesAsync();
+
+        var registry = new MockNodeTaskRegistry();
+        registry.Register("start", new FunctionalNodeTask(_ => Task.FromResult<LegacyNodeResult>(
+            new LegacyNodeResult.Success(new Dictionary<string, object> { ["result"] = true }))));
+        // Stands in for a 2xx response: the real task emits statusCode/body/isSuccess and no
+        // selectedPort, which is exactly the shape that used to fire both branches.
+        registry.Register("httpRequest", new FunctionalNodeTask(_ => Task.FromResult<LegacyNodeResult>(
+            new LegacyNodeResult.Success(new Dictionary<string, object>
+            {
+                ["statusCode"] = 200d,
+                ["body"] = "{}",
+                ["isSuccess"] = true,
+            }))));
+        registry.Register("log", new FunctionalNodeTask(_ => Task.FromResult<LegacyNodeResult>(new LegacyNodeResult.Success())));
+
+        var instanceId = ExecutionInstanceId.New();
+        context.ExecutionInstances.Add(new ExecutionInstance
+        {
+            Id = instanceId,
+            WorkflowDefinitionId = workflowId,
+            Status = ExecutionStatus.Pending,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await context.SaveChangesAsync();
+
+        var executor = new WorkflowExecutor(
+            context,
+            new WorkflowCompiler(new SqliteWorkflowDefinitionProvider(context), _manifestProvider),
+            registry,
+            new FakeEventPublisher(),
+            new SqliteExecutionJournalWriter(_connection.ConnectionString, _connection));
+
+        await executor.ExecuteAsync(instanceId);
+
+        using var read = new AppDbContext(_dbContextOptions);
+        var instance = await read.ExecutionInstances.Include(e => e.NodeStates).FirstAsync(e => e.Id == instanceId);
+
+        Assert.Equal(ExecutionStatus.Completed, instance.Status);
+        Assert.Contains(instance.NodeStates, ns => ns.NodeId.Value == "on-ok" && ns.Status == NodeStatus.Completed);
+        Assert.DoesNotContain(instance.NodeStates, ns => ns.NodeId.Value == "on-err");
+    }
+
+    /// <summary>
+    /// The failure-edge rule must not override an explicit port choice: a router branch named "error"
+    /// is a legitimate category, and dropping it would silently lose the branch the node selected.
+    /// </summary>
+    [Fact]
+    public async Task PortRoutingNode_CanSelectABranchNamedError()
+    {
+        using var context = await CreateContextAsync();
+
+        var start = new NodeDefinition(NodeId.Create("start"), "start", new Dictionary<string, object>());
+        var sw = new NodeDefinition(NodeId.Create("sw"), "switch", new Dictionary<string, object>
+        {
+            ["value"] = "error",
+            ["cases"] = "ok, error",
+        });
+        var onError = new NodeDefinition(NodeId.Create("on-error"), "log", new Dictionary<string, object>());
+
+        var workflowId = WorkflowDefinitionId.New();
+        context.WorkflowDefinitions.Add(new WorkflowDefinition(
+            workflowId,
+            "Branch named error",
+            new[] { start, sw, onError },
+            new[]
+            {
+                new EdgeDefinition("e0", start.Id, "result", sw.Id, "in"),
+                new EdgeDefinition("e1", sw.Id, "error", onError.Id, "in"),
+            }));
+        await context.SaveChangesAsync();
+
+        var registry = new MockNodeTaskRegistry();
+        registry.Register("start", new FunctionalNodeTask(_ => Task.FromResult<LegacyNodeResult>(
+            new LegacyNodeResult.Success(new Dictionary<string, object> { ["result"] = true }))));
+        registry.Register("switch", new SwitchNodeTask());
+        registry.Register("log", new FunctionalNodeTask(_ => Task.FromResult<LegacyNodeResult>(new LegacyNodeResult.Success())));
+
+        var instanceId = ExecutionInstanceId.New();
+        context.ExecutionInstances.Add(new ExecutionInstance
+        {
+            Id = instanceId,
+            WorkflowDefinitionId = workflowId,
+            Status = ExecutionStatus.Pending,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await context.SaveChangesAsync();
+
+        var executor = new WorkflowExecutor(
+            context,
+            new WorkflowCompiler(new SqliteWorkflowDefinitionProvider(context), _manifestProvider),
+            registry,
+            new FakeEventPublisher(),
+            new SqliteExecutionJournalWriter(_connection.ConnectionString, _connection));
+
+        await executor.ExecuteAsync(instanceId);
+
+        using var read = new AppDbContext(_dbContextOptions);
+        var instance = await read.ExecutionInstances.Include(e => e.NodeStates).FirstAsync(e => e.Id == instanceId);
+
+        Assert.Contains(instance.NodeStates, ns => ns.NodeId.Value == "on-error" && ns.Status == NodeStatus.Completed);
+    }
+
+    /// <summary>
     /// End-to-end cover for the Switch node, using the REAL <see cref="SwitchNodeTask"/> and the real
     /// compiler rather than a mock, because the two things most likely to break are outside the task:
     ///
