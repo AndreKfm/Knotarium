@@ -357,3 +357,89 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+  winget:
+    name: Submit to winget
+    # Runs after the Windows job so the setup.exe is already attached to the release — wingetcreate
+    # downloads it from the release URL to compute the hash, and gets a 404 if it is not there yet.
+    needs: windows
+    runs-on: windows-latest
+    steps:
+      # ── Optional winget community-repo submission ────────────────────────────────────────────────
+      # Opens (or updates) a pull request against microsoft/winget-pkgs so `winget install Knotarium`
+      # picks up the new version. Opt-in and fail-safe, like the signing hooks above: without the
+      # WINGET_PAT secret the job logs a notice and does nothing.
+      #
+      # PRE-RELEASES ARE SKIPPED ON PURPOSE. The community repo keys upgrades off a single version
+      # stream per package identifier, so publishing rc/beta builds under the stable identifier is how
+      # you end up dragging users from a stable install onto a release candidate. If pre-releases
+      # should be installable, submit them under a separate identifier (the convention Microsoft uses
+      # for Microsoft.PowerShell.Preview) rather than mixing them in here.
+      #
+      # FIRST SUBMISSION IS MANUAL. `wingetcreate update` only works once the package already exists
+      # upstream. Seed it once from installer/winget/ — validate with `winget validate installer/winget`,
+      # test with winget-pkgs' Tools/SandboxTest.ps1, then open that first PR by hand. Every release
+      # after that is handled here.
+      #
+      # One-time maintainer setup:
+      #   1. Create a GitHub personal access token with the `public_repo` scope. It needs to be able to
+      #      fork microsoft/winget-pkgs and push a branch to that fork.
+      #   2. Add it as the repo secret WINGET_PAT.
+      - name: winget gate
+        id: winget_gate
+        shell: bash
+        env:
+          WINGET_PAT: ${{ secrets.WINGET_PAT }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Not a tag push; skipping the winget submission."
+          elif [[ "${VER}" == *-* ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${VER} is a pre-release; the winget community repo only carries the stable stream for this identifier."
+          elif [ -z "${WINGET_PAT}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::WINGET_PAT not configured; skipping the winget submission."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit manifest update to microsoft/winget-pkgs
+        if: steps.winget_gate.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WINGET_PAT: ${{ secrets.WINGET_PAT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ver = '${{ steps.winget_gate.outputs.version }}'
+          $url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Knotarium-$ver-setup.exe"
+
+          # The installer must be publicly readable before wingetcreate hashes it. The release is
+          # published in the job we depend on, but asset propagation is not instantaneous.
+          $ready = $false
+          foreach ($attempt in 1..10) {
+            try {
+              Invoke-WebRequest -Uri $url -Method Head -MaximumRedirection 5 -UseBasicParsing | Out-Null
+              $ready = $true
+              break
+            } catch {
+              Write-Host "Attempt ${attempt}: installer not reachable yet, waiting 30s..."
+              Start-Sleep -Seconds 30
+            }
+          }
+          if (-not $ready) { throw "Release asset never became reachable: $url" }
+
+          # Official Microsoft tool, pinned to the aka.ms redirector Microsoft publishes it under.
+          Invoke-WebRequest -Uri 'https://aka.ms/wingetcreate/latest' -OutFile wingetcreate.exe -UseBasicParsing
+
+          # --submit opens the PR against microsoft/winget-pkgs from a fork owned by the token's account.
+          # wingetcreate pulls the current manifest from upstream, bumps the version and re-hashes the
+          # installer, so the manifests under installer/winget/ are only the one-time seed.
+          .\wingetcreate.exe update AndreKaufmann.Knotarium `
+            --version $ver `
+            --urls $url `
+            --submit `
+            --token $env:WINGET_PAT
