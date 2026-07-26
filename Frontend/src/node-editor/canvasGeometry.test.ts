@@ -7,7 +7,9 @@ import {
   getFreePorts,
   findNearestCompatiblePort,
   distanceToSegment,
+  distanceSegmentToRect,
   findEdgeUnderPoint,
+  findEdgeUnderRect,
   collectDownstream,
   type InternalNodeLike,
   type EdgeLike,
@@ -241,6 +243,73 @@ describe('findEdgeUnderPoint', () => {
     ];
     const hit = findEdgeUnderPoint(edges, ports, { x: 300, y: 60 }, 40);
     expect(hit!.edge.id).toBe('top');
+  });
+});
+
+describe('distanceSegmentToRect', () => {
+  const rect = { x: 100, y: 100, width: 200, height: 80 }; // 100..300 × 100..180
+
+  it('is 0 when the segment runs straight through the box', () => {
+    expect(distanceSegmentToRect({ x: 0, y: 140 }, { x: 400, y: 140 }, rect)).toBe(0);
+  });
+  it('is 0 when an endpoint sits inside the box', () => {
+    expect(distanceSegmentToRect({ x: 150, y: 150 }, { x: 900, y: 900 }, rect)).toBe(0);
+  });
+  it('measures the perpendicular gap to the nearest edge of the box', () => {
+    expect(distanceSegmentToRect({ x: 0, y: 60 }, { x: 400, y: 60 }, rect)).toBeCloseTo(40);
+  });
+  it('measures corner-to-endpoint when the segment stops short', () => {
+    // Segment ends at (60,60); nearest corner is (100,100) → 40·√2.
+    expect(distanceSegmentToRect({ x: 0, y: 0 }, { x: 60, y: 60 }, rect)).toBeCloseTo(Math.hypot(40, 40));
+  });
+  it('degenerates to point-to-segment distance for a zero-sized box', () => {
+    const dot = { x: 200, y: 60, width: 0, height: 0 };
+    expect(distanceSegmentToRect({ x: 0, y: 100 }, { x: 400, y: 100 }, dot)).toBeCloseTo(40);
+  });
+});
+
+describe('findEdgeUnderRect', () => {
+  function scene() {
+    const a = node('a', 0, 0); // source at (200,50)
+    const b = node('b', 400, 0); // target at (400,50)
+    const edges: EdgeLike[] = [{ id: 'e1', source: 'a', sourceHandle: 'result', target: 'b', targetHandle: 'in' }];
+    const ports = [...getPortPositions(a), ...getPortPositions(b)];
+    return { edges, ports };
+  }
+  // A node-sized box centred on (x,y) — what a drop at that point would cover.
+  const box = (x: number, y: number) => ({ x: x - 110, y: y - 35, width: 220, height: 70 });
+
+  it('hits a wire the box covers even though the centre is well off it', () => {
+    const { edges, ports } = scene();
+    // Centre 30 below the wire: a point test with a 12 tolerance misses, the footprint does not.
+    expect(findEdgeUnderPoint(edges, ports, { x: 300, y: 80 }, 12)).toBeNull();
+    expect(findEdgeUnderRect(edges, ports, box(300, 80), 12)!.edge.id).toBe('e1');
+  });
+
+  it('still misses when the box clears the wire by more than the tolerance', () => {
+    const { edges, ports } = scene();
+    // Box spans y 165..235; the wire at y≈50 is 115 away.
+    expect(findEdgeUnderRect(edges, ports, box(300, 200), 12)).toBeNull();
+  });
+
+  it('prefers the wire nearest the box centre when several cross it', () => {
+    const a = node('a', 0, 0);
+    const b = node('b', 400, 0); // wire at y≈50
+    const c = node('c', 0, 100);
+    const d = node('d', 400, 100); // wire at y≈150
+    const ports: PortPosition[] = [a, b, c, d].flatMap(getPortPositions);
+    const edges: EdgeLike[] = [
+      { id: 'top', source: 'a', sourceHandle: 'result', target: 'b', targetHandle: 'in' },
+      { id: 'bot', source: 'c', sourceHandle: 'result', target: 'd', targetHandle: 'in' },
+    ];
+    // Box spans y 95..165 — it covers 'bot' and comes close to 'top'; the centre decides.
+    expect(findEdgeUnderRect(edges, ports, box(300, 130), 50)!.edge.id).toBe('bot');
+    expect(findEdgeUnderRect(edges, ports, box(300, 70), 50)!.edge.id).toBe('top');
+  });
+
+  it('never reports a hit for a non-finite box (defensive guard)', () => {
+    const { edges, ports } = scene();
+    expect(findEdgeUnderRect(edges, ports, { x: NaN, y: NaN, width: 220, height: 70 }, 12)).toBeNull();
   });
 });
 
