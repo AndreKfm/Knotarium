@@ -106,6 +106,9 @@ export default function App() {
     return initialView as View;
   });
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(() => persistedNavigationState?.selectedWorkflowId ?? null);
+  // Increments on every "create a new workflow" request. See navigateToEditor for why the empty id
+  // alone is not enough. Deliberately NOT persisted — a reload already yields a pristine canvas.
+  const [newWorkflowRequest, setNewWorkflowRequest] = useState(0);
   // AI-generated workflow pending preview on the canvas, and the "Generate with AI" dialog's open state.
   const [previewDefinition, setPreviewDefinition] = useState<WorkflowDefinition | null>(null);
   const [showAiModal, setShowAiModal] = useState(false);
@@ -212,6 +215,11 @@ export default function App() {
     if (workflowId) setPreviewDefinition(null);
     setSubflowStack([]);
     setSelectedWorkflowId(workflowId);
+    // "New workflow" is signalled by an empty id, which is a VALUE, not an event — so two creates in a
+    // row set the same value, React bails out, and the canvas never hears about the second one. It then
+    // keeps the previous graph and name under a fresh workflow, and saving would persist the old graph
+    // under a new id. This counter makes each request distinguishable; the canvas resets on it.
+    if (!workflowId) setNewWorkflowRequest((n) => n + 1);
     setCurrentView('editor');
     setLastNonExecutionView('editor');
   };
@@ -684,6 +692,7 @@ export default function App() {
             )}
             <Canvas
               workflowId={selectedWorkflowId}
+              newWorkflowRequest={newWorkflowRequest}
               previewDefinition={previewDefinition}
               onSaved={(id) => setSelectedWorkflowId(id)}
               onBack={handleEditorBack}

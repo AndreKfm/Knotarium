@@ -4,10 +4,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- App version shown on the dashboard (GET /api/version). Bump per release so a running instance
-         can be told apart from a stale one. Build time is derived from the assembly file timestamp at
-         runtime, so it updates on every rebuild without touching this value. -->
-    <Version>0.1.4</Version>
+    <!-- App version shown on the dashboard (GET /api/version). This is only the FALLBACK for a local
+         or from-source build: every release overrides it via `publish.ps1 -Version`, which the release
+         workflow feeds from the git tag, and the Docker image takes it from the VERSION build arg.
+         Deliberately a non-release value, matching the Dockerfile's ARG VERSION=0.0.0 — a plausible
+         number here (it used to read 0.1.4) shows up in the header of anyone following the README's
+         "Run from source" path and contradicts the version actually shipped. Build time comes from the
+         assembly file timestamp at runtime, so freshness is still visible without touching this. -->
+    <Version>0.0.0-dev</Version>
     <!-- Brand icon embedded into the generated Windows apphost (Knotarium.Api.exe). Gives the
          executable — and therefore the Start-Menu shortcut, taskbar, Explorer, and the installer's
          Add/Remove Programs entry (UninstallDisplayIcon points at the exe) — a real icon instead of
