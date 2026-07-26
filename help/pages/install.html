@@ -181,13 +181,38 @@
 
       <h3>winget</h3>
       <p>
-        A winget manifest for the identifier <code>AndreKaufmann.Knotarium</code> exists in the
-        repository under <code>installer/winget/</code>, prepared for submission. At the time of
-        writing its <code>InstallerSha256</code> is still a placeholder of zeroes and its
-        <code>InstallerUrl</code> points at a specific pre-release tag, so it has not been submitted to
-        the public index. Treat <code>winget install</code> as planned rather than available, and take
-        the installer from the releases page.
+        Knotarium is <strong>not yet in the winget community index</strong>, so
+        <code>winget install</code> will not find it. Take the installer from the releases page for
+        now.
       </p>
+      <p>
+        The groundwork is in place: manifests for the identifier
+        <code>AndreKaufmann.Knotarium</code> live under <code>installer/winget/</code>, and the release
+        workflow can open the update pull request against the community repository automatically. Two
+        things still gate the first appearance there.
+      </p>
+      <ul>
+        <li>
+          <strong>A stable release.</strong> The community index carries a single version stream per
+          package identifier, so publishing release candidates under the stable identifier is how
+          people get pulled from a stable install onto a pre-release. The automation therefore skips
+          any version with a hyphen in it, and the index will only see Knotarium once
+          <code>1.0.0</code> ships.
+        </li>
+        <li>
+          <strong>The first submission is manual.</strong> The automation updates a package that
+          already exists upstream; it cannot create one. That first pull request is opened by hand
+          from the seed manifests.
+        </li>
+      </ul>
+      <div class="kg-note">
+        <span class="kg-note-label">Why code signing matters here</span>
+        <p>
+          Submissions are run through several antivirus engines and a reputation check. An unsigned
+          installer is not forbidden, but it is far likelier to be held up — and the same signature
+          removes the SmartScreen warning described above for everyone who downloads directly.
+        </p>
+      </div>
 
       <h2>Zero-install zip</h2>
       <p>

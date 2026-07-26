@@ -1,6 +1,8 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.12.0.schema.json
+# See the header of AndreKaufmann.Knotarium.installer.yaml — these three files are the one-time seed
+# for the first winget-pkgs submission, not a per-release artifact.
 PackageIdentifier: AndreKaufmann.Knotarium
-PackageVersion: 1.0.0-rc.1
+PackageVersion: 1.0.0
 DefaultLocale: en-US
 ManifestType: version
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0
