@@ -689,7 +689,14 @@ public static class ExpressionEvaluator
         return current;
     }
 
-    internal static JsonElement? NavigateJson(JsonElement element, string path)
+    /// <summary>
+    /// Walks a dotted path (with optional <c>[n]</c> indexers) into a JSON document, returning null when
+    /// any segment is missing. Public rather than internal because the Transform node's executor in
+    /// Knotarium.Features must resolve paths the SAME way the declarative interpreter here does —
+    /// duplicating the walk would let the built-in node and a declarative package quietly disagree about
+    /// what a path means.
+    /// </summary>
+    public static JsonElement? NavigateJson(JsonElement element, string path)
     {
         var parts = path.Split('.', StringSplitOptions.RemoveEmptyEntries);
         var current = element;

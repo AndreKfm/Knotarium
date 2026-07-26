@@ -253,22 +253,19 @@
         offers it and the compiler recognises it.
       </p>
 
-      <div class="kg-note is-danger">
-        <span class="kg-note-label">Switch has no executor in this build</span>
+      <div class="kg-note">
+        <span class="kg-note-label">The branches come from the cases you type</span>
         <p>
-          No task implementation is registered for the <code>switch</code> type, so a run that reaches
-          one <strong>fails the node</strong> with <code>No task implementation registered for type
-          'switch'.</code> and hands control to the workflow's error path. The failure is loud and
-          appears in the run journal, but it happens at run time — publishing and validation both
-          pass.
+          Switch declares no fixed output ports. Each label in <strong>cases</strong> becomes its own
+          output handle on the canvas, with <code>default</code> always present and always last — the
+          same arrangement the AI Router uses for its categories. Add a case and a new handle appears
+          to wire.
         </p>
         <p>
-          The node is also not on the engine's branch-routing list, and its manifest declares only the
-          <code>default</code> port, so the editor draws a single output handle with no way to wire a
-          per-case branch. Until that changes, express multi-way branching as a chain of
-          <strong>Condition</strong> nodes, or — when the decision is over natural-language text
-          rather than an exact value — with <strong>AI Router</strong>, whose category branches are
-          real, wirable ports.
+          Matching is case-insensitive, so a value of <code>PAID</code> takes a branch labelled
+          <code>Paid</code>. The branch is exclusive: only the matching edge continues, unlike most
+          nodes, where every outgoing edge fires. Two labels differing only in capitalisation collapse
+          into one branch, because only the first could ever be selected.
         </p>
       </div>
 

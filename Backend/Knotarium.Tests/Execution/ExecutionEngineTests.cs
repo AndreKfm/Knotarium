@@ -1913,5 +1913,91 @@ public class ExecutionEngineTests : IDisposable
         Assert.Contains("A1", firstItem);
         Assert.Contains("B1", firstItem);
     }
+
+    /// <summary>
+    /// End-to-end cover for the Switch node, using the REAL <see cref="SwitchNodeTask"/> and the real
+    /// compiler rather than a mock, because the two things most likely to break are outside the task:
+    ///
+    /// <list type="bullet">
+    /// <item>an edge drawn from a CASE port has to survive socket validation — it only does because the
+    /// switch manifest declares no outputs, the same arrangement aiRouter uses for dynamic ports;</item>
+    /// <item>the branch has to be EXCLUSIVE — which only happens because <c>switch</c> is listed in
+    /// <c>WorkflowExecutor.RoutesBySelectedPort</c>. Without that entry every outgoing edge fires and
+    /// the node silently runs all its branches.</item>
+    /// </list>
+    ///
+    /// <para>Both were broken when the node shipped without an executor, and neither is exercised by
+    /// unit-testing the task in isolation.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("refunded", "on-refunded")]
+    [InlineData("PAID", "on-paid")]        // matching ignores case
+    [InlineData("disputed", "on-default")] // nothing matches -> the fallback branch
+    public async Task SwitchNode_CompilesCasePortsAndTakesOnlyTheMatchingBranch(string value, string expectedNode)
+    {
+        using var context = await CreateContextAsync();
+
+        var start = new NodeDefinition(NodeId.Create("start"), "start", new Dictionary<string, object>());
+        var sw = new NodeDefinition(NodeId.Create("sw"), "switch", new Dictionary<string, object>
+        {
+            ["value"] = value,
+            ["cases"] = "paid, refunded",
+        });
+        var onPaid = new NodeDefinition(NodeId.Create("on-paid"), "log", new Dictionary<string, object>());
+        var onRefunded = new NodeDefinition(NodeId.Create("on-refunded"), "log", new Dictionary<string, object>());
+        var onDefault = new NodeDefinition(NodeId.Create("on-default"), "log", new Dictionary<string, object>());
+
+        var workflowId = WorkflowDefinitionId.New();
+        context.WorkflowDefinitions.Add(new WorkflowDefinition(
+            workflowId,
+            "Switch routing",
+            new[] { start, sw, onPaid, onRefunded, onDefault },
+            new[]
+            {
+                new EdgeDefinition("e0", start.Id, "result", sw.Id, "in"),
+                // Edges from ports that exist only because of the node's own 'cases' property.
+                new EdgeDefinition("e1", sw.Id, "paid", onPaid.Id, "in"),
+                new EdgeDefinition("e2", sw.Id, "refunded", onRefunded.Id, "in"),
+                new EdgeDefinition("e3", sw.Id, "default", onDefault.Id, "in"),
+            }));
+        await context.SaveChangesAsync();
+
+        var registry = new MockNodeTaskRegistry();
+        registry.Register("start", new FunctionalNodeTask(_ => Task.FromResult<LegacyNodeResult>(
+            new LegacyNodeResult.Success(new Dictionary<string, object> { ["result"] = true }))));
+        registry.Register("switch", new SwitchNodeTask());
+        registry.Register("log", new FunctionalNodeTask(_ => Task.FromResult<LegacyNodeResult>(new LegacyNodeResult.Success())));
+
+        var instanceId = ExecutionInstanceId.New();
+        context.ExecutionInstances.Add(new ExecutionInstance
+        {
+            Id = instanceId,
+            WorkflowDefinitionId = workflowId,
+            Status = ExecutionStatus.Pending,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await context.SaveChangesAsync();
+
+        var compiler = new WorkflowCompiler(new SqliteWorkflowDefinitionProvider(context), _manifestProvider);
+        var executor = new WorkflowExecutor(
+            context, compiler, registry, new FakeEventPublisher(),
+            new SqliteExecutionJournalWriter(_connection.ConnectionString, _connection));
+
+        await executor.ExecuteAsync(instanceId);
+
+        using var read = new AppDbContext(_dbContextOptions);
+        var instance = await read.ExecutionInstances.Include(e => e.NodeStates).FirstAsync(e => e.Id == instanceId);
+
+        // Completing at all proves the case-port edges compiled: ERR_INVALID_SOCKET_MAPPING is a
+        // blocking diagnostic, so a regression there would fail the run before any node executed.
+        Assert.Equal(ExecutionStatus.Completed, instance.Status);
+
+        Assert.Contains(instance.NodeStates, ns => ns.NodeId.Value == expectedNode && ns.Status == NodeStatus.Completed);
+        foreach (var notTaken in new[] { "on-paid", "on-refunded", "on-default" }.Where(n => n != expectedNode))
+        {
+            Assert.DoesNotContain(instance.NodeStates, ns => ns.NodeId.Value == notTaken);
+        }
+    }
 }
 

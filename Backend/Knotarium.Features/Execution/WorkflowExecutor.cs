@@ -1222,6 +1222,7 @@ public partial class WorkflowExecutor
     /// </summary>
     private static bool RoutesBySelectedPort(string nodeType) =>
         nodeType.Equals("condition", StringComparison.OrdinalIgnoreCase) ||
+        nodeType.Equals("switch", StringComparison.OrdinalIgnoreCase) ||
         nodeType.Equals("forLoop", StringComparison.OrdinalIgnoreCase) ||
         nodeType.Equals("parallelForEach", StringComparison.OrdinalIgnoreCase) ||
         nodeType.Equals("aiRouter", StringComparison.OrdinalIgnoreCase) ||

@@ -46,6 +46,9 @@ public static class NodesServiceCollectionExtensions
         services.AddTransient<DelayNodeTask>();
         services.AddTransient<LogNodeTask>();
         services.AddTransient<ForLoopNodeTask>();
+        services.AddTransient<SwitchNodeTask>();
+        services.AddTransient<TransformNodeTask>();
+        services.AddTransient<MergeNodeTask>();
         services.AddTransient<JoinNodeTask>();
         services.AddTransient<EndNodeTask>();
         services.AddTransient<SendNotificationNodeTask>();
