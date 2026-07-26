@@ -16,10 +16,12 @@ function Harness({
   readOnly,
   overlayOpen,
   closeVersionOverview,
+  clearRunPainting = vi.fn(),
 }: {
   readOnly: boolean;
   overlayOpen: boolean;
   closeVersionOverview: () => void;
+  clearRunPainting?: () => void;
 }) {
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
@@ -30,6 +32,7 @@ function Harness({
   const edgesRef = useRef<Edge[]>([]);
 
   useCanvasKeyboardShortcuts({
+    clearRunPainting,
     clearClickConnect: vi.fn(),
     setSearchOpen: vi.fn(),
     setShortcutsOpen: vi.fn(),
@@ -54,6 +57,34 @@ function Harness({
 
   return <textarea data-testid="field" defaultValue="x" />;
 }
+
+describe('useCanvasKeyboardShortcuts — Escape dismisses the run painting', () => {
+  // Escape is the canvas's general "back to normal". Before this, the last run's node colouring could
+  // only be cleared by changing the graph's behaviour — there was no way to simply dismiss it.
+  it('clears the run painting on Escape', () => {
+    const clear = vi.fn();
+    render(<Harness readOnly={false} overlayOpen={false} closeVersionOverview={vi.fn()} clearRunPainting={clear} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears it even while a version preview is open, and still exits the preview', () => {
+    // The two actions are independent: dismissing the painting must not consume the key.
+    const clear = vi.fn();
+    const close = vi.fn();
+    render(<Harness readOnly overlayOpen={false} closeVersionOverview={close} clearRunPainting={clear} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves it alone for other keys', () => {
+    const clear = vi.fn();
+    render(<Harness readOnly={false} overlayOpen={false} closeVersionOverview={vi.fn()} clearRunPainting={clear} />);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(clear).not.toHaveBeenCalled();
+  });
+});
 
 describe('useCanvasKeyboardShortcuts — Escape exits version preview', () => {
   it('exits the preview when read-only and no overlay is open', () => {

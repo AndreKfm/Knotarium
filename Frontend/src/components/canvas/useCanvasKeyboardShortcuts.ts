@@ -29,6 +29,8 @@ export interface UseCanvasKeyboardShortcutsArgs {
   setSelectedEdge: Dispatch<SetStateAction<Edge | null>>
   nodesRef: RefObject<RFNode[]>
   edgesRef: RefObject<Edge[]>
+  /** Dismisses the last run's node-status painting, returning the canvas to its normal look. */
+  clearRunPainting: () => void
 }
 
 /**
@@ -41,6 +43,7 @@ export function useCanvasKeyboardShortcuts(args: UseCanvasKeyboardShortcutsArgs)
     clearClickConnect, setSearchOpen, setShortcutsOpen, historyOpenRef, readOnlyRef, escOverlayOpenRef,
     closeVersionOverview, setHistoryOpen, doUndo, doRedo, recordUndo, copySelection, pasteClipboard,
     duplicateSelection, setNodes, setEdges, setSelectedNode, setSelectedEdge, nodesRef, edgesRef,
+    clearRunPainting,
   } = args
 
   // Global keydown handler to support Delete / Backspace key deletions and Escape clearing
@@ -57,6 +60,10 @@ export function useCanvasKeyboardShortcuts(args: UseCanvasKeyboardShortcutsArgs)
       if (event.key === 'Escape') {
         useVariableStore.getState().clearPins();
         clearClickConnect();
+        // Escape is the canvas's general "put things back to normal", so it also dismisses the last
+        // run's status painting. Safe to call unconditionally — it is a no-op when nothing is painted,
+        // and it does not consume the key, so the preview/overlay handling below still runs.
+        clearRunPainting();
 
         // Back out of a read-only version preview/diff, so "click a version to look, Escape to leave"
         // works like clicking outside the picker. Suppressed when a focused field or an overlay
@@ -170,5 +177,5 @@ export function useCanvasKeyboardShortcuts(args: UseCanvasKeyboardShortcutsArgs)
       window.removeEventListener('keydown', handleKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setNodes, setEdges, clearClickConnect, doUndo, doRedo, recordUndo, copySelection, pasteClipboard, duplicateSelection]);
+  }, [setNodes, setEdges, clearClickConnect, doUndo, doRedo, recordUndo, copySelection, pasteClipboard, duplicateSelection, clearRunPainting]);
 }

@@ -3,7 +3,7 @@
 
 import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import type { FitViewOptions } from '@xyflow/react'
-import { Crosshair, Maximize2, Hash, StickyNote, LayoutTemplate, Group, Combine, Ungroup, History, CircleHelp } from 'lucide-react'
+import { Crosshair, Maximize2, Hash, StickyNote, LayoutTemplate, Group, Combine, Ungroup, History, CircleHelp, Eraser } from 'lucide-react'
 import type { AlignEdge, DistributeAxis } from '../../node-editor/autoLayout'
 
 // Floating layout-tools toolbar styles (Tidy + Align/Distribute).
@@ -59,6 +59,10 @@ export interface CanvasLayoutToolbarProps {
   closeVersionOverview: () => void
   setHistoryOpen: Dispatch<SetStateAction<boolean>>
   setShortcutsOpen: Dispatch<SetStateAction<boolean>>
+  /** True while the last run's status painting is still on the nodes — shows the dismiss control. */
+  hasRunPainting: boolean
+  /** Dismisses that painting, returning the canvas to its normal look. */
+  clearRunPainting: () => void
 }
 
 /**
@@ -70,7 +74,7 @@ export function CanvasLayoutToolbar({
   selectedNodeCount, readOnly, extracting, canUngroupSelection, snapEnabled, historyOpen,
   alignSelection, distributeSelection, fitView, runAutoLayout, setSnapEnabled, addStickyNote,
   setTemplatePickerOpen, groupSelection, extractToSubflow, ungroupSelection, closeVersionOverview,
-  setHistoryOpen, setShortcutsOpen,
+  setHistoryOpen, setShortcutsOpen, hasRunPainting, clearRunPainting,
 }: CanvasLayoutToolbarProps) {
   return (
     <div
@@ -203,6 +207,20 @@ export function CanvasLayoutToolbar({
           <span className="lt-btn-icon"><History size={15} /></span>
           History
         </button>
+        {/* Only present while there is something to dismiss, so the toolbar does not carry a control
+            that does nothing most of the time. Moving a node and Escape do the same thing. */}
+        {hasRunPainting && (
+          <button
+            type="button"
+            className="lt-btn"
+            title="Hide the last run's status colouring (Esc)"
+            aria-label="Hide run status"
+            onClick={clearRunPainting}
+          >
+            <span className="lt-btn-icon"><Eraser size={15} /></span>
+            Clear run
+          </button>
+        )}
         <span className="lt-divider" />
         <button
           type="button"

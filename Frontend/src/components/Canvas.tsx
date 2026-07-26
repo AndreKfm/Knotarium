@@ -151,6 +151,13 @@ function workflowSignature(name: string, nodes: RFNode[], edges: Edge[]): string
 
 interface CanvasProps {
   workflowId: string | null;
+  /**
+   * Bumped by the parent every time the user asks for a NEW workflow. Needed because that request is
+   * otherwise expressed as `workflowId === ''`, and asking twice in a row sets the same value — React
+   * bails out, the load effect never re-runs, and the canvas silently keeps the previous graph under a
+   * fresh workflow. Feeding this into the effect's dependencies makes each request distinguishable.
+   */
+  newWorkflowRequest?: number;
   // An AI-generated workflow to load as an UNSAVED preview when there's no workflowId. The generator
   // emits topology only, so geometry is assigned here by the same dagre tidy the toolbar button uses.
   previewDefinition?: WorkflowDefinition | null;
@@ -181,7 +188,7 @@ interface CanvasProps {
 }
 
 
-function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTriggered, onSimulated, onWorkflowLoadFailed, onOpenSubflow, isSubflow, registerSubflowExit, registerGetDefinition, onWatchLiveRuns, armed }: CanvasProps) {
+function CanvasInner({ workflowId, newWorkflowRequest, previewDefinition, onSaved, onBack, onTriggered, onSimulated, onWorkflowLoadFailed, onOpenSubflow, isSubflow, registerSubflowExit, registerGetDefinition, onWatchLiveRuns, armed }: CanvasProps) {
   const { screenToFlowPosition, getInternalNode, getNodes, setCenter, fitView, getZoom, setViewport, getViewport } = useReactFlow();
   const reactFlowStore = useStoreApi();
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>([]);
@@ -214,6 +221,11 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
   // wherever the user dropped nodes, so framing it once at the first save keeps it from landing in a corner.
   // Only for new workflows (never for ones opened from the dashboard) and only once.
   const pendingFirstFrameRef = useRef(false);
+  // Bridge to resetNodeExecStatuses, which is declared further down than the handlers that dismiss the
+  // run painting (drag-stop, Escape). A ref keeps those handlers off its dependency list too, so they
+  // are not recreated on every node change.
+  const resetNodeExecStatusesRef = useRef<() => void>(() => {});
+  const clearRunPainting = useCallback(() => resetNodeExecStatusesRef.current(), []);
 
   // Expose the CURRENT on-canvas definition (backend shape) to the host so "Refine with AI" can send the
   // live workflow — reads nodesRef/edgesRef so it always reflects the latest edits, incl. unsaved ones.
@@ -820,7 +832,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     // onWorkflowLoadFailed intentionally excluded — read via ref so an App re-render (e.g. opening the
     // AI modal) doesn't re-run this effect and reload the workflow over unsaved edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowId, previewDefinition, setNodes, setEdges]);
+  }, [workflowId, newWorkflowRequest, previewDefinition, setNodes, setEdges]);
 
   // Restore the last viewport for this workflow once its nodes are in (else fit). Runs once per workflow id
   // — re-entering lands where you left off instead of re-centering on the (often empty) middle.
@@ -979,6 +991,12 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
         (before.parentId ?? null) !== (node.parentId ?? null);
       if (moved) {
         recordSnapshot(startSnap);
+        // Moving a node is a deliberate act on the graph, so it also dismisses the last run's status
+        // painting and returns the canvas to its normal look. Earlier this was excluded on the grounds
+        // that layout is cosmetic — true of the graph's meaning, but it left no way to get rid of the
+        // overlay short of changing behaviour. Selection alone still keeps it: after a run you click
+        // nodes precisely to read their results, and clearing then would destroy what you are reading.
+        resetNodeExecStatusesRef.current();
       }
     }
 
@@ -1569,6 +1587,7 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
     clearClickConnect, setSearchOpen, setShortcutsOpen, historyOpenRef, readOnlyRef, escOverlayOpenRef,
     closeVersionOverview, setHistoryOpen, doUndo, doRedo, recordUndo, copySelection, pasteClipboard,
     duplicateSelection, setNodes, setEdges, setSelectedNode, setSelectedEdge, nodesRef, edgesRef,
+    clearRunPainting,
   });
 
   // Add new nodes toolbar handler
@@ -2053,6 +2072,16 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
           : node);
     });
   }, [setNodes]);
+
+  useEffect(() => {
+    resetNodeExecStatusesRef.current = resetNodeExecStatuses;
+  }, [resetNodeExecStatuses]);
+
+  /** True while any node still carries run-status painting — gates the toolbar's dismiss control. */
+  const hasRunPainting = useMemo(
+    () => nodes.some((node) => node.data?.execStatus && node.data.execStatus !== 'Pending'),
+    [nodes],
+  );
 
   // Drop the last run's node-status painting only when the graph's BEHAVIOUR changes (nodes/edges/
   // properties) — NOT when a node is merely moved. Layout is cosmetic (the run still describes the same
@@ -2544,6 +2573,8 @@ function CanvasInner({ workflowId, previewDefinition, onSaved, onBack, onTrigger
               closeVersionOverview={closeVersionOverview}
               setHistoryOpen={setHistoryOpen}
               setShortcutsOpen={setShortcutsOpen}
+              hasRunPainting={hasRunPainting}
+              clearRunPainting={clearRunPainting}
             />
 
             {/* Data-wire density picker (floating trigger + popover). See canvas/CanvasDensityPopover. */}
