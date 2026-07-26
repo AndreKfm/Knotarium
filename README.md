@@ -132,7 +132,7 @@ Found a vulnerability? Please follow the process in [SECURITY.md](SECURITY.md) r
 
 ## Tech
 
-.NET 10 (modular-monolith backend, SQLite) · React 19 + Vite + React Flow (frontend). ~1,750 automated tests.
+.NET 10 (modular-monolith backend, SQLite) · React 19 + Vite + React Flow (frontend). 2,485 automated tests gated on CI — 1,553 backend (`dotnet test` in `Backend/`) and 932 frontend (`npm test` in `Frontend/`) — plus four Playwright end-to-end specs that are run manually rather than in CI.
 
 ## Development
 
