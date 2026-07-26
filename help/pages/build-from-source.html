@@ -325,7 +325,7 @@
 
       <h2>What CI checks</h2>
       <p>
-        Two workflows gate a pull request against <code>main</code>, and both must pass.
+        One workflow gates a pull request against <code>main</code>, with four jobs that must all pass.
       </p>
       <div class="kg-table-wrap">
         <table class="kg-table-keys">
@@ -354,17 +354,11 @@
               <td>Restore, build the solution once, then run the whole suite serialized with a
                   five-minute hang timeout and a thirty-minute job cap.</td>
             </tr>
-            <tr>
-              <td><strong>DCO sign-off</strong></td>
-              <td>A separate workflow. Every non-merge commit in the pull request must carry a
-                  <code>Signed-off-by:</code> trailer — commit with <code>git commit -s</code>, or
-                  repair a branch with <code>git rebase --signoff &lt;base&gt;</code> and force-push.</td>
-            </tr>
           </tbody>
         </table>
       </div>
       <p>
-        A third workflow builds releases on a tag: Windows artifacts through
+        A second workflow builds releases on a tag: Windows artifacts through
         <code>publish.ps1 -Zip -Installer</code>, a Linux tarball through
         <code>publish.ps1 -Runtime linux-x64</code>, an optional VirusTotal scan whose links are
         appended to the release notes, and a multi-architecture container image pushed to the GitHub
