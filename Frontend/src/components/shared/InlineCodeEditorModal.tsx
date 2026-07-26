@@ -694,7 +694,7 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
             onClick={() => void runTest()}
             disabled={running || codeExecEnabled === false}
             title={codeExecEnabled === false
-              ? 'Inline code execution is disabled in Settings → Security → Capabilities.'
+              ? 'Inline code execution is disabled in Settings → Capabilities.'
               : undefined}
             style={runBtn(running || codeExecEnabled === false)}
           >
@@ -720,7 +720,7 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
           }}>
             <span aria-hidden="true" style={{ fontWeight: 800 }}>⚠</span>
             <span>
-              Inline code execution is disabled in <strong>Settings → Security → Capabilities</strong>.
+              Inline code execution is disabled in <strong>Settings → Capabilities</strong>.
               You can edit and save, but this node won’t run (or test) until an admin enables it.
             </span>
           </div>
@@ -830,7 +830,7 @@ export function InlineCodeEditorModal({ open, code, language, nodeId, onSave, on
                   onClick={() => void confirmTestAndSave()}
                   disabled={running || codeExecEnabled === false}
                   title={codeExecEnabled === false
-                    ? 'Inline code execution is disabled in Settings → Security → Capabilities.'
+                    ? 'Inline code execution is disabled in Settings → Capabilities.'
                     : undefined}
                   style={runBtn(running || codeExecEnabled === false)}
                 >

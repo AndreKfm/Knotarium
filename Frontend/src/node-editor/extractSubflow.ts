@@ -124,8 +124,13 @@ export function writesOf(node: ExNode): Set<string> {
     const vars = node.properties?.variables;
     if (Array.isArray(vars)) {
       for (const entry of vars) {
-        const key = (entry as { key?: unknown })?.key;
-        if (typeof key === 'string' && key) out.add(rootOf(key));
+        // keyValue rows are { name, value } — see ManifestForm's Row type, which is what writes this
+        // property. Reading `key` here found nothing, so extraction never saw a variable written by a
+        // Set Variables node and silently omitted it from the sub-flow's outputs. `key` is still
+        // accepted because older saved workflows may carry rows in that shape.
+        const row = entry as { name?: unknown; key?: unknown };
+        const name = typeof row?.name === 'string' && row.name ? row.name : row?.key;
+        if (typeof name === 'string' && name) out.add(rootOf(name));
       }
     } else if (vars && typeof vars === 'object') {
       for (const key of Object.keys(vars as Record<string, unknown>)) out.add(rootOf(key));

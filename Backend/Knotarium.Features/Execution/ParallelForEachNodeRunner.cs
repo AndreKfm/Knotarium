@@ -331,16 +331,16 @@ internal sealed class ParallelForEachNodeRunner
                     var outputs = success.Outputs ?? new Dictionary<string, object>();
                     localOutputs[currentId] = outputs;
 
-                    string? selectedPort = null;
-                    if (planned.Type.Equals("condition", StringComparison.OrdinalIgnoreCase) &&
-                        outputs.TryGetValue("selectedPort", out var portObj) && portObj != null)
-                    {
-                        selectedPort = portObj as string ?? portObj.ToString();
-                    }
+                    // Scheduling semantics come from WorkflowExecutor so a body node behaves exactly as
+                    // it would outside the loop. This used to be a local reimplementation that computed
+                    // selectedPort for `condition` only and never skipped failure edges — so inside a
+                    // parallel body a Switch or AI Router fired every branch at once, and any node with
+                    // an error port ran its error handler on success.
+                    var selectedPort = WorkflowExecutor.ResolveSelectedPort(planned.Type, outputs);
 
                     foreach (var edge in plan.Edges.Where(edge => edge.From == currentId))
                     {
-                        if (selectedPort != null && !edge.Output.Equals(selectedPort, StringComparison.OrdinalIgnoreCase))
+                        if (!WorkflowExecutor.ShouldScheduleOnSuccess(edge, selectedPort))
                         {
                             continue;
                         }

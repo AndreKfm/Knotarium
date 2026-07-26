@@ -580,21 +580,11 @@ public partial class WorkflowExecutor
             if (nodeState.Status == NodeStatus.Completed)
             {
                 var outgoingEdges = plan.Edges.Where(edge => edge.From == currentNodeId);
-                string? selectedPort = null;
-                if (RoutesBySelectedPort(plannedNode.Type) &&
-                    nodeState.Outputs.TryGetValue("selectedPort", out var portObj) &&
-                    portObj != null)
-                {
-                    selectedPort = portObj is string portStr
-                        ? portStr
-                        : portObj is JsonElement selectedPortElement && selectedPortElement.ValueKind == JsonValueKind.String
-                            ? selectedPortElement.GetString()
-                            : portObj.ToString();
-                }
+                var selectedPort = ResolveSelectedPort(plannedNode.Type, nodeState.Outputs);
 
                 foreach (var edge in outgoingEdges)
                 {
-                    if (selectedPort != null && !edge.Output.Equals(selectedPort, StringComparison.OrdinalIgnoreCase))
+                    if (!ShouldScheduleOnSuccess(edge, selectedPort))
                     {
                         continue;
                     }
@@ -900,21 +890,11 @@ public partial class WorkflowExecutor
                     cancellationToken: cancellationToken);
 
                 var outgoingEdges = plan.Edges.Where(edge => edge.From == currentNodeId);
-                string? selectedPort = null;
-                if (RoutesBySelectedPort(plannedNode.Type) &&
-                    nodeState.Outputs.TryGetValue("selectedPort", out var portObj) &&
-                    portObj != null)
-                {
-                    selectedPort = portObj is string portString
-                        ? portString
-                        : portObj is JsonElement portElement && portElement.ValueKind == JsonValueKind.String
-                            ? portElement.GetString()
-                            : portObj.ToString();
-                }
+                var selectedPort = ResolveSelectedPort(plannedNode.Type, nodeState.Outputs);
 
                 foreach (var edge in outgoingEdges)
                 {
-                    if (selectedPort != null && !edge.Output.Equals(selectedPort, StringComparison.OrdinalIgnoreCase))
+                    if (!ShouldScheduleOnSuccess(edge, selectedPort))
                     {
                         continue;
                     }
@@ -1220,6 +1200,62 @@ public partial class WorkflowExecutor
     /// emits selectedPort" — multi-output data nodes (e.g. httpRequest's body/statusCode sockets, or
     /// declarative user packages) rely on all their data edges firing, so routing must stay opt-in.
     /// </summary>
+    /// <summary>
+    /// Whether an outgoing edge should be scheduled after the node COMPLETED.
+    ///
+    /// <para>Two rules, in order of authority:</para>
+    ///
+    /// <para>1. A node that routes by <c>selectedPort</c> has already made the decision — take that
+    /// branch and no other. This wins outright, including when the chosen branch happens to be named
+    /// "error": an AI Router may legitimately carry a category by that name, and second-guessing it
+    /// here would silently drop the branch the model selected.</para>
+    ///
+    /// <para>2. Otherwise, a failure branch must NOT fire. Failure edges are scheduled by
+    /// <c>HandleNodeFailureAsync</c>, which is the only place they belong. Without this rule every node
+    /// declaring a success/error pair — HTTP Request, Transform, Merge, any user package with an error
+    /// port — ran its error handler on success too. The README advertises the HTTP node's error port as
+    /// the way to "handle failures explicitly"; wiring it up ran that branch on every successful call,
+    /// silently, with no error to inspect.</para>
+    ///
+    /// <para>Deliberately narrower than routing everything by port: multi-socket data nodes rely on all
+    /// their data edges firing, so only the two failure names are special-cased.</para>
+    /// </summary>
+    /// <summary>
+    /// The branch a completed node chose, or null when this node type does not route by port.
+    ///
+    /// <para>Shared with <see cref="ParallelForEachNodeRunner"/>, which schedules its own body edges.
+    /// It used to compute this itself and only for <c>condition</c>, so a Switch or AI Router inside a
+    /// parallel body fired every branch at once — the same graph behaving differently depending on
+    /// whether it sat inside a loop.</para>
+    /// </summary>
+    internal static string? ResolveSelectedPort(string nodeType, IReadOnlyDictionary<string, object> outputs)
+    {
+        if (!RoutesBySelectedPort(nodeType) ||
+            !outputs.TryGetValue("selectedPort", out var portObj) ||
+            portObj is null)
+        {
+            return null;
+        }
+
+        return portObj switch
+        {
+            string text => text,
+            JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+            _ => portObj.ToString(),
+        };
+    }
+
+    internal static bool ShouldScheduleOnSuccess(PlannedEdge edge, string? selectedPort)
+    {
+        if (selectedPort != null)
+        {
+            return edge.Output.Equals(selectedPort, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return !edge.Output.Equals("error", StringComparison.OrdinalIgnoreCase)
+            && !edge.Output.Equals("failure", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool RoutesBySelectedPort(string nodeType) =>
         nodeType.Equals("condition", StringComparison.OrdinalIgnoreCase) ||
         nodeType.Equals("switch", StringComparison.OrdinalIgnoreCase) ||

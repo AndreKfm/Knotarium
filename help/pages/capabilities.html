@@ -5,7 +5,8 @@
 
   The Capabilities screen. Capability names and the switchable set are read from
   Core/Domain/NodeCapabilities.cs and Features.Settings/CapabilityPolicyStore.cs; the node mapping
-  comes from InMemoryNodePackageManifestProvider.cs. The aiAgent gap is real and documented.
+  comes from InMemoryNodePackageManifestProvider.cs. The screen renders all three switchable
+  capabilities; the row labels are read from components/CapabilitiesSetting.tsx.
 -->
 <html lang="en">
 <head>
@@ -108,24 +109,18 @@
         writes immediately, showing an ellipsis in place of the On/Off label while the write is in flight.
       </p>
       <p>
+        There are three rows, one per switchable capability, and they are the same three the engine
+        enforces: <strong>Inline code execution</strong>, <strong>Database access</strong> and
+        <strong>AI agent tool loop</strong>. Nothing on this screen is read-only and nothing enforced by
+        the backend is missing from it, so a capability you cannot find here is one that is not switchable
+        at all — look for it among the filesystem and descriptive tags in the table above.
+      </p>
+      <p>
         As soon as any capability is on, an amber banner appears at the bottom of the card reminding you
         that every workflow on the instance can now use it and suggesting you turn it back off when you no
         longer need it. That banner is not a warning about something going wrong; it is a standing reminder
         that the instance is in a more permissive state than its default.
       </p>
-
-      <div class="kg-note is-warning">
-        <span class="kg-note-label">The screen shows two switches; the engine enforces three</span>
-        <p>
-          The interface lists <strong>Inline code execution</strong> and <strong>Database access</strong>.
-          The backend's switchable set also contains <code>aiAgent</code>, and the AI Agent node genuinely
-          refuses to run without it — but there is no row for it on this screen. On a build where this is
-          still true the AI Agent node cannot be enabled from the interface at all, and the capability must
-          be written through the capability-policy API directly. This is a gap between the two halves of
-          the product, not a security decision, and it is stated here so you are not left hunting for a
-          switch that is not drawn.
-        </p>
-      </div>
 
       <h2>What each capability unlocks</h2>
 
@@ -176,7 +171,7 @@
         that any workflow can use any credential that exists, so the two together are the grant.
       </p>
 
-      <h3>AI agent loop</h3>
+      <h3>AI agent tool loop</h3>
       <p>
         Tag <code>aiAgent</code>. <span class="kg-pill is-off">Off by default</span>
       </p>
@@ -188,7 +183,10 @@
         node. The node also declares <code>network</code>.
       </p>
       <p>
-        See the warning above about this capability having no switch on the screen.
+        The row's own description makes the sharpest version of the point: the task text handed to the
+        agent and the results the tools return are untrusted input, so the allowlist should contain only
+        workflows you would be willing to let that data invoke. The allowlist is edited on the node, but
+        this switch is what decides whether any allowlist runs at all.
       </p>
 
       <h2>What happens to a workflow that needs a disabled capability</h2>

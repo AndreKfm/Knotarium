@@ -73,6 +73,14 @@
         with the failure already in hand.
       </p>
       <p>
+        A failure edge is exclusive to the failure path. Only the failure handler schedules it, and the
+        success path skips any edge carrying either name, so an <code>error</code> branch drawn from an
+        HTTP Request, a Transform, a Merge or a custom package runs when that node fails and not
+        otherwise. The one exception is a node that routes by choosing a port — Condition, Switch,
+        For Loop, Parallel For-Each, AI Router, AI Verify and AI Semantic Diff. Their explicit choice
+        wins, so a branch label that happens to be spelled <em>error</em> is followed like any other.
+      </p>
+      <p>
         Loop and iteration nodes reserve their own port names, so <code>success</code>, <code>failure</code>
         and <code>error</code> are all recognised as exit paths out of a loop rather than as part of the
         loop body. A parallel iteration collects a per-item error into that item's result instead of

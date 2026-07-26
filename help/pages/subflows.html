@@ -317,6 +317,15 @@
         left behind becomes a declared output. Variables written inside and used nowhere outside are
         simply left inside.
       </p>
+      <p>
+        Two node types count as writers, and both are detected: <strong>Set Variable</strong>, which
+        contributes its single target name, and <strong>Set Variables</strong>, which contributes the
+        name from every row. A keyed write contributes its head container rather than the full path, so a
+        region writing <code>order.id</code> declares <code>order</code> as the output. Nothing else in
+        the selection is treated as writing a variable, which is why a value produced by a node but never
+        stored in one has to leave the region as a node output — and that, in turn, is what the last two
+        refusals above are about.
+      </p>
 
       <h3>Extracting several identical chains at once</h3>
       <p>

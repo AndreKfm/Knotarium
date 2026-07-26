@@ -88,17 +88,14 @@
         path separator. A bundle may hold up to 1024 entries.
       </p>
 
-      <div class="kg-note is-warning">
-        <span class="kg-note-label">The upload hint overstates the size limit</span>
-        <p>
-          The Install tab describes the drop zone as accepting an archive "up to 200 MB". The limit the
-          reader actually enforces is much smaller: <strong>5 MB</strong> for the compressed archive,
-          25 MB total uncompressed, 10 MB for any single entry, and a 100:1 compression ratio. A larger
-          file is refused with an archive error rather than being accepted and truncated, so the failure is
-          loud — but it will not be the failure the interface led you to expect. Bundles carry JSON, not
-          binaries, so a real bundle is far below either number.
-        </p>
-      </div>
+      <p>
+        Size is bounded as well. The Install tab describes the drop zone as accepting an archive
+        <em>up to 5 MB</em>, which is exactly what the reader enforces: <strong>5 MB</strong> for the
+        compressed archive, 25 MB total uncompressed, 10 MB for any single entry, and a 100:1 compression
+        ratio. A file over any of those limits is refused with an archive error rather than being accepted
+        and truncated, so the failure is loud and names the byte count it saw against the byte count it
+        allows. Bundles carry JSON, not binaries, so a real bundle sits far below all four.
+      </p>
 
       <h2>Export — assembling a bundle</h2>
       <p>
