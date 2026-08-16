@@ -89,15 +89,8 @@ public class WorkflowExecutionWorker : BackgroundService
             var pollInterval = TimeSpan.FromMilliseconds(500);
             var warned = false;
 
-            while (true)
+            while (!await TryClaimWorkerSlotAsync(dbContext, staleAfter, stoppingToken))
             {
-                var threshold = DateTimeOffset.UtcNow - staleAfter;
-                var activeWorkerExists = await dbContext.ActiveWorkers.AnyAsync(w => w.LastHeartbeat > threshold, stoppingToken);
-                if (!activeWorkerExists)
-                {
-                    break;
-                }
-
                 if (DateTimeOffset.UtcNow >= waitDeadline)
                 {
                     _logger.LogCritical("Another active executor worker is already running for this database instance. Aborting startup.");
@@ -115,17 +108,6 @@ public class WorkflowExecutionWorker : BackgroundService
 
                 await Task.Delay(pollInterval, stoppingToken);
             }
-
-            // Clean up any stale sessions and register this worker
-            var staleWorkers = await dbContext.ActiveWorkers.ToListAsync(stoppingToken);
-            if (staleWorkers.Any())
-            {
-                dbContext.ActiveWorkers.RemoveRange(staleWorkers);
-            }
-
-            var me = new ActiveWorker { Id = _workerId, LastHeartbeat = DateTimeOffset.UtcNow };
-            dbContext.ActiveWorkers.Add(me);
-            await dbContext.SaveChangesAsync(stoppingToken);
         }
 
         // 1b. Crash recovery, now that the startup guard has confirmed we are the sole worker: fail runs left
@@ -162,7 +144,7 @@ public class WorkflowExecutionWorker : BackgroundService
         var heartbeatTask = Task.Run(async () =>
         {
             // Renew well inside the staleness window so a live worker is never mistaken for an abandoned
-            // one: three writes per window, and never slower than once a second.
+            // one: about three writes per window, and never more often than once a second.
             var heartbeatInterval = TimeSpan.FromSeconds(Math.Max(1.0, _options.WorkerHeartbeatStaleSeconds / 3.0));
             using var heartbeatTimer = new PeriodicTimer(heartbeatInterval);
             while (await heartbeatTimer.WaitForNextTickAsync(stoppingToken) && !stoppingToken.IsCancellationRequested)
@@ -234,6 +216,45 @@ public class WorkflowExecutionWorker : BackgroundService
         }
 
         _logger.LogInformation("Workflow Execution Worker stopped.");
+    }
+
+    /// <summary>
+    /// Atomically take sole ownership of this database's executor slot: reap registrations whose heartbeat
+    /// has aged out, verify nothing live remains, and insert our own — all inside one transaction.
+    /// </summary>
+    /// <remarks>
+    /// The three steps have to be indivisible. Checked separately, two executors starting together can
+    /// both observe an empty table and both register, which is exactly the double-execution this guard
+    /// exists to prevent. The reaping delete runs first and unconditionally (rather than only when there
+    /// is something to delete) so the write lock is taken before anything is read, serializing the whole
+    /// sequence against a competitor. A competitor that reaches its own delete meanwhile blocks on that
+    /// lock rather than failing, then observes our committed registration and backs off cleanly.
+    /// </remarks>
+    /// <returns><c>true</c> when the slot is now ours; <c>false</c> when a live worker already holds it.</returns>
+    private async Task<bool> TryClaimWorkerSlotAsync(
+        AppDbContext dbContext,
+        TimeSpan staleAfter,
+        CancellationToken cancellationToken)
+    {
+        var threshold = DateTimeOffset.UtcNow - staleAfter;
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        await dbContext.ActiveWorkers
+            .Where(w => w.LastHeartbeat <= threshold)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        // Anything still standing survived the reaping, so its heartbeat is current by definition.
+        if (await dbContext.ActiveWorkers.AnyAsync(cancellationToken))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        dbContext.ActiveWorkers.Add(new ActiveWorker { Id = _workerId, LastHeartbeat = DateTimeOffset.UtcNow });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     private void DispatchQueuedExecutions(CancellationToken stoppingToken)
