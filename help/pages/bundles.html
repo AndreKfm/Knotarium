@@ -480,9 +480,10 @@
 <span class="tok-key">$env:Security__PackageSigning__HostPrivateKeyBase64</span> = <span class="tok-str">'&lt;base64 private key&gt;'</span></code></pre>
 
       <p>
-        Under Docker Compose the shorthand <code>KG_SIGNING_KEY</code> maps to the host private key. That
-        translation lives in the Compose file, not in the application, so the shorthand does nothing on a
-        zip install, a Windows service or a plain <code>docker run</code> — see the
+        Under Docker Compose the shorthand <code>KNOTARIUM_SIGNING_KEY</code> maps to the host private
+        key (the older <code>KG_SIGNING_KEY</code> still works, but is deprecated). That translation
+        lives in the Compose file, not in the application, so the shorthand does nothing on a zip
+        install, a Windows service or a plain <code>docker run</code> — see the
         <a href="configuration.html">configuration reference</a>.
       </p>
 

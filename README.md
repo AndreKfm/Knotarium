@@ -8,7 +8,7 @@
 
 One .NET process serves both the API and the UI. Storage sits behind a pluggable database-provider seam: **SQLite by default** — zero setup, all data in one local file — with the provider interface already in place for others (a Postgres provider is scaffolded).
 
-> **Note — built with AI, human-verified.** This project was created largely from scratch with AI assistance and reviewed by a human as thoroughly as reasonably possible. It is in early, active development, may still contain errors, and is **not yet production-ready**.
+> **Note — built with AI, human-verified.** This project was created largely from scratch with AI assistance and reviewed by a human as thoroughly as reasonably possible. It reached 1.0.0 after eighteen release candidates, but it is a young project maintained by one person: expect rough edges, and judge it against your own requirements before you depend on it for anything critical.
 
 ![The Knotarium canvas editor: a branching workflow (manual trigger → HTTP request → condition → set-variable / log) laid out on the node canvas, with the node palette on the left and the property inspector on the right](assets/editor.png)
 
@@ -45,7 +45,9 @@ Get-FileHash .\Knotarium-<version>-win-x64.zip   # compare with the matching .sh
 
 Then open **http://localhost:43120** and create your admin account on first run. All data (the SQLite database and the auto-generated credential-encryption key) lives in one machine-wide directory, so it survives upgrades and restarts.
 
-> **Windows SmartScreen / Defender note.** Releases are **not yet code-signed**, so Windows may warn about an "unknown publisher" or flag the installer as a false positive on download. The builds are produced reproducibly by [GitHub Actions](.github/workflows/release.yml) straight from this repository — verify the published SHA-256 (and, when set, the VirusTotal links in the release notes). The zero-install `.zip` is affected far less than the installer. Code signing is planned.
+> **Windows SmartScreen / Defender note.** Releases are **not code-signed**, so Windows may warn about an "unknown publisher" or flag the installer as a false positive on download. The builds are produced reproducibly by [GitHub Actions](.github/workflows/release.yml) straight from this repository — verify the published SHA-256 (and, when set, the VirusTotal links in the release notes). The zero-install `.zip` is affected far less than the installer.
+>
+> **Prefer the container if you can.** Authenticode is a Windows-only gatekeeper: the [container image](#quickstart-container-run) is not signed, scanned, or reputation-checked by it at all, so none of this applies there. On Windows it runs on the built-in WSL container tooling without Docker Desktop. Signing is not simply "not done yet" — for a solo developer in Europe it is a genuinely awkward problem, explained in [the install guide](help/pages/install.html).
 
 ---
 
@@ -60,13 +62,13 @@ docker run -d --name knotarium -p 43120:43120 -v knotarium-data:/data ghcr.io/an
 On Windows the same image also runs on the built-in WSL container tooling (`wslc`) — no Docker Desktop needed:
 
 ```bash
-wslc image pull ghcr.io/andrekfm/knotarium:edge
-wslc container run -d --name knotarium -p 43120:43120 -v knotarium-data:/data ghcr.io/andrekfm/knotarium:edge
+wslc image pull ghcr.io/andrekfm/knotarium:latest
+wslc container run -d --name knotarium -p 43120:43120 -v knotarium-data:/data ghcr.io/andrekfm/knotarium:latest
 ```
 
 The left half of `-p host:container` is yours to choose (e.g. `-p 43121:43120` serves the UI on port 43121 instead). To upgrade later, pull the tag again and recreate the container (`wslc container rm -f knotarium`, then the same `run` command); your data lives in the `knotarium-data` volume and survives.
 
-`:latest` tracks the newest **stable** release. During the current pre-release phase, use `:edge` (newest pre-release) or an exact version tag such as `:1.0.0-rc.15`. Or build from source with Compose instead:
+`:latest` tracks the newest **stable** release and `:edge` the newest pre-release. Pin an exact version such as `:1.0.0` for anything you care about. Or build from source with Compose instead:
 
 ```bash
 docker compose up --build
@@ -74,9 +76,11 @@ docker compose up --build
 
 Open **http://localhost:43120**. On first run you create an admin account. The SQLite database **and** the auto-generated credential-encryption key persist in the `knotarium-data` volume, so credentials survive restarts with no extra setup.
 
-> Bringing your own encryption key (e.g. to share one across instances)? `export KG_ENCRYPTION_KEY="$(openssl rand -base64 32)"` before `docker compose up`.
+> Bringing your own encryption key (e.g. to share one across instances)? `export KNOTARIUM_ENCRYPTION_KEY="$(openssl rand -base64 32)"` before `docker compose up`.
 
-> Want to skip login for a throwaway local try? `KG_AUTH_ENABLED=false docker compose up --build`.
+> Want to skip login for a throwaway local try? `KNOTARIUM_AUTH_ENABLED=false docker compose up --build`.
+
+> These names are read by **Compose**, not by the application — they expand into the canonical settings (`Security__Credentials__EncryptionKeyBase64`, `Auth__Enabled`). The older `KG_`-prefixed spellings still work as a fallback but are deprecated.
 
 **New here?** Every instance ships with the full documentation built in — open **http://localhost:43120/help/**, or click **Help** in the application header. It covers installation, a five-minute first workflow, a reference for every node, administration and security, and troubleshooting. You can also read it straight from this repository: [`help/index.html`](help/index.html).
 

@@ -17,9 +17,14 @@ order below reflects real priorities, not promises. Feedback and PRs welcome
 - **Human-in-the-loop** — an approval node that suspends a run until a person approves/rejects
   (with timeout escalation), plus a pending-approvals view. The suspension/resume infrastructure
   already exists.
-- **Signed binaries** — code-sign the Windows installer and binaries. The signing is already wired
-  into CI (optional Authenticode via a certificate, or SignPath Foundation for open source); it
-  activates once a certificate or SignPath setup is in place.
+- **Signed binaries** — code-sign the Windows installer and binaries. Both routes are already wired
+  into CI (optional Authenticode via a certificate, or SignPath Foundation for open source) and
+  activate the moment either is configured. The obstacle is obtaining the certificate, not the
+  plumbing: since 2023 the key must sit on certified hardware, the EV certificate that would clear
+  SmartScreen immediately is issued to organizations rather than individuals, and an individual
+  certificate embeds the maintainer's legal identity in every binary while still earning reputation
+  only slowly. SignPath Foundation is therefore the likely path. Until then the container image
+  avoids the problem entirely — see the [install guide](help/pages/install.html).
 
 ## Mid term
 

@@ -491,29 +491,35 @@
         </p>
       </div>
 
-      <h2>The KG_ variables work only with Docker Compose</h2>
+      <h2>The shorthand variables work only with Docker Compose</h2>
       <p>
         Three shorthand variables appear in the project's documentation and Compose file:
       </p>
       <div class="kg-table-wrap">
         <table>
-          <thead><tr><th>Shorthand</th><th>Sets</th></tr></thead>
+          <thead><tr><th>Shorthand</th><th>Deprecated spelling</th><th>Sets</th></tr></thead>
           <tbody>
-            <tr><td><code>KG_AUTH_ENABLED</code></td><td><code>Auth__Enabled</code></td></tr>
-            <tr><td><code>KG_ENCRYPTION_KEY</code></td><td><code>Security__Credentials__EncryptionKeyBase64</code></td></tr>
-            <tr><td><code>KG_SIGNING_KEY</code></td><td><code>Security__PackageSigning__HostPrivateKeyBase64</code></td></tr>
+            <tr><td><code>KNOTARIUM_AUTH_ENABLED</code></td><td><code>KG_AUTH_ENABLED</code></td><td><code>Auth__Enabled</code></td></tr>
+            <tr><td><code>KNOTARIUM_ENCRYPTION_KEY</code></td><td><code>KG_ENCRYPTION_KEY</code></td><td><code>Security__Credentials__EncryptionKeyBase64</code></td></tr>
+            <tr><td><code>KNOTARIUM_SIGNING_KEY</code></td><td><code>KG_SIGNING_KEY</code></td><td><code>Security__PackageSigning__HostPrivateKeyBase64</code></td></tr>
           </tbody>
         </table>
       </div>
+      <p>
+        The <code>KG_</code> spellings date from the project's former name. The Compose file still
+        falls back to them, so an existing <code>.env</code> keeps working, but they are deprecated and
+        will be removed in a future release — prefer the <code>KNOTARIUM_</code> names. Setting both
+        is harmless; the <code>KNOTARIUM_</code> one wins.
+      </p>
 
       <div class="kg-note is-danger">
         <span class="kg-note-label">These are not application settings</span>
         <p>
           The translation happens inside <code>docker-compose.yml</code>, not inside Knotarium. Setting
-          <code>KG_AUTH_ENABLED=false</code> on a zip install, a Windows service, a systemd unit, or a
-          plain <code>docker run</code> does <strong>nothing at all</strong> — and it fails silently,
-          leaving you convinced sign-in is off when it is not. Outside Compose, always use the full
-          setting name.
+          <code>KNOTARIUM_AUTH_ENABLED=false</code> on a zip install, a Windows service, a systemd
+          unit, or a plain <code>docker run</code> does <strong>nothing at all</strong> — and it fails
+          silently, leaving you convinced sign-in is off when it is not. Outside Compose, always use
+          the full setting name.
         </p>
       </div>
 
