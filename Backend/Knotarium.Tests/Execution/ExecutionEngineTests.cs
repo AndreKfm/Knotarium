@@ -1135,9 +1135,13 @@ public class ExecutionEngineTests : IDisposable
         
         var queue = serviceProvider.GetRequiredService<WorkflowExecutionQueue>();
         
-        var worker1 = new WorkflowExecutionWorker(queue, serviceProvider, logger1);
-        var worker2 = new WorkflowExecutionWorker(queue, serviceProvider, logger2);
-        
+        // Fail fast rather than waiting out the staleness window: worker1 is genuinely alive and keeps
+        // renewing its heartbeat, so waiting could only ever end in the same rejection.
+        var failFast = new ExecutionOptions { StartupGuardWaitSeconds = 0 };
+
+        var worker1 = new WorkflowExecutionWorker(queue, serviceProvider, logger1, failFast);
+        var worker2 = new WorkflowExecutionWorker(queue, serviceProvider, logger2, failFast);
+
         using var cts = new CancellationTokenSource();
         
         // Start worker 1 - should succeed
@@ -1161,9 +1165,73 @@ public class ExecutionEngineTests : IDisposable
         await worker1.StopAsync(cts.Token);
         
         // Now worker 3 should start successfully because the lock was cleaned up!
-        var worker3 = new WorkflowExecutionWorker(queue, serviceProvider, logger2);
+        var worker3 = new WorkflowExecutionWorker(queue, serviceProvider, logger2, failFast);
         await worker3.StartAsync(cts.Token);
         await worker3.StopAsync(cts.Token);
+    }
+
+    [Fact]
+    public async Task WorkflowExecutionWorker_StartupGuard_WaitsOutAbandonedHeartbeatInsteadOfAborting()
+    {
+        // A worker killed before it could deregister (SIGKILL after a container stop timeout) leaves a
+        // registration whose heartbeat is fresh but will never be renewed. Startup must wait for it to
+        // age out rather than failing fatally, which is what made "stop then immediately start" a hard
+        // failure for container users.
+        using var context = await CreateContextAsync();
+
+        var services = new ServiceCollection();
+        services.AddSingleton(new WorkflowExecutionQueue());
+        services.AddDbContext<AppDbContext>(options => options.UseSqlite(_connection));
+        services.AddScoped<RecoveryService>();
+
+        var serviceProvider = services.BuildServiceProvider();
+        var queue = serviceProvider.GetRequiredService<WorkflowExecutionQueue>();
+        var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<WorkflowExecutionWorker>.Instance;
+
+        // Simulate the abandoned registration: fresh heartbeat, no process behind it to renew it.
+        context.ActiveWorkers.Add(new ActiveWorker
+        {
+            Id = "abandoned-worker",
+            LastHeartbeat = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var options = new ExecutionOptions { WorkerHeartbeatStaleSeconds = 2, StartupGuardWaitSeconds = 30 };
+        var worker = new WorkflowExecutionWorker(queue, serviceProvider, logger, options);
+
+        using var cts = new CancellationTokenSource();
+        await worker.StartAsync(cts.Token);
+
+        // It must eventually start rather than throw. Poll instead of sleeping a fixed span so the test
+        // is not tied to the exact staleness timing.
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        var registered = false;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (worker.ExecuteTask?.IsFaulted == true)
+            {
+                await worker.ExecuteTask;  // rethrows, failing the test with the real exception
+            }
+
+            using var probe = new AppDbContext(_dbContextOptions);
+            if (await probe.ActiveWorkers.AnyAsync(w => w.Id != "abandoned-worker"))
+            {
+                registered = true;
+                break;
+            }
+
+            await Task.Delay(200, cts.Token);
+        }
+
+        Assert.True(registered, "The worker should have waited out the abandoned heartbeat and registered itself.");
+
+        // The abandoned row is cleaned up as part of claiming the slot.
+        using (var verify = new AppDbContext(_dbContextOptions))
+        {
+            Assert.False(await verify.ActiveWorkers.AnyAsync(w => w.Id == "abandoned-worker"));
+        }
+
+        await worker.StopAsync(cts.Token);
     }
 
     [Fact]

@@ -608,6 +608,33 @@ behind a trusted reverse proxy).</code></pre>
         can no longer be checked against the original chain — that is expected, not corruption.
       </p>
 
+      <h3>Startup fails with &ldquo;another active executor worker is already running&rdquo;</h3>
+      <p>
+        Exactly one executor may own a database, so a second instance pointed at the same data would
+        double-execute every run. Ownership is claimed by a heartbeat row, and a worker that shuts down
+        cleanly removes its own row on the way out.
+      </p>
+      <p>
+        A worker that is <em>killed</em> rather than stopped — a container stop that reaches its timeout
+        and escalates to <code>SIGKILL</code>, a power loss, a hard process kill — never reaches that
+        cleanup, so it leaves a registration whose heartbeat is fresh but will never be renewed.
+        Startup therefore waits for the abandoned heartbeat to age out
+        (<code>Execution__StartupGuardWaitSeconds</code>, default 30 seconds) rather than refusing, and
+        you will see a warning naming the wait while it does. A worker that really is alive keeps
+        renewing its heartbeat, stays fresh for the whole wait, and is still rejected.
+      </p>
+      <div class="kg-note is-warning">
+        <span class="kg-note-label">If it aborts anyway</span>
+        <p>
+          Then something is genuinely holding the database — most often a second container against the
+          same volume, or an installed Windows service still running while you start a container over
+          the same data directory. Stop the other instance rather than raising the wait. Restarting
+          immediately after an abrupt stop is expected to pause for a few seconds before it proceeds;
+          set <code>Execution__StartupGuardWaitSeconds</code> to <code>0</code> if you would rather it
+          fail immediately, as it did before this behavior existed.
+        </p>
+      </div>
+
       <h2>Where to find the logs</h2>
       <p>
         Application logging is console-only, one line of compact JSON per event, written to standard

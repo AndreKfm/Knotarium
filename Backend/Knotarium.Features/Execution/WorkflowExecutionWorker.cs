@@ -78,12 +78,42 @@ public class WorkflowExecutionWorker : BackgroundService
             // Ensure schema exists or migrate before checking
             await dbContext.Database.EnsureCreatedAsync(stoppingToken);
 
-            var threshold = DateTimeOffset.UtcNow - TimeSpan.FromSeconds(10);
-            var activeWorkerExists = await dbContext.ActiveWorkers.AnyAsync(w => w.LastHeartbeat > threshold, stoppingToken);
-            if (activeWorkerExists)
+            // A worker that was killed before it could deregister (SIGKILL after a container stop timeout,
+            // a host crash) leaves behind a registration whose heartbeat is still fresh but will never be
+            // renewed. Aborting on sight turned that into a fatal, self-inflicted startup failure for
+            // anyone who restarted within the staleness window — the abandoned row goes stale on its own,
+            // so wait it out rather than refusing. A genuinely live worker keeps renewing its heartbeat,
+            // stays fresh for the whole wait, and is still rejected.
+            var staleAfter = TimeSpan.FromSeconds(_options.WorkerHeartbeatStaleSeconds);
+            var waitDeadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(_options.StartupGuardWaitSeconds);
+            var pollInterval = TimeSpan.FromMilliseconds(500);
+            var warned = false;
+
+            while (true)
             {
-                _logger.LogCritical("Another active executor worker is already running for this database instance. Aborting startup.");
-                throw new InvalidOperationException("Another active executor worker is already running for this database instance.");
+                var threshold = DateTimeOffset.UtcNow - staleAfter;
+                var activeWorkerExists = await dbContext.ActiveWorkers.AnyAsync(w => w.LastHeartbeat > threshold, stoppingToken);
+                if (!activeWorkerExists)
+                {
+                    break;
+                }
+
+                if (DateTimeOffset.UtcNow >= waitDeadline)
+                {
+                    _logger.LogCritical("Another active executor worker is already running for this database instance. Aborting startup.");
+                    throw new InvalidOperationException("Another active executor worker is already running for this database instance.");
+                }
+
+                if (!warned)
+                {
+                    warned = true;
+                    _logger.LogWarning(
+                        "An executor worker registration is still live for this database. Waiting up to {WaitSeconds}s for it to expire — "
+                        + "this is expected shortly after an abrupt shutdown, and resolves once the abandoned heartbeat ages past {StaleSeconds}s.",
+                        _options.StartupGuardWaitSeconds, _options.WorkerHeartbeatStaleSeconds);
+                }
+
+                await Task.Delay(pollInterval, stoppingToken);
             }
 
             // Clean up any stale sessions and register this worker
@@ -131,7 +161,10 @@ public class WorkflowExecutionWorker : BackgroundService
         // 2. Start Background Heartbeat Loop Task
         var heartbeatTask = Task.Run(async () =>
         {
-            using var heartbeatTimer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            // Renew well inside the staleness window so a live worker is never mistaken for an abandoned
+            // one: three writes per window, and never slower than once a second.
+            var heartbeatInterval = TimeSpan.FromSeconds(Math.Max(1.0, _options.WorkerHeartbeatStaleSeconds / 3.0));
+            using var heartbeatTimer = new PeriodicTimer(heartbeatInterval);
             while (await heartbeatTimer.WaitForNextTickAsync(stoppingToken) && !stoppingToken.IsCancellationRequested)
             {
                 try
