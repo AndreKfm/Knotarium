@@ -35,6 +35,22 @@ public sealed class ExecutionOptions
     public int ShutdownDrainTimeoutSeconds { get; set; } = 10;
 
     /// <summary>
+    /// How long a worker's heartbeat stays valid. The startup guard treats any registration older than
+    /// this as belonging to a dead process. Must stay comfortably above the heartbeat write interval,
+    /// which is derived as a third of this value.
+    /// </summary>
+    public int WorkerHeartbeatStaleSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// How long startup waits for a still-fresh heartbeat to expire before concluding that another
+    /// worker is genuinely alive and aborting. A worker killed before it could deregister leaves a
+    /// heartbeat that is fresh but never renewed, so it goes stale within
+    /// <see cref="WorkerHeartbeatStaleSeconds"/> and startup then proceeds; a live worker keeps
+    /// renewing and is still correctly rejected. <c>0</c> restores the historical fail-fast behavior.
+    /// </summary>
+    public int StartupGuardWaitSeconds { get; set; } = 30;
+
+    /// <summary>
     /// Batch journal-entry INSERTs into one multi-row transaction (count + time bounded). Durability-critical
     /// entries (suspend/terminal/external-effect protocol) are always awaited to disk regardless.
     /// </summary>
@@ -54,6 +70,8 @@ public sealed class ExecutionOptions
         options.MaxConcurrentRuns = Math.Clamp(options.MaxConcurrentRuns, 1, 64);
         options.MaxQueueDepth = Math.Clamp(options.MaxQueueDepth, 1, 100_000);
         options.ShutdownDrainTimeoutSeconds = Math.Clamp(options.ShutdownDrainTimeoutSeconds, 0, 300);
+        options.WorkerHeartbeatStaleSeconds = Math.Clamp(options.WorkerHeartbeatStaleSeconds, 2, 120);
+        options.StartupGuardWaitSeconds = Math.Clamp(options.StartupGuardWaitSeconds, 0, 300);
         options.JournalBatchMaxSize = Math.Clamp(options.JournalBatchMaxSize, 1, 256);
         options.JournalBatchMaxDelayMilliseconds = Math.Clamp(options.JournalBatchMaxDelayMilliseconds, 1, 1000);
 

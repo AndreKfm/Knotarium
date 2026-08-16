@@ -398,6 +398,8 @@
             <tr><td><code>Execution__MaxConcurrentRuns</code></td><td><code>4</code></td><td>1–64</td><td>Workflow runs executing at once. Additional runs queue.</td></tr>
             <tr><td><code>Execution__MaxQueueDepth</code></td><td><code>1000</code></td><td>1–100000</td><td>Queue ceiling; manual and webhook starts are refused past it.</td></tr>
             <tr><td><code>Execution__ShutdownDrainTimeoutSeconds</code></td><td><code>10</code></td><td>0–300</td><td>How long shutdown waits for in-flight runs to finish.</td></tr>
+            <tr><td><code>Execution__WorkerHeartbeatStaleSeconds</code></td><td><code>10</code></td><td>2–120</td><td>How long a worker's registration stays valid. Older than this and the owning process is presumed dead.</td></tr>
+            <tr><td><code>Execution__StartupGuardWaitSeconds</code></td><td><code>30</code></td><td>0–300</td><td>How long startup waits for another worker's registration to expire before giving up. <code>0</code> fails immediately.</td></tr>
             <tr><td><code>Execution__JournalBatchingEnabled</code></td><td><code>true</code></td><td>boolean</td><td>Batches run-journal writes. Disabling it makes every step durable immediately at a throughput cost.</td></tr>
             <tr><td><code>Execution__JournalBatchMaxSize</code></td><td><code>32</code></td><td>1–256</td><td>Journal entries per batch.</td></tr>
             <tr><td><code>Execution__JournalBatchMaxDelayMilliseconds</code></td><td><code>25</code></td><td>1–1000</td><td>Longest a journal entry waits before being flushed.</td></tr>
