@@ -13,6 +13,37 @@ the user-facing highlights per version.
 
 Nothing yet.
 
+## [1.0.1] — 2026-08-16
+
+A patch release for one startup failure found while smoke-testing the 1.0.0
+container. Nothing else changed; upgrading is a straight swap.
+
+### Fixed
+
+- **Restarting shortly after an abrupt stop no longer refuses to start.** Only one
+  executor may own a database, enforced by a heartbeat that a worker deletes when
+  it shuts down cleanly. A worker *killed* instead — a container stop that reaches
+  its timeout and escalates to `SIGKILL`, a power loss — never got that far, and
+  left behind a registration that looked current but would never be renewed.
+  Startup treated it as proof of a live worker and aborted fatally, taking the
+  whole host down with it, so a container would exit on boot with nothing serving.
+  Restarting within ten seconds of stopping was enough to trigger it, and the
+  error named a process that no longer existed. Startup now waits for the
+  abandoned heartbeat to age out instead of refusing; a worker that really is
+  alive keeps renewing and is still correctly rejected.
+- **Claiming the executor slot is now atomic.** Reaping expired registrations,
+  confirming none are live, and inserting our own happen in one transaction. Split
+  across separate steps, two executors starting together could both find the table
+  empty and both register — the double-execution the guard exists to prevent.
+
+### Added
+
+- `Execution__WorkerHeartbeatStaleSeconds` (default `10`, range 2–120) — how long a
+  worker's registration stays valid before the owning process is presumed dead.
+- `Execution__StartupGuardWaitSeconds` (default `30`, range 0–300) — how long
+  startup waits for another registration to expire before giving up. `0` restores
+  the previous fail-fast behavior.
+
 ## [1.0.0] — 2026-08-16
 
 First stable release. Eighteen release candidates (`v1.0.0-rc.1` through
@@ -109,5 +140,6 @@ rather than the delta from the last candidate.
   [install guide](help/pages/install.html). See also the [README](README.md#download).
 - macOS builds are not published; run from source or use the container image.
 
-[Unreleased]: https://github.com/AndreKfm/Knotarium/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/AndreKfm/Knotarium/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/AndreKfm/Knotarium/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/AndreKfm/Knotarium/releases/tag/v1.0.0
