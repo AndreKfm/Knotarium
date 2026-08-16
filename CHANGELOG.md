@@ -49,7 +49,11 @@ rather than the delta from the last candidate.
 - Per-node property inspector with typed outputs and `{{ }}` reference
   autocompletion; the condition editor resolves `{{ $node.… }}` against the last
   real run so a branch can be evaluated before publishing.
-- Version history with diff and restore.
+- Version history with diff and restore. Every activation is additionally
+  recorded — who activated which version, when, why, and what it replaced —
+  and is queryable through `GET /api/workflows/{id}/activation-history`, with
+  `GET /api/workflows/{id}/active-version-at` answering which version was live
+  at a given instant. No interface surfaces this yet; it is API-only for now.
 
 #### Runs
 
@@ -83,6 +87,17 @@ rather than the delta from the last candidate.
   zip, self-contained Linux tarball, and a multi-arch container image
   (`amd64` + `arm64`) on GHCR, plus a Docker Compose quickstart.
 - The complete documentation ships offline inside every instance at `/help`.
+
+### Deprecated
+
+- The Docker Compose shorthand variables were renamed from `KG_*` to
+  `KNOTARIUM_*` (`KNOTARIUM_ENCRYPTION_KEY`, `KNOTARIUM_AUTH_ENABLED`,
+  `KNOTARIUM_SIGNING_KEY`), the `KG_` prefix being a leftover from the project's
+  former name. The Compose file falls back to the old spellings, so an existing
+  `.env` keeps working, and setting both is harmless — the `KNOTARIUM_` one
+  wins. The fallback will be removed in a future release. Note that these are
+  Compose interpolation variables, not application settings; the application's
+  own configuration names are unchanged.
 
 ### Known limitations
 

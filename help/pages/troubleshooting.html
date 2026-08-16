@@ -257,14 +257,19 @@ disk-space guard; re-arm it when ready.</code></pre>
         <code>Logging__LogLevel__Default</code> has no effect whatsoever.
       </p>
 
-      <h3><code>KG_AUTH_ENABLED</code> or <code>KG_ENCRYPTION_KEY</code> has no effect</h3>
+      <h3><code>KNOTARIUM_AUTH_ENABLED</code> or <code>KNOTARIUM_ENCRYPTION_KEY</code> has no effect</h3>
       <p>
         These are not application settings. They are shell variables interpolated by
         <code>docker-compose.yml</code> before the container ever starts, and the translation into real
-        setting names happens entirely inside that file. Setting <code>KG_AUTH_ENABLED=false</code> on
-        a zip install, a Windows service, a systemd unit or a plain <code>docker run</code> does
-        nothing at all — and it fails silently, which is worse, because you are left believing sign-in
-        is disabled when it is not.
+        setting names happens entirely inside that file. Setting
+        <code>KNOTARIUM_AUTH_ENABLED=false</code> on a zip install, a Windows service, a systemd unit
+        or a plain <code>docker run</code> does nothing at all — and it fails silently, which is worse,
+        because you are left believing sign-in is disabled when it is not.
+      </p>
+      <p>
+        The <code>KG_</code>-prefixed spellings of these variables are the project's former naming.
+        The Compose file still falls back to them, so they continue to work, but prefer the
+        <code>KNOTARIUM_</code> names — the old ones will be removed in a future release.
       </p>
       <p>
         Outside Compose use the full names: <code>Auth__Enabled</code>,

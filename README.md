@@ -76,9 +76,11 @@ docker compose up --build
 
 Open **http://localhost:43120**. On first run you create an admin account. The SQLite database **and** the auto-generated credential-encryption key persist in the `knotarium-data` volume, so credentials survive restarts with no extra setup.
 
-> Bringing your own encryption key (e.g. to share one across instances)? `export KG_ENCRYPTION_KEY="$(openssl rand -base64 32)"` before `docker compose up`.
+> Bringing your own encryption key (e.g. to share one across instances)? `export KNOTARIUM_ENCRYPTION_KEY="$(openssl rand -base64 32)"` before `docker compose up`.
 
-> Want to skip login for a throwaway local try? `KG_AUTH_ENABLED=false docker compose up --build`.
+> Want to skip login for a throwaway local try? `KNOTARIUM_AUTH_ENABLED=false docker compose up --build`.
+
+> These names are read by **Compose**, not by the application — they expand into the canonical settings (`Security__Credentials__EncryptionKeyBase64`, `Auth__Enabled`). The older `KG_`-prefixed spellings still work as a fallback but are deprecated.
 
 **New here?** Every instance ships with the full documentation built in — open **http://localhost:43120/help/**, or click **Help** in the application header. It covers installation, a five-minute first workflow, a reference for every node, administration and security, and troubleshooting. You can also read it straight from this repository: [`help/index.html`](help/index.html).
 
