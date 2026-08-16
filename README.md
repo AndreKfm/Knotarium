@@ -8,7 +8,7 @@
 
 One .NET process serves both the API and the UI. Storage sits behind a pluggable database-provider seam: **SQLite by default** — zero setup, all data in one local file — with the provider interface already in place for others (a Postgres provider is scaffolded).
 
-> **Note — built with AI, human-verified.** This project was created largely from scratch with AI assistance and reviewed by a human as thoroughly as reasonably possible. It is in early, active development, may still contain errors, and is **not yet production-ready**.
+> **Note — built with AI, human-verified.** This project was created largely from scratch with AI assistance and reviewed by a human as thoroughly as reasonably possible. It reached 1.0.0 after eighteen release candidates, but it is a young project maintained by one person: expect rough edges, and judge it against your own requirements before you depend on it for anything critical.
 
 ![The Knotarium canvas editor: a branching workflow (manual trigger → HTTP request → condition → set-variable / log) laid out on the node canvas, with the node palette on the left and the property inspector on the right](assets/editor.png)
 
@@ -45,7 +45,9 @@ Get-FileHash .\Knotarium-<version>-win-x64.zip   # compare with the matching .sh
 
 Then open **http://localhost:43120** and create your admin account on first run. All data (the SQLite database and the auto-generated credential-encryption key) lives in one machine-wide directory, so it survives upgrades and restarts.
 
-> **Windows SmartScreen / Defender note.** Releases are **not yet code-signed**, so Windows may warn about an "unknown publisher" or flag the installer as a false positive on download. The builds are produced reproducibly by [GitHub Actions](.github/workflows/release.yml) straight from this repository — verify the published SHA-256 (and, when set, the VirusTotal links in the release notes). The zero-install `.zip` is affected far less than the installer. Code signing is planned.
+> **Windows SmartScreen / Defender note.** Releases are **not code-signed**, so Windows may warn about an "unknown publisher" or flag the installer as a false positive on download. The builds are produced reproducibly by [GitHub Actions](.github/workflows/release.yml) straight from this repository — verify the published SHA-256 (and, when set, the VirusTotal links in the release notes). The zero-install `.zip` is affected far less than the installer.
+>
+> **Prefer the container if you can.** Authenticode is a Windows-only gatekeeper: the [container image](#quickstart-container-run) is not signed, scanned, or reputation-checked by it at all, so none of this applies there. On Windows it runs on the built-in WSL container tooling without Docker Desktop. Signing is not simply "not done yet" — for a solo developer in Europe it is a genuinely awkward problem, explained in [the install guide](help/pages/install.html).
 
 ---
 

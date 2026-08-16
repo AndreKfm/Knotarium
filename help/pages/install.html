@@ -402,8 +402,8 @@
 
       <h3>SmartScreen and code signing</h3>
       <p>
-        Windows releases are <strong>not code-signed today</strong>. The build pipeline has two
-        optional signing routes wired in — an Authenticode step in <code>publish.ps1</code> driven by a
+        Windows releases are <strong>not code-signed</strong>. The build pipeline has two optional
+        signing routes wired in — an Authenticode step in <code>publish.ps1</code> driven by a
         certificate supplied through secrets, and an alternative server-side signing service — but both
         are opt-in and inert unless the corresponding secrets are configured. With neither configured
         the output is an ordinary unsigned build.
@@ -417,6 +417,74 @@
           anything. The zip is affected noticeably less than the installer, because it does not
           self-extract. Verify the published SHA-256 before running either, and check the multi-engine
           scan links that the release notes carry when that scan is enabled.
+        </p>
+      </div>
+
+      <h3>Why it is still unsigned</h3>
+      <p>
+        It is reasonable to read "not code-signed" as a task nobody got around to. It is closer to a
+        structural problem, and the shape of it is worth stating plainly, because it decides which
+        download you should actually pick.
+      </p>
+      <ul>
+        <li>
+          <strong>The cheap path was closed in 2023.</strong> Since the CA/Browser Forum tightened its
+          baseline requirements, code-signing private keys must live on certified hardware — a FIPS
+          140-2 Level 2 (or Common Criteria EAL4+) USB token, or a cloud HSM. The downloadable
+          <code>.pfx</code> a developer could once drop into a build no longer exists for new
+          certificates, so signing now means shipping physical hardware or renting a signing service.
+        </li>
+        <li>
+          <strong>The certificate that would actually fix this is not available to individuals.</strong>
+          Only an <em>Extended Validation</em> certificate clears SmartScreen on day one. EV is issued
+          to organizations, not people. A solo maintainer without a registered company cannot buy the
+          one thing that solves the problem.
+        </li>
+        <li>
+          <strong>The certificate that <em>is</em> available does not fix it immediately.</strong> An
+          organization- or individual-validated certificate does not grant reputation; it only lets
+          reputation start accruing, over downloads and time. A newly signed build from an unknown
+          publisher can still be met with a warning, having cost several hundred euros a year plus the
+          token.
+        </li>
+        <li>
+          <strong>Validation is aimed at companies.</strong> Issuers generally want a registered legal
+          entity, a public directory listing, and often a D&amp;B number. In Germany that means a
+          <em>Gewerbeanmeldung</em> or <em>Handelsregister</em> entry. The individual route exists at
+          some CAs, but it requires notarized identity documents and documented proof of address, and
+          fewer issuers offer it.
+        </li>
+        <li>
+          <strong>An individual certificate publishes your identity.</strong> The subject of the
+          certificate is embedded in every binary and is readable by anyone who downloads it. For a
+          company that is a brand. For a person it is your legal name, attached to a home address in
+          the vetting records — a real consideration when the alternative is a warning dialog.
+        </li>
+      </ul>
+      <p>
+        Cheaper managed offerings have appeared — Microsoft's Trusted Signing among them — but their
+        eligibility rules have historically been tied to organization status and to specific
+        countries, so check the current terms before assuming they apply. For open source
+        specifically, <a href="https://signpath.org/">SignPath Foundation</a> grants free signing to
+        qualifying projects; it is an application, with review, not a purchase. That route is wired
+        into this project's release pipeline and is the most likely way these builds eventually get
+        signed.
+      </p>
+
+      <div class="kg-note is-tip">
+        <span class="kg-note-label">The container sidesteps all of it</span>
+        <p>
+          Authenticode is a Windows-specific gate on Windows executables. A container image does not
+          pass through it, so there is no publisher warning, no heuristic flag on a self-extracting
+          installer, and no certificate in the chain of trust — the image is identified by its digest,
+          which is a stronger claim about the bytes than a signature is about the signer. On Windows
+          the image runs on the built-in WSL container tooling with no Docker Desktop installation,
+          and on Linux and macOS through Docker or Podman as usual.
+        </p>
+        <p>
+          If the SmartScreen warning is what is stopping you, the container is the answer rather than a
+          workaround. Failing that, prefer the zero-install zip over the installer: it does not
+          self-extract, which is the specific trait the heuristic scanners react to.
         </p>
       </div>
 

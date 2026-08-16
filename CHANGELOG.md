@@ -86,10 +86,12 @@ rather than the delta from the last candidate.
 
 ### Known limitations
 
-- Release binaries are **not yet code-signed**, so Windows SmartScreen and
-  Defender may warn about an unknown publisher or flag the installer as a false
-  positive. Verify the published SHA-256 for each artifact. See the
-  [README](README.md#download).
+- Release binaries are **not code-signed**, so Windows SmartScreen and Defender
+  may warn about an unknown publisher or flag the installer as a false positive.
+  Verify the published SHA-256 for each artifact. This is a structural obstacle
+  for a single maintainer rather than an oversight — the reasoning, and why the
+  container image avoids it entirely, is in the
+  [install guide](help/pages/install.html). See also the [README](README.md#download).
 - macOS builds are not published; run from source or use the container image.
 
 [Unreleased]: https://github.com/AndreKfm/Knotarium/compare/v1.0.0...HEAD
